@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fingerspeak.local/schemas/derived-event.json",
+  "title": "FingerSpeak derived device event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "type", "profileId", "occurredAt"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "type": { "enum": ["phrase_spoken", "false_activation", "missed_gesture", "caregiver_alert"] },
+    "profileId": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "gestureId": { "type": "string", "maxLength": 80 },
+    "phrase": { "type": "string", "maxLength": 240 },
+    "risk": { "enum": ["routine", "clinical", "emergency"] },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}
+

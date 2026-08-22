@@ -1,0 +1,78 @@
+name: fingerspeak
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fingerspeak}
+      POSTGRES_USER: ${POSTGRES_USER:-fingerspeak}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+    volumes:
+      - ../.data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fingerspeak} -d ${POSTGRES_DB:-fingerspeak}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [fingerspeak]
+
+  api:
+    build:
+      context: ../services/api
+    restart: unless-stopped
+    environment:
+      FINGERSPEAK_ENVIRONMENT: ${FINGERSPEAK_ENVIRONMENT:-development}
+      FINGERSPEAK_DATABASE_URL: '${FINGERSPEAK_DATABASE_URL:-postgresql+asyncpg://fingerspeak:local-development-only@postgres:5432/fingerspeak}'
+      FINGERSPEAK_CORS_ORIGINS: '${FINGERSPEAK_CORS_ORIGINS:-["http://localhost:3000"]}'
+      FINGERSPEAK_CORS_ALLOW_CREDENTIALS: ${FINGERSPEAK_CORS_ALLOW_CREDENTIALS:-true}
+      FINGERSPEAK_TRUSTED_HOSTS: '${FINGERSPEAK_TRUSTED_HOSTS:-["localhost","127.0.0.1","api"]}'
+      FINGERSPEAK_ALLOW_DEVELOPMENT_IDENTITY: ${FINGERSPEAK_ALLOW_DEVELOPMENT_IDENTITY:-true}
+      FINGERSPEAK_DEVELOPMENT_IDENTITY: ${FINGERSPEAK_DEVELOPMENT_IDENTITY:-local-user}
+      # Blank is allowed only in development/test. Staging/production fail fast without 32+ bytes.
+      FINGERSPEAK_GATEWAY_HMAC_SECRET: ${FINGERSPEAK_GATEWAY_HMAC_SECRET:-}
+      FINGERSPEAK_GATEWAY_SIGNATURE_TTL_SECONDS: ${FINGERSPEAK_GATEWAY_SIGNATURE_TTL_SECONDS:-60}
+      FINGERSPEAK_WEBSOCKET_MAX_MESSAGE_BYTES: ${FINGERSPEAK_WEBSOCKET_MAX_MESSAGE_BYTES:-4096}
+      FINGERSPEAK_DEVICE_ONLINE_TTL_SECONDS: ${FINGERSPEAK_DEVICE_ONLINE_TTL_SECONDS:-30}
+      FINGERSPEAK_DEVICE_CAPTION_TTL_SECONDS: ${FINGERSPEAK_DEVICE_CAPTION_TTL_SECONDS:-120}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      FINGERSPEAK_OPENAI_MODEL: ${FINGERSPEAK_OPENAI_MODEL:-gpt-5.6-terra}
+      FINGERSPEAK_OPENAI_VECTOR_STORE_ID: ${FINGERSPEAK_OPENAI_VECTOR_STORE_ID:-}
+      FINGERSPEAK_OPENAI_TIMEOUT_SECONDS: ${FINGERSPEAK_OPENAI_TIMEOUT_SECONDS:-12}
+      FINGERSPEAK_OPENAI_MAX_OUTPUT_TOKENS: ${FINGERSPEAK_OPENAI_MAX_OUTPUT_TOKENS:-500}
+      FINGERSPEAK_LOG_LEVEL: ${FINGERSPEAK_LOG_LEVEL:-INFO}
+    command:
+      - sh
+      - -c
+      - >-
+        alembic upgrade head && exec uvicorn fingerspeak_api.main:app
+        --host 0.0.0.0 --port 8000
+        --ws-max-size "$${FINGERSPEAK_WEBSOCKET_MAX_MESSAGE_BYTES}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    networks: [fingerspeak]
+
+  web:
+    build:
+      context: ../apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/v1}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [fingerspeak]
+
+networks:
+  fingerspeak:
+    driver: bridge

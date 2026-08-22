@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fingerspeak.local/schemas/model-bundle-v1.json",
+  "title": "FingerSpeak model bundle manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "created_at",
+    "training_profile_sha256",
+    "feature",
+    "classes",
+    "models",
+    "ood",
+    "metrics",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "training_profile_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "feature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "sequence_length",
+        "raw_feature_length",
+        "engineered_feature_length"
+      ],
+      "properties": {
+        "version": { "const": "3d-angle-motion-v1" },
+        "sequence_length": { "const": 20 },
+        "raw_feature_length": { "const": 63 },
+        "engineered_feature_length": { "const": 98 }
+      }
+    },
+    "classes": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 24,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "index",
+          "gesture_id",
+          "name",
+          "phrase",
+          "icon",
+          "is_rest",
+          "risk",
+          "confidence_threshold",
+          "dwell_ms"
+        ],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0, "maximum": 23 },
+          "gesture_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"
+          },
+          "name": { "type": "string", "minLength": 1, "maxLength": 48 },
+          "phrase": { "type": "string", "maxLength": 240 },
+          "icon": { "type": "string", "maxLength": 8 },
+          "is_rest": { "type": "boolean" },
+          "risk": { "enum": ["routine", "clinical", "emergency"] },
+          "confidence_threshold": { "const": 0.72 },
+          "dwell_ms": { "type": "integer", "minimum": 350, "maximum": 3000 }
+        }
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "artifact"],
+        "properties": {
+          "type": { "enum": ["nearest-prototype", "dtw-knn", "bigru-24-v2"] },
+          "artifact": { "$ref": "#/$defs/artifactPath" },
+          "k": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "ood": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "artifact", "multiplier"],
+      "properties": {
+        "type": { "const": "summary-centroid" },
+        "artifact": { "$ref": "#/$defs/artifactPath" },
+        "multiplier": { "const": 2.2 }
+      }
+    },
+    "metrics": { "type": "object" },
+    "artifacts": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "size"],
+        "properties": {
+          "path": { "$ref": "#/$defs/artifactPath" },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]{64}$"
+          },
+          "size": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "artifactPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    }
+  }
+}

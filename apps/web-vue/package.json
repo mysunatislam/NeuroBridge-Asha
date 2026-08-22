@@ -1,0 +1,30 @@
+{
+  "name": "fingerspeak-vue-web",
+  "version": "2.5.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.14",
+    "pinia": "4.0.3",
+    "vue": "3.5.41",
+    "vue-router": "5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@vitejs/plugin-vue": "6.0.8",
+    "tsx": "4.20.5",
+    "typescript": "5.9.3",
+    "vite": "8.2.1",
+    "vue-tsc": "^3.0.0"
+  }
+}

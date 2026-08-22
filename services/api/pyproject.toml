@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fingerspeak-api"
+version = "0.1.0"
+description = "FingerSpeak cloud control-plane API; gesture inference remains on-device."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.18.5,<2",
+  "asyncpg>=0.31,<0.32",
+  "fastapi>=0.141.1,<0.142",
+  "httpx>=0.28,<1",
+  "pydantic-settings>=2.15,<3",
+  "sqlalchemy[asyncio]>=2.0.51,<2.1",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "aiosqlite>=0.21,<1",
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fingerspeak_api"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fingerspeak_api", "tests"]
