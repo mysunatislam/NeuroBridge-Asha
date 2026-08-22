@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createCaptionCommand,
   createDemoTelemetry,
+  createEmergencyDisplayCommand,
   createHeartbeatCommand,
   createPairingAuthentication,
   normalizePiWebSocketUrl,
   parsePairingAuthenticatedMessage,
+  parsePiCommandResult,
   parsePiTelemetryMessage,
   PI_DEVICE_SUBPROTOCOL,
   type PiCredentialKind,
@@ -35,6 +37,16 @@ export function usePiDevice() {
   const heartbeatRef = useRef<number | null>(null);
   const phoneIdRef = useRef("");
   const sequenceRef = useRef(0);
+  const reconnectAttemptRef = useRef(0);
+  const pendingCommandsRef = useRef(new Map<string, { resolve(accepted: boolean): void; timeout: number }>());
+
+  const settlePendingCommands = useCallback((accepted = false) => {
+    for (const pending of pendingCommandsRef.current.values()) {
+      window.clearTimeout(pending.timeout);
+      pending.resolve(accepted);
+    }
+    pendingCommandsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -56,6 +68,7 @@ export function usePiDevice() {
   useEffect(() => {
     if (reconnectRef.current !== null) window.clearTimeout(reconnectRef.current);
     if (heartbeatRef.current !== null) window.clearInterval(heartbeatRef.current);
+    settlePendingCommands(false);
     socketRef.current?.close(1000, "Pi endpoint changed");
     socketRef.current = null;
 
@@ -66,6 +79,7 @@ export function usePiDevice() {
     let cancelled = false;
     const connect = () => {
       if (cancelled) return;
+      if (socketRef.current && (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING)) return;
       setStatus("connecting");
       setMessage("Connecting to the configured Pi…");
       let socket: WebSocket;
@@ -79,6 +93,7 @@ export function usePiDevice() {
       socketRef.current = socket;
       socket.onopen = () => {
         if (cancelled) return;
+        reconnectAttemptRef.current = 0;
         setMessage("Pi reached. Verifying the local pairing token…");
         socket.send(JSON.stringify(createPairingAuthentication(
           pairingToken,
@@ -116,6 +131,17 @@ export function usePiDevice() {
           setMessage("Raspberry Pi paired and connected live.");
           return;
         }
+        const commandResult = parsePiCommandResult(raw);
+        if (commandResult) {
+          const pending = pendingCommandsRef.current.get(commandResult.commandId);
+          if (pending) {
+            window.clearTimeout(pending.timeout);
+            pendingCommandsRef.current.delete(commandResult.commandId);
+            pending.resolve(commandResult.accepted);
+            setMessage(commandResult.accepted ? "Raspberry Pi confirmed the display update." : `The Pi rejected the command: ${commandResult.detail}`);
+          }
+          return;
+        }
         const update = parsePiTelemetryMessage(raw);
         if (!update || cancelled) return;
         setTelemetry((current) => ({ ...current, ...update, lastSeen: update.lastSeen ?? new Date().toISOString() }));
@@ -126,23 +152,39 @@ export function usePiDevice() {
         if (heartbeatRef.current !== null) window.clearInterval(heartbeatRef.current);
         heartbeatRef.current = null;
         socketRef.current = null;
+        settlePendingCommands(false);
         setStatus("unavailable");
         setMessage("Pi is unavailable. Captions are previewed locally and are not delivered.");
-        if (![4401, 4403, 4406].includes(event.code)) reconnectRef.current = window.setTimeout(connect, 4_000);
+        if (![4401, 4403, 4406].includes(event.code)) {
+          const attempt = reconnectAttemptRef.current++;
+          const delay = Math.min(30_000, 1_500 * (2 ** Math.min(attempt, 4))) + Math.round(Math.random() * 500);
+          reconnectRef.current = window.setTimeout(connect, delay);
+        }
       };
     };
     connect();
+    const reconnectWhenVisible = () => {
+      if (document.visibilityState !== "visible" || cancelled) return;
+      if (!socketRef.current || socketRef.current.readyState === WebSocket.CLOSED) {
+        if (reconnectRef.current !== null) window.clearTimeout(reconnectRef.current);
+        reconnectRef.current = null;
+        connect();
+      }
+    };
+    document.addEventListener("visibilitychange", reconnectWhenVisible);
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", reconnectWhenVisible);
       if (reconnectRef.current !== null) window.clearTimeout(reconnectRef.current);
       if (heartbeatRef.current !== null) window.clearInterval(heartbeatRef.current);
       reconnectRef.current = null;
       heartbeatRef.current = null;
+      settlePendingCommands(false);
       socketRef.current?.close(1000, "FingerSpeak closed the Pi connection");
       socketRef.current = null;
     };
-  }, [credentialKind, endpoint, pairingToken]);
+  }, [credentialKind, endpoint, pairingToken, settlePendingCommands]);
 
   const configureConnection = useCallback((value: string, token: string): string => {
     try {
@@ -166,16 +208,54 @@ export function usePiDevice() {
     }
   }, []);
 
-  const sendCaption = useCallback((caption: string): boolean => {
-    const text = caption.trim().slice(0, 280);
-    if (!text) return false;
-    const command = createCaptionCommand(text, DEVICE_ID, sequenceRef.current++, navigator.language || "en-US");
-    setTelemetry((current) => ({ ...current, caption: text }));
+  const sendCommand = useCallback((command: { message_id: string; type: string; [key: string]: unknown }): Promise<boolean> => {
     const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-    socket.send(JSON.stringify(command));
-    return true;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const fail = () => {
+        pendingCommandsRef.current.delete(command.message_id);
+        setMessage(`The Pi did not acknowledge the ${command.type} command.`);
+        resolve(false);
+      };
+      const transmit = () => {
+        attempts += 1;
+        const timeout = window.setTimeout(() => {
+          if (attempts < 2 && socket.readyState === WebSocket.OPEN) {
+            setMessage(`The Pi has not acknowledged ${command.type} yet. Retrying once…`);
+            transmit();
+          } else {
+            fail();
+          }
+        }, 4_000);
+        pendingCommandsRef.current.set(command.message_id, { resolve, timeout });
+        try {
+          // Reusing the same message ID makes this single retry idempotent on the edge.
+          socket.send(JSON.stringify(command));
+        } catch {
+          window.clearTimeout(timeout);
+          fail();
+        }
+      };
+      transmit();
+    });
   }, []);
 
-  return { endpoint, pairingToken, status, telemetry, message, configureConnection, sendCaption };
+  const sendCaption = useCallback((caption: string): Promise<boolean> => {
+    const text = caption.trim().slice(0, 280);
+    if (!text) return Promise.resolve(false);
+    const command = createCaptionCommand(text, DEVICE_ID, sequenceRef.current++, navigator.language || "en-US");
+    setTelemetry((current) => ({ ...current, caption: text }));
+    return sendCommand(command);
+  }, [sendCommand]);
+
+  const sendEmergency = useCallback((caption: string): Promise<boolean> => {
+    const text = caption.trim().slice(0, 500);
+    if (!text) return Promise.resolve(false);
+    const command = createEmergencyDisplayCommand(text, DEVICE_ID, sequenceRef.current++, navigator.language || "en-US");
+    setTelemetry((current) => ({ ...current, caption: text }));
+    return sendCommand(command);
+  }, [sendCommand]);
+
+  return { endpoint, pairingToken, status, telemetry, message, configureConnection, sendCaption, sendEmergency };
 }

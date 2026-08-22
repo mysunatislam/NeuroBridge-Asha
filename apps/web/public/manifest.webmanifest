@@ -3,8 +3,18 @@
   "short_name": "FingerSpeak",
   "description": "Local-first personalized gesture-to-speech communication",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0c1716",
   "theme_color": "#0c1716",
-  "orientation": "any"
+  "orientation": "any",
+  "categories": ["accessibility", "health", "medical"],
+  "icons": [
+    {
+      "src": "/asha-avatar-face.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "any maskable"
+    }
+  ]
 }

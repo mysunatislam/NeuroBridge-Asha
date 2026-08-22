@@ -19,6 +19,7 @@ from fingerspeak_edge.adapters import (
     DisplayMode,
     TelemetryAdapter,
 )
+from fingerspeak_edge.credential_store import CredentialDigestStore, CredentialStoreError
 from fingerspeak_edge.protocol import (
     CaptionSet,
     CommandAck,
@@ -52,14 +53,32 @@ class AuthenticationResult:
 
 
 class PairingAuthority:
-    """Consume a one-time pairing code and retain only credential digests in memory."""
+    """Consume a one-time pairing code and retain only device-credential digests."""
 
-    def __init__(self, pairing_code: str, *, device_credential: str | None = None) -> None:
+    def __init__(
+        self,
+        pairing_code: str,
+        *,
+        device_credential: str | None = None,
+        credential_store: CredentialDigestStore | None = None,
+    ) -> None:
         if len(pairing_code) < 16:
             raise ValueError("pairing code must contain at least 16 characters")
-        self._pairing_digest: bytes | None = self._digest(pairing_code)
-        self._device_digest = self._digest(device_credential) if device_credential else None
+        self._credential_store = credential_store
+        persisted_digest = credential_store.load() if credential_store is not None else None
+        if persisted_digest is not None:
+            if len(persisted_digest) != hashlib.sha256().digest_size:
+                raise CredentialStoreError("Credential store returned an invalid digest.")
+            self._pairing_digest = None
+            self._device_digest = persisted_digest
+        else:
+            self._pairing_digest = self._digest(pairing_code)
+            self._device_digest = self._digest(device_credential) if device_credential else None
         self._lock = asyncio.Lock()
+
+    @property
+    def pairing_available(self) -> bool:
+        return self._pairing_digest is not None
 
     @staticmethod
     def _digest(value: str) -> bytes:
@@ -78,7 +97,18 @@ class PairingAuthority:
                         request.message_id,
                     )
                 credential = secrets.token_urlsafe(32)
-                self._device_digest = self._digest(credential)
+                device_digest = self._digest(credential)
+                if self._credential_store is not None:
+                    try:
+                        self._credential_store.save(device_digest)
+                    except CredentialStoreError as exc:
+                        raise ProtocolViolation(
+                            "credential_store_failed",
+                            "The device credential could not be stored safely; "
+                            "pairing was not consumed.",
+                            request.message_id,
+                        ) from exc
+                self._device_digest = device_digest
                 self._pairing_digest = None
                 return AuthenticationResult(request.payload.phone_id, credential)
 

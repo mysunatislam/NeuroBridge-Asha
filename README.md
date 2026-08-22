@@ -31,6 +31,19 @@ playback, and phone calls stay there. The Pi display is deliberately simpler and
 captions plus camera, tracking, phone-link, and power telemetry. Battery values remain `Unknown`
 until a real Pi power monitor or wheelchair/BMS integration reports them.
 
+## Phone application
+
+`apps/web` is an installable mobile PWA, so the same tested patient and caregiver application can
+run in a phone browser or from the home screen. Its phone layout puts Asha and the primary call,
+display, and confirmed-help actions first, uses safe-area-aware bottom navigation, and keeps camera
+and setup controls secondary. Asha's optimized portrait is precached with the offline shell.
+
+The direct phone-to-Pi WebSocket waits for a matching `command.ack` before reporting a display
+message as delivered. Confirmed help uses `emergency.display`, which receives priority over routine
+captions on the Pi. Flutter is intentionally deferred until native-only needs justify a second
+client—particularly protected credential storage, background reconnect, local-network discovery,
+and production alternatives to an HTTPS page opening a plain local `ws://` connection.
+
 ## What is included
 
 - **Primary React/Vinext PWA (`apps/web`):** patient, Pi Display, caregiver, and calibration views;

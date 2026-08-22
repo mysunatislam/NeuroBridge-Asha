@@ -17,6 +17,13 @@ export type PairingAuthenticated = {
   heartbeatIntervalSeconds: number;
 };
 
+export type PiCommandResult = {
+  commandId: string;
+  commandType: "heartbeat" | "status.get" | "caption.set" | "emergency.display" | "unknown";
+  accepted: boolean;
+  detail: string;
+};
+
 const PROTOCOL_VERSION = 1;
 export const PI_DEVICE_SUBPROTOCOL = "fingerspeak.device.v1";
 
@@ -120,6 +127,14 @@ export function createCaptionCommand(caption: string, deviceId: string, sequence
   });
 }
 
+export function createEmergencyDisplayCommand(text: string, deviceId: string, sequence: number, language = "en-US") {
+  return envelope(deviceId, sequence, "emergency.display", {
+    text: text.trim().slice(0, 500),
+    language,
+    expires_at: new Date(Date.now() + 5 * 60 * 1_000).toISOString(),
+  });
+}
+
 export function createHeartbeatCommand(deviceId: string, sequence: number) {
   return envelope(deviceId, sequence, "heartbeat", {});
 }
@@ -150,6 +165,31 @@ export function parsePairingAuthenticatedMessage(raw: string): PairingAuthentica
       deviceCredential: typeof credential === "string" ? credential : null,
       heartbeatIntervalSeconds: heartbeat,
     };
+  } catch {
+    return null;
+  }
+}
+
+export function parsePiCommandResult(raw: string): PiCommandResult | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!isRecord(value) || !isRecord(value.payload)) return null;
+    if (value.type === "command.ack") {
+      const commandId = value.payload.command_id;
+      const commandType = value.payload.command_type;
+      const accepted = value.payload.accepted;
+      const detail = value.payload.detail;
+      const validTypes = ["heartbeat", "status.get", "caption.set", "emergency.display"];
+      if (typeof commandId !== "string" || typeof accepted !== "boolean" || typeof detail !== "string" || !validTypes.includes(String(commandType))) return null;
+      return { commandId, commandType: commandType as PiCommandResult["commandType"], accepted, detail: detail.slice(0, 240) };
+    }
+    if (value.type === "protocol.error") {
+      const commandId = value.payload.ref_message_id;
+      const detail = value.payload.detail;
+      if (typeof commandId !== "string" || typeof detail !== "string") return null;
+      return { commandId, commandType: "unknown", accepted: false, detail: detail.slice(0, 240) };
+    }
+    return null;
   } catch {
     return null;
   }
