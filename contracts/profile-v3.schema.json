@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fingerspeak.local/schemas/profile-v3.json",
+  "title": "FingerSpeak device profile v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "name", "gestures", "updatedAt"],
+  "properties": {
+    "version": { "const": 3 },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "consentToEventSync": { "type": "boolean", "default": false },
+    "consentToCaregiverAlerts": { "type": "boolean", "default": false },
+    "consentToLandmarkSync": { "type": "boolean", "const": false },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "gestures": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 24,
+      "items": { "$ref": "#/$defs/gesture" },
+      "contains": {
+        "type": "object",
+        "required": ["id", "name", "phrase", "protected"],
+        "properties": {
+          "id": { "const": "rest" },
+          "name": { "const": "Rest" },
+          "phrase": { "const": "" },
+          "protected": { "const": true }
+        }
+      },
+      "minContains": 1,
+      "maxContains": 1,
+      "$comment": "Gesture IDs and case-folded names must also be unique; browser and Python trust-boundary validators enforce this invariant."
+    }
+  },
+  "$defs": {
+    "gesture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "phrase", "icon", "risk", "dwellMs", "samples"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 48 },
+        "phrase": { "type": "string", "maxLength": 240 },
+        "icon": { "type": "string", "maxLength": 8 },
+        "protected": { "type": "boolean" },
+        "risk": { "enum": ["routine", "clinical", "emergency"] },
+        "dwellMs": { "type": "integer", "minimum": 350, "maximum": 3000 },
+        "samples": {
+          "type": "array",
+          "maxItems": 48,
+          "items": { "$ref": "#/$defs/sample" }
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw", "session"],
+      "properties": {
+        "session": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$" },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "raw": {
+          "type": "array",
+          "minItems": 20,
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/frame" }
+        }
+      }
+    },
+    "frame": {
+      "type": "array",
+      "minItems": 63,
+      "maxItems": 63,
+      "items": { "type": "number", "minimum": -10, "maximum": 10 }
+    }
+  }
+}

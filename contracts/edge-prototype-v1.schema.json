@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fingerspeak.local/schemas/edge-prototype-v1.json",
+  "title": "FingerSpeak browser edge prototype artifact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "feature",
+    "confidence_threshold",
+    "ood_multiplier",
+    "prototypes"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "feature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "sequence_length", "feature_length", "summary_length"],
+      "properties": {
+        "version": { "const": "3d-angle-motion-v1" },
+        "sequence_length": { "const": 20 },
+        "feature_length": { "const": 98 },
+        "summary_length": { "const": 196 }
+      }
+    },
+    "confidence_threshold": { "const": 0.72 },
+    "ood_multiplier": { "const": 2.2 },
+    "prototypes": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 24,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gesture_id", "centroid", "spread"],
+        "properties": {
+          "gesture_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"
+          },
+          "centroid": {
+            "type": "array",
+            "minItems": 196,
+            "maxItems": 196,
+            "items": { "type": "number" }
+          },
+          "spread": { "type": "number", "minimum": 0.05 }
+        }
+      }
+    }
+  }
+}

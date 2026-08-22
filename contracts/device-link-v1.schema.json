@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fingerspeak.local/schemas/device-link-v1.json",
+  "title": "FingerSpeak phone-to-Raspberry-Pi device link v1",
+  "description": "Bounded messages for the local authenticated WebSocket. No media, shell, or wheelchair motor-control command is defined.",
+  "oneOf": [
+    { "$ref": "#/$defs/pairingAuthenticate" },
+    { "$ref": "#/$defs/heartbeat" },
+    { "$ref": "#/$defs/statusGet" },
+    { "$ref": "#/$defs/captionSet" },
+    { "$ref": "#/$defs/emergencyDisplay" },
+    { "$ref": "#/$defs/pairingAuthenticated" },
+    { "$ref": "#/$defs/deviceStatus" },
+    { "$ref": "#/$defs/commandAck" },
+    { "$ref": "#/$defs/protocolError" }
+  ],
+  "$defs": {
+    "deviceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "phoneId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "uuid": { "type": "string", "format": "uuid" },
+    "dateTime": { "type": "string", "format": "date-time" },
+    "languageTag": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 35,
+      "pattern": "^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$"
+    },
+    "nullableExpiry": {
+      "oneOf": [
+        { "$ref": "#/$defs/dateTime" },
+        { "type": "null" }
+      ]
+    },
+    "nullablePercent": {
+      "oneOf": [
+        { "type": "number", "minimum": 0, "maximum": 100 },
+        { "type": "null" }
+      ]
+    },
+    "envelope": {
+      "type": "object",
+      "required": ["version", "message_id", "device_id", "type", "sent_at", "sequence", "payload"],
+      "properties": {
+        "version": { "const": 1 },
+        "message_id": { "$ref": "#/$defs/uuid" },
+        "device_id": { "$ref": "#/$defs/deviceId" },
+        "type": { "type": "string" },
+        "sent_at": { "$ref": "#/$defs/dateTime" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "payload": { "type": "object" }
+      }
+    },
+    "pairingAuthenticate": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "pairing.authenticate" },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["credential_kind", "credential", "phone_id"],
+              "properties": {
+                "credential_kind": { "enum": ["pairing_code", "device_credential"] },
+                "credential": { "type": "string", "minLength": 16, "maxLength": 256 },
+                "phone_id": { "$ref": "#/$defs/phoneId" }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "emptyPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "heartbeat": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        { "properties": { "type": { "const": "heartbeat" }, "payload": { "$ref": "#/$defs/emptyPayload" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "statusGet": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        { "properties": { "type": { "const": "status.get" }, "payload": { "$ref": "#/$defs/emptyPayload" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "captionSet": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "caption.set" },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text"],
+              "properties": {
+                "text": { "type": "string", "minLength": 1, "maxLength": 280 },
+                "language": { "$ref": "#/$defs/languageTag" },
+                "correlation_id": {
+                  "oneOf": [
+                    { "type": "string", "minLength": 1, "maxLength": 120 },
+                    { "type": "null" }
+                  ]
+                },
+                "expires_at": { "$ref": "#/$defs/nullableExpiry" }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "emergencyDisplay": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "emergency.display" },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text"],
+              "properties": {
+                "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+                "language": { "$ref": "#/$defs/languageTag" },
+                "alert_id": {
+                  "oneOf": [
+                    { "type": "string", "minLength": 1, "maxLength": 120 },
+                    { "type": "null" }
+                  ]
+                },
+                "expires_at": { "$ref": "#/$defs/nullableExpiry" }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "pairingAuthenticated": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "pairing.authenticated" },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["connection_id", "phone_id", "heartbeat_interval_seconds", "heartbeat_timeout_seconds", "max_message_bytes"],
+              "properties": {
+                "connection_id": { "$ref": "#/$defs/uuid" },
+                "phone_id": { "$ref": "#/$defs/phoneId" },
+                "device_credential": {
+                  "oneOf": [
+                    { "type": "string", "minLength": 32, "maxLength": 256 },
+                    { "type": "null" }
+                  ]
+                },
+                "heartbeat_interval_seconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 300 },
+                "heartbeat_timeout_seconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 900 },
+                "max_message_bytes": { "type": "integer", "minimum": 512, "maximum": 65536 }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "deviceStatus": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "device.status" },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phone_connected", "display_connected", "camera_status", "tracking_status", "pi_battery_percent", "wheelchair_battery_percent"],
+              "properties": {
+                "phone_connected": { "type": "boolean" },
+                "display_connected": { "type": "boolean" },
+                "camera_status": { "enum": ["off", "starting", "ready", "degraded", "error"] },
+                "tracking_status": { "enum": ["idle", "tracking", "lost", "paused", "error"] },
+                "pi_battery_percent": { "$ref": "#/$defs/nullablePercent" },
+                "wheelchair_battery_percent": { "$ref": "#/$defs/nullablePercent" },
+                "active_display": {
+                  "oneOf": [
+                    { "enum": ["caption", "emergency"] },
+                    { "type": "null" }
+                  ]
+                },
+                "display_revision": {
+                  "oneOf": [
+                    { "type": "integer", "minimum": 1 },
+                    { "type": "null" }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "commandAck": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "command.ack" },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["command_id", "command_type", "accepted", "duplicate", "detail"],
+              "properties": {
+                "command_id": { "$ref": "#/$defs/uuid" },
+                "command_type": { "enum": ["heartbeat", "status.get", "caption.set", "emergency.display"] },
+                "accepted": { "type": "boolean" },
+                "duplicate": { "type": "boolean" },
+                "detail": { "type": "string", "minLength": 1, "maxLength": 240 },
+                "display_revision": {
+                  "oneOf": [
+                    { "type": "integer", "minimum": 1 },
+                    { "type": "null" }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "protocolError": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "protocol.error" },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "detail"],
+              "properties": {
+                "code": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9_.-]+$" },
+                "detail": { "type": "string", "minLength": 1, "maxLength": 240 },
+                "ref_message_id": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/uuid" },
+                    { "type": "null" }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}
