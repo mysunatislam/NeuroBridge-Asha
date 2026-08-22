@@ -17,6 +17,7 @@ test("server-renders the finished FingerSpeak application", async () => {
   const html = await response.text();
   assert.match(html, /<title>FingerSpeak/);
   assert.match(html, /You’re not alone\. Asha is right here/);
+  assert.match(html, /asha-avatar-face\.webp/);
   assert.match(html, /Pi Display/);
   assert.match(html, /Caregiver/);
   assert.match(html, /Local-first communication/);
@@ -27,7 +28,8 @@ test("server-renders the finished FingerSpeak application", async () => {
 
 test("production service worker updates navigation HTML and keeps an offline shell", async () => {
   const source = await readFile(new URL("../dist/client/sw.js", import.meta.url), "utf8");
-  assert.match(source, /fingerspeak-edge-v4/);
+  assert.match(source, /fingerspeak-edge-v5/);
+  assert.match(source, /asha-avatar-face\.webp/);
   assert.match(source, /request\.mode === "navigate"/);
   assert.match(source, /cache\.put\("\/", response\.clone\(\)\)/);
   assert.match(source, /caches\.match\("\/"\)/);

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { sendAshaChat, type AshaCitation } from "../lib/api";
 import { offlineCompanionReply } from "../lib/asha-companion";
+import { AshaAvatar } from "./AshaAvatar";
 
 type CompanionMessage = {
   id: string;
@@ -40,9 +41,9 @@ type Props = {
   patientContext: Record<string, unknown>;
   caregiverConfigured: boolean;
   onSpeak(text: string): void;
-  onWriteDisplay(text: string): boolean;
+  onWriteDisplay(text: string): Promise<boolean>;
   onCallCaregiver(): string;
-  onConfirmEmergency(): string;
+  onConfirmEmergency(): Promise<string>;
 };
 
 function messageId(): string {
@@ -76,6 +77,8 @@ export function AshaCompanion({
   }]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [displayBusy, setDisplayBusy] = useState(false);
+  const [emergencyBusy, setEmergencyBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState("Your choices stay in your control.");
   const [confirmingHelp, setConfirmingHelp] = useState(false);
   const [voiceInputAvailable, setVoiceInputAvailable] = useState(false);
@@ -184,28 +187,39 @@ export function AshaCompanion({
     }
   }
 
-  function writeDisplay(): void {
+  async function writeDisplay(): Promise<void> {
     const caption = draft.trim() || latestAshaMessage;
-    const delivered = onWriteDisplay(caption);
-    setActionMessage(delivered
-      ? "Caption sent to the connected Pi display."
-      : "Caption is visible in the local Pi Display preview, but no Pi is connected.");
+    setDisplayBusy(true);
+    setActionMessage("Waiting for the Pi display to confirm the caption…");
+    try {
+      const delivered = await onWriteDisplay(caption);
+      setActionMessage(delivered
+        ? "The connected Pi confirmed the caption."
+        : "Caption is visible in the local preview, but the Pi did not confirm delivery.");
+    } finally {
+      setDisplayBusy(false);
+    }
   }
 
   function callCaregiver(): void {
     setActionMessage(onCallCaregiver());
   }
 
-  function confirmEmergency(): void {
-    const result = onConfirmEmergency();
-    setConfirmingHelp(false);
-    setActionMessage(result);
+  async function confirmEmergency(): Promise<void> {
+    setEmergencyBusy(true);
+    try {
+      const result = await onConfirmEmergency();
+      setConfirmingHelp(false);
+      setActionMessage(result);
+    } finally {
+      setEmergencyBusy(false);
+    }
   }
 
   return (
     <section className="asha-companion" aria-labelledby="asha-companion-title">
       <div className="asha-companion-head">
-        <span className="asha-avatar" aria-hidden="true">A</span>
+        <AshaAvatar decorative eager />
         <div><span className="eyebrow">ASHA COMPANION</span><h2 id="asha-companion-title">I’m here with you.</h2></div>
         <span className={aiAvailable ? "asha-presence live" : "asha-presence"}><i />{aiAvailable ? "Service ready" : "Offline-ready"}</span>
       </div>
@@ -241,7 +255,7 @@ export function AshaCompanion({
       </form>
 
       <div className="patient-primary-actions" aria-label="Patient quick actions">
-        <button type="button" onClick={writeDisplay}><span aria-hidden="true">▣</span><strong>Write on Pi display</strong><small>Send this draft, or Asha’s latest reply</small></button>
+        <button type="button" onClick={() => void writeDisplay()} disabled={displayBusy}><span aria-hidden="true">▣</span><strong>{displayBusy ? "Sending…" : "Write on Pi display"}</strong><small>Send this draft, or Asha’s latest reply</small></button>
         <button type="button" onClick={callCaregiver}><span aria-hidden="true">☎</span><strong>Call caregiver</strong><small>{caregiverConfigured ? "Open your phone dialer" : "Add a local contact first"}</small></button>
         <button className="need-help" type="button" onClick={() => setConfirmingHelp(true)}><span aria-hidden="true">!</span><strong>Need help</strong><small>Requires confirmation</small></button>
       </div>
@@ -249,7 +263,7 @@ export function AshaCompanion({
       {confirmingHelp && (
         <div className="emergency-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="confirm-help-title" aria-describedby="confirm-help-copy">
           <div><strong id="confirm-help-title">Send a confirmed help request?</strong><p id="confirm-help-copy">This will speak “I need help now” locally and notify approved caregivers when alert sharing is enabled. FingerSpeak is not an emergency service.</p></div>
-          <div><button type="button" className="confirm-help" onClick={confirmEmergency}>Confirm I need help</button><button type="button" onClick={() => setConfirmingHelp(false)}>Cancel</button></div>
+          <div><button type="button" className="confirm-help" onClick={() => void confirmEmergency()} disabled={emergencyBusy}>{emergencyBusy ? "Confirming…" : "Confirm I need help"}</button><button type="button" onClick={() => setConfirmingHelp(false)} disabled={emergencyBusy}>Cancel</button></div>
         </div>
       )}
       <p className="asha-action-status" role="status">{actionMessage}</p>

@@ -2,6 +2,7 @@
 
 import type { HandLandmarker } from "@mediapipe/tasks-vision";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AshaAvatar } from "./AshaAvatar";
 import { AshaCompanion } from "./AshaCompanion";
 import { PiDisplayView } from "./PiDisplayView";
 import { usePiDevice } from "../hooks/usePiDevice";
@@ -827,17 +828,20 @@ export function FingerSpeakApp() {
     setLocalSettingsMessage(message);
   }, [piDevice, piEndpointDraft, piPairingTokenDraft]);
 
-  const confirmEmergencyHelp = useCallback(() => {
+  const confirmEmergencyHelp = useCallback(async () => {
     const emergency = profileRef.current.gestures.find((gesture) => gesture.risk === "emergency");
     if (!emergency) {
       setVoiceMessage("No emergency phrase is configured. Use the caregiver call control.");
       return "No emergency phrase is configured. Use the caregiver call control or another tested emergency pathway.";
     }
     speakGesture(emergency, "touch");
-    piDevice.sendCaption(emergency.phrase);
+    const displayConfirmed = await piDevice.sendEmergency(emergency.phrase);
+    const displayResult = displayConfirmed
+      ? "The Pi confirmed its priority emergency display."
+      : "The Pi did not confirm its emergency display.";
     return profileRef.current.consentToCaregiverAlerts
-      ? "Your help phrase was spoken locally and queued for approved caregivers. This is not guaranteed emergency delivery."
-      : "Your help phrase was spoken locally. Caregiver alert sharing is off, so use the call control or another tested emergency pathway.";
+      ? `Your help phrase was spoken locally and queued for approved caregivers. ${displayResult} This is not guaranteed emergency delivery.`
+      : `Your help phrase was spoken locally. ${displayResult} Caregiver alert sharing is off, so use the call control or another tested emergency pathway.`;
   }, [piDevice, speakGesture]);
 
   const sendCaregiverCaption = useCallback(async () => {
@@ -859,10 +863,10 @@ export function FingerSpeakApp() {
         setCaregiverActionMessage("The cloud message could not be queued. Trying the direct local Pi link…");
       }
     }
-    const delivered = piDevice.sendCaption(caption);
+    const delivered = await piDevice.sendCaption(caption);
     setCaregiverActionMessage(delivered
-      ? "Message sent through the direct paired Pi link."
-      : "Message previewed locally, but no patient Pi received it.");
+      ? "The direct paired Pi confirmed the message."
+      : "Message previewed locally, but the patient Pi did not confirm it.");
     if (delivered) setCaregiverOutboundMessage("");
   }, [caregiverOutboundMessage, piDevice, remoteDevices]);
 
@@ -874,11 +878,15 @@ export function FingerSpeakApp() {
           <span><strong>FingerSpeak</strong><small>Local-first communication</small></span>
         </button>
         <nav className="mode-switch" aria-label="Application views">
-          {(["speak", "pi-display", "caregiver", "calibrate"] as View[]).map((item) => (
-            <button key={item} className={view === item ? "active" : ""} onClick={() => goTo(item)}>
-              {item === "speak" ? "Patient" : item === "pi-display" ? "Pi Display" : item === "calibrate" ? "Setup" : "Caregiver"}
-            </button>
-          ))}
+          {(["speak", "pi-display", "caregiver", "calibrate"] as View[]).map((item) => {
+            const label = item === "speak" ? "Patient" : item === "pi-display" ? "Pi Display" : item === "calibrate" ? "Setup" : "Caregiver";
+            const icon = item === "speak" ? "♡" : item === "pi-display" ? "▣" : item === "caregiver" ? "☎" : "⚙";
+            return (
+              <button key={item} className={view === item ? "active" : ""} onClick={() => goTo(item)} aria-current={view === item ? "page" : undefined}>
+                <span className="mode-icon" aria-hidden="true">{icon}</span><span>{label}</span>
+              </button>
+            );
+          })}
         </nav>
         <div className="system-badges">
           <span className="privacy-badge"><i /> Camera on-device</span>
@@ -889,11 +897,14 @@ export function FingerSpeakApp() {
       <main>
         {view === "speak" && (
           <section className="workspace speak-workspace" aria-labelledby="speak-title">
-            <div className="camera-column">
-              <div className="section-heading">
+            <div className="patient-hero section-heading">
+              <div className="patient-hero-copy">
+                <AshaAvatar variant="hero" eager />
                 <div><span className="eyebrow">PATIENT COMPANION</span><h1 id="speak-title">You’re not alone. Asha is right here.</h1><p className="patient-lead">Talk on your phone, write on the wheelchair display, or reach your caregiver—with every important action kept in your control.</p></div>
-                <span className={tracking ? "tracking-pill live" : "tracking-pill"}>{tracking ? "Hand found" : cameraStatus === "ready" ? "Show one hand" : "Camera idle"}</span>
               </div>
+              <span className={tracking ? "tracking-pill live" : "tracking-pill"}>{tracking ? "Hand found" : cameraStatus === "ready" ? "Show one hand" : "Camera idle"}</span>
+            </div>
+            <div className="camera-column">
               <div className="camera-card">
                 <div className="video-stage">
                   <video ref={videoRef} playsInline muted aria-label="Private camera preview" />
@@ -929,6 +940,9 @@ export function FingerSpeakApp() {
                 onCallCaregiver={callCaregiver}
                 onConfirmEmergency={confirmEmergencyHelp}
               />
+            </div>
+
+            <div className="patient-tools">
               <div className="patient-device-strip" aria-label="Current device status">
                 <span><strong>Phone</strong> Voice, typing &amp; calls ready</span>
                 <span><strong>Pi display</strong>{piDevice.status === "connected" ? " Paired live" : " Demo preview"}</span>

@@ -10,6 +10,11 @@ from pydantic import SecretStr
 from fingerspeak_edge.adapters import SimulatedCamera, SimulatedDisplay, SimulatedTelemetry
 from fingerspeak_edge.app import AppSettings, create_app
 from fingerspeak_edge.cloud import CloudDeviceRelay, CloudRelaySettings
+from fingerspeak_edge.credential_store import (
+    CredentialDigestStore,
+    CredentialStoreError,
+    FileCredentialDigestStore,
+)
 from fingerspeak_edge.state import EdgeRuntime, EdgeSettings, PairingAuthority
 
 
@@ -33,6 +38,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Exact permitted phone-app origin; repeat to allow more than one.",
     )
+    parser.add_argument(
+        "--credential-store",
+        default=os.getenv("FINGERSPEAK_EDGE_CREDENTIAL_STORE"),
+        help=(
+            "Optional absolute path for the rotated device-credential digest. Disabled when "
+            "omitted; may also be set with FINGERSPEAK_EDGE_CREDENTIAL_STORE."
+        ),
+    )
+    parser.add_argument(
+        "--reset-pairing",
+        action="store_true",
+        help=(
+            "Remove the protected persisted digest and exit, allowing a new one-time pairing "
+            "code on the next start. Requires --credential-store or its environment variable."
+        ),
+    )
     parser.add_argument("--max-message-bytes", type=int, default=4_096)
     parser.add_argument(
         "--cloud-device-ws-url",
@@ -54,7 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_runtime(args: argparse.Namespace, pairing_code: str) -> EdgeRuntime:
+def build_runtime(
+    args: argparse.Namespace,
+    pairing_code: str,
+    credential_store: CredentialDigestStore | None = None,
+) -> EdgeRuntime:
     if args.adapter == "picamera2":
         from fingerspeak_edge.adapters.picamera2_camera import Picamera2Camera
 
@@ -66,7 +91,7 @@ def build_runtime(args: argparse.Namespace, pairing_code: str) -> EdgeRuntime:
             device_id=args.device_id,
             max_message_bytes=args.max_message_bytes,
         ),
-        pairing=PairingAuthority(pairing_code),
+        pairing=PairingAuthority(pairing_code, credential_store=credential_store),
         camera=camera,
         display=SimulatedDisplay(),
         telemetry=SimulatedTelemetry(),
@@ -96,14 +121,47 @@ def build_cloud_relay(
     return CloudDeviceRelay(settings=settings, runtime=runtime)
 
 
+def build_credential_store(args: argparse.Namespace) -> FileCredentialDigestStore | None:
+    if not args.credential_store:
+        return None
+    try:
+        return FileCredentialDigestStore(args.credential_store, device_id=args.device_id)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    credential_store = build_credential_store(args)
+    if args.reset_pairing:
+        if credential_store is None:
+            raise SystemExit(
+                "--reset-pairing requires --credential-store or "
+                "FINGERSPEAK_EDGE_CREDENTIAL_STORE."
+            )
+        try:
+            removed = credential_store.reset()
+        except CredentialStoreError as exc:
+            raise SystemExit(str(exc)) from exc
+        result = "removed" if removed else "already absent"
+        print(f"FingerSpeak persisted pairing digest: {result}.", flush=True)
+        return 0
+
     pairing_code = args.pairing_code or secrets.token_urlsafe(18)
     if len(pairing_code) < 16:
         raise SystemExit("Pairing code must contain at least 16 characters.")
-    if args.pairing_code is None:
-        print(f"FingerSpeak one-time pairing code: {pairing_code}", flush=True)
-    runtime = build_runtime(args, pairing_code)
+    try:
+        runtime = build_runtime(args, pairing_code, credential_store)
+    except CredentialStoreError as exc:
+        raise SystemExit(str(exc)) from exc
+    if runtime.pairing.pairing_available:
+        if args.pairing_code is None:
+            print(f"FingerSpeak one-time pairing code: {pairing_code}", flush=True)
+    else:
+        print(
+            "FingerSpeak persisted device credential loaded; one-time pairing remains consumed.",
+            flush=True,
+        )
     cloud_relay = build_cloud_relay(args, runtime)
     app = create_app(
         runtime,

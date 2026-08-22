@@ -28,8 +28,16 @@ python3 -m venv --system-site-packages .venv
 
 ```bash
 export FINGERSPEAK_EDGE_PAIRING_CODE='replace-with-at-least-24-random-characters'
+export FINGERSPEAK_EDGE_CREDENTIAL_STORE='/var/lib/fingerspeak/device-credential.json'
 .venv/bin/python -m fingerspeak_edge --adapter picamera2
 ```
+
+The absolute credential-store path is optional for a disposable simulator but required for a
+restarting wheelchair unit. It stores only the SHA-256 digest of the rotated credential and keeps
+the one-time code consumed across restarts. Run the service as a restricted account; its parent
+directory must not be group/world writable and the file must remain owner-only. To deliberately
+replace the paired phone, stop the service, run `python -m fingerspeak_edge --reset-pairing` with
+the same credential-store environment, provision a fresh pairing code, and restart.
 
 After verifying `/health/ready`, bind to the phone hotspot interface and restrict the expected app
 origin when the platform supplies one:
@@ -87,7 +95,7 @@ WebSocket messages do not change. Test the exact phone, cable, carrier policy, a
 ## Deployment work still required
 
 Before unattended wheelchair use, add a restricted system user, a hardened `systemd` unit, protected
-credential persistence/revocation, log rotation, read-only or resilient storage where appropriate,
+service-credential provisioning, log rotation, read-only or resilient storage where appropriate,
 watchdog/restart policy, clean shutdown, thermal monitoring, and TLS. The included display adapter
 is a simulator/log sink; a physical kiosk/framebuffer adapter must render text only and report real
 display connectivity.
