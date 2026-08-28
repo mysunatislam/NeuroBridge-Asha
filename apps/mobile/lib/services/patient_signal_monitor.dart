@@ -443,15 +443,20 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     }
   }
 
+  int _frameSkipCounter = 0;
+
   Future<void> _processFrame(CameraImage image) async {
     if (_closed ||
         _controller == null ||
         !(_controller?.value.isInitialized ?? false)) {
       return;
     }
+    // Process every 2nd frame to decimate stream and preserve battery
+    if (++_frameSkipCounter % 2 != 0) return;
+
     final now = DateTime.now();
     if (_processing ||
-        now.difference(_lastFrame) < const Duration(milliseconds: 100)) {
+        now.difference(_lastFrame) < const Duration(milliseconds: 55)) {
       return;
     }
     _lastFrame = now;

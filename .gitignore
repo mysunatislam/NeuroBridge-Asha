@@ -30,3 +30,8 @@ apps/mobile/.idea/
 .pytest-tmp-face-intent/
 *.ipa
 
+
+latest_bundle*
+ios_build_latest*
+*.zip
+

@@ -695,27 +695,37 @@ function setStatus(ok, text){
   document.getElementById('statusText').textContent = text;
 }
 
-// ================= render loop =================
+// ================= render loop (throttled to 18 FPS & 2nd-frame inference) =================
 let frameCount = 0, lastFpsTime = performance.now();
 let lastHandSeenTime = 0;
+let lastProcessTime = 0;
+let renderFrameCounter = 0;
+const TARGET_FRAME_INTERVAL_MS = 55; // Throttle to ~18 FPS for battery and thermal efficiency
+
 function renderLoop(){
   if (!running) return;
-  if (video.currentTime !== lastVideoTime && handLandmarker){
+  const now = performance.now();
+
+  // 1. Process MediaPipe at ~18 FPS instead of consuming full 60 FPS
+  if (now - lastProcessTime >= TARGET_FRAME_INTERVAL_MS && video.currentTime !== lastVideoTime && handLandmarker){
+    lastProcessTime = now;
     lastVideoTime = video.currentTime;
-    const result = handLandmarker.detectForVideo(video, performance.now());
-    octx.clearRect(0,0,overlay.width, overlay.height);
+    renderFrameCounter++;
+
+    const result = handLandmarker.detectForVideo(video, now);
+    octx.clearRect(0, 0, overlay.width, overlay.height);
 
     if (result.landmarks && result.landmarks.length > 0){
-      lastHandSeenTime = performance.now();
+      lastHandSeenTime = now;
       const lm = result.landmarks[0];
       drawLandmarks(lm);
       currentRawFrame = flattenLandmarks(lm);
-      const stamped = { t: performance.now(), feat: currentRawFrame };
+      const stamped = { t: now, feat: currentRawFrame };
 
       if (recording) recording.frames.push(stamped);
 
       liveBuffer.push(stamped);
-      const cutoff = performance.now() - LIVE_BUFFER_MAX_MS;
+      const cutoff = now - LIVE_BUFFER_MAX_MS;
       while (liveBuffer.length && liveBuffer[0].t < cutoff) liveBuffer.shift();
 
       if (!model && !liveMode){
@@ -723,16 +733,17 @@ function renderLoop(){
         pushVitals(0.9);
       }
 
-      if (model && performance.now() - lastInferenceAt > INFERENCE_INTERVAL_MS){
+      // 2. Process gesture recognition every 2nd frame with minimum interval
+      if (model && renderFrameCounter % 2 === 0 && now - lastInferenceAt > INFERENCE_INTERVAL_MS){
         const rawSeq = resampleSequence(liveBuffer, SEQ_LEN, CAPTURE_WINDOW_MS);
         if (rawSeq){
-          lastInferenceAt = performance.now();
+          lastInferenceAt = now;
           if (liveMode) runInference(rawSeq); else previewInference(rawSeq);
         }
       }
     } else {
       currentRawFrame = null;
-      if (performance.now() - lastHandSeenTime > 350){
+      if (now - lastHandSeenTime > 350){
         liveBuffer = [];
         document.getElementById('currentGesture').textContent = '— no hand detected —';
         pushVitals(0);
@@ -740,14 +751,41 @@ function renderLoop(){
       }
     }
   }
+
   frameCount++;
-  const now = performance.now();
   if (now - lastFpsTime > 1000){
     document.getElementById('fpsReadout').textContent = frameCount + ' fps';
     frameCount = 0; lastFpsTime = now;
   }
-  requestAnimationFrame(renderLoop);
+  if (running) {
+    requestAnimationFrame(renderLoop);
+  }
 }
+
+// 3. Stop camera and MediaPipe when screen/app is inactive or hidden
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (running && video.srcObject) {
+      video.pause();
+    }
+  } else {
+    if (running && video.srcObject) {
+      video.play().catch(() => {});
+    }
+  }
+});
+
+function stopCamera(){
+  running = false;
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  setStatus(false, 'camera stopped');
+  document.getElementById('startOverlay').style.display = 'flex';
+}
+window.stopStudioTracking = stopCamera;
 
 const HAND_CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],
   [0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
