@@ -27,8 +27,9 @@ jobs:
       - name: Build iOS App with xcodebuild
         run: |
           cd apps/mobile
-          flutter build ios --config-only
+          flutter build bundle
           cd ios
+          pod install
           xcodebuild -workspace Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
