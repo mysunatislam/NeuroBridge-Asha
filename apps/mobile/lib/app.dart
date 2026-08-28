@@ -51,7 +51,7 @@ class _FingerSpeakMobileAppState extends State<FingerSpeakMobileApp> {
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
         useMaterial3: true,
         fontFamily: 'Space Grotesk',
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: Colors.white,
           elevation: 1,
           shape: RoundedRectangleBorder(
