@@ -697,6 +697,7 @@ function setStatus(ok, text){
 
 // ================= render loop =================
 let frameCount = 0, lastFpsTime = performance.now();
+let lastHandSeenTime = 0;
 function renderLoop(){
   if (!running) return;
   if (video.currentTime !== lastVideoTime && handLandmarker){
@@ -705,6 +706,7 @@ function renderLoop(){
     octx.clearRect(0,0,overlay.width, overlay.height);
 
     if (result.landmarks && result.landmarks.length > 0){
+      lastHandSeenTime = performance.now();
       const lm = result.landmarks[0];
       drawLandmarks(lm);
       currentRawFrame = flattenLandmarks(lm);
@@ -716,6 +718,11 @@ function renderLoop(){
       const cutoff = performance.now() - LIVE_BUFFER_MAX_MS;
       while (liveBuffer.length && liveBuffer[0].t < cutoff) liveBuffer.shift();
 
+      if (!model && !liveMode){
+        document.getElementById('currentGesture').textContent = 'Hand tracked (21 3D points) · Ready';
+        pushVitals(0.9);
+      }
+
       if (model && performance.now() - lastInferenceAt > INFERENCE_INTERVAL_MS){
         const rawSeq = resampleSequence(liveBuffer, SEQ_LEN, CAPTURE_WINDOW_MS);
         if (rawSeq){
@@ -725,10 +732,12 @@ function renderLoop(){
       }
     } else {
       currentRawFrame = null;
-      liveBuffer = [];
-      document.getElementById('currentGesture').textContent = '— no hand detected —';
-      pushVitals(0);
-      if (liveMode) handleNoHandFrame();
+      if (performance.now() - lastHandSeenTime > 350){
+        liveBuffer = [];
+        document.getElementById('currentGesture').textContent = '— no hand detected —';
+        pushVitals(0);
+        if (liveMode) handleNoHandFrame();
+      }
     }
   }
   frameCount++;
@@ -829,7 +838,7 @@ async function captureBurst(){
   const rawSeq = resampleSequence(frames, SEQ_LEN, CAPTURE_WINDOW_MS);
   if (!rawSeq) return { ok:false, reason:'No hand detected during capture — retry.' };
 
-  const expectedFrames = Math.max(6, Math.round((CAPTURE_WINDOW_MS/1000) * 20));
+  const expectedFrames = Math.max(3, Math.round((CAPTURE_WINDOW_MS/1000) * 12));
   const coverage = Math.min(1, frames.length / expectedFrames);
   let avgScale = 0;
   for (const f of rawSeq){
@@ -839,9 +848,9 @@ async function captureBurst(){
   avgScale /= rawSeq.length;
 
   let reason = null;
-  if (coverage < 0.5) reason = 'Hand tracking was too unstable — keep your hand steady in frame and retry.';
-  else if (avgScale < 0.05) reason = 'Hand is too far from the camera — move closer and retry.';
-  else if (avgScale > 0.4) reason = 'Hand is too close to the camera — move back slightly and retry.';
+  if (coverage < 0.2) reason = 'Hand tracking was too brief — keep your hand in frame and retry.';
+  else if (avgScale < 0.015) reason = 'Hand is too far from camera — move slightly closer and retry.';
+  else if (avgScale > 0.65) reason = 'Hand is too close to camera — move back slightly and retry.';
 
   if (reason) return { ok:false, reason };
   return { ok:true, rawSeq, coverage };
