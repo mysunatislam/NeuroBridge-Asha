@@ -20,6 +20,9 @@ jobs:
         run: |
           cd apps/mobile
           flutter pub get
+          # Fix Xcode 16 AVCaptureSession notification symbols in camera_avfoundation
+          find /Users/runner/.pub-cache -name "DefaultCamera.swift" -exec sed -i '' 's/AVCaptureSession\.wasInterruptedNotification/NSNotification.Name.AVCaptureSessionWasInterrupted/g' {} +
+          find /Users/runner/.pub-cache -name "DefaultCamera.swift" -exec sed -i '' 's/AVCaptureSession\.runtimeErrorNotification/NSNotification.Name.AVCaptureSessionRuntimeError/g' {} +
 
       - name: Build iOS App without codesign
         run: |
