@@ -24,15 +24,26 @@ jobs:
           find /Users/runner/.pub-cache -name "DefaultCamera.swift" -exec sed -i '' 's/AVCaptureSession\.wasInterruptedNotification/NSNotification.Name.AVCaptureSessionWasInterrupted/g' {} +
           find /Users/runner/.pub-cache -name "DefaultCamera.swift" -exec sed -i '' 's/AVCaptureSession\.runtimeErrorNotification/NSNotification.Name.AVCaptureSessionRuntimeError/g' {} +
 
-      - name: Build iOS App without codesign
+      - name: Build iOS App with xcodebuild
         run: |
           cd apps/mobile
-          flutter build ios --release --no-codesign
+          flutter build ios --config-only
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build_dir \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+          cd ../../
 
       - name: Package into IPA Payload
         run: |
           mkdir -p build_output/Payload
-          cp -r apps/mobile/build/ios/iphoneos/Runner.app build_output/Payload/
+          cp -r apps/mobile/ios/build_dir/Build/Products/Release-iphoneos/Runner.app build_output/Payload/
           cd build_output
           zip -r NeuroBridge_Asha.ipa Payload
           cd ..
