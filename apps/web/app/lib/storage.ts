@@ -1,8 +1,11 @@
 import type { FingerSpeakProfile, PrototypeModel } from "./fingerspeak";
+import type { CareRoutineProgress, CareRoutineSettings } from "./care-routines";
+import type { FaceControlSettings } from "./face-controls";
+import type { CaregiverPhraseRecording, PatientSpeechSettings, PhraseAudioKind } from "./patient-voice";
 
 const DATABASE = "fingerspeak-device";
-const VERSION = 2;
-const STORES = ["profiles", "models", "outbox", "sync"] as const;
+const VERSION = 3;
+const STORES = ["profiles", "models", "outbox", "sync", "care", "audio"] as const;
 
 export type OutboxEvent = {
   id: string;
@@ -172,4 +175,19 @@ export const deviceStorage = {
     updatedAt: new Date().toISOString(),
   }),
   loadConsentGuard: (profileId: string) => get<ConsentGuard>("sync", `consent-guard:${profileId}`),
+  savePatientSpeechSettings: (settings: PatientSpeechSettings) => put("care", settings),
+  loadPatientSpeechSettings: (profileId: string) => get<PatientSpeechSettings>("care", `patient-speech:${profileId}`),
+  saveCareRoutineSettings: (settings: CareRoutineSettings) => put("care", settings),
+  loadCareRoutineSettings: (profileId: string) => get<CareRoutineSettings>("care", `care-routines:${profileId}`),
+  saveCareRoutineProgress: (progress: CareRoutineProgress) => put("care", progress),
+  loadCareRoutineProgress: (profileId: string) => get<CareRoutineProgress>("care", `care-routine-progress:${profileId}`),
+  saveFaceControlSettings: (settings: FaceControlSettings) => put("care", settings),
+  loadFaceControlSettings: (profileId: string) => get<FaceControlSettings>("care", `face-controls:${profileId}`),
+  saveCaregiverPhraseRecording: (recording: CaregiverPhraseRecording) => put("audio", recording),
+  loadCaregiverPhraseRecording: (profileId: string, kind: PhraseAudioKind, phraseId: string) =>
+    get<CaregiverPhraseRecording>("audio", `caregiver-audio:${profileId}:${kind}:${phraseId}`),
+  listCaregiverPhraseRecordings: async (profileId: string) =>
+    (await getAll<CaregiverPhraseRecording>("audio")).filter((recording) => recording.profileId === profileId),
+  deleteCaregiverPhraseRecording: (profileId: string, kind: PhraseAudioKind, phraseId: string) =>
+    remove("audio", `caregiver-audio:${profileId}:${kind}:${phraseId}`),
 };

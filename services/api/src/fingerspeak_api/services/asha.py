@@ -154,6 +154,90 @@ class OpenAIResponsesProvider:
         )
 
 
+class GeminiChatProvider:
+    """Google Gemini Generative Language API adapter for free and paid tiers."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        timeout_seconds: float,
+        max_output_tokens: int,
+    ) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+        self._max_output_tokens = max_output_tokens
+
+    async def complete(self, request: AshaChatRequest, retrieval: RetrievalPlan) -> ProviderReply:
+        del retrieval
+        context = (
+            request.patient_context.model_dump(mode="json", exclude_none=True)
+            if request.patient_context is not None
+            else {}
+        )
+        system_instruction = (
+            "You are Asha, a calm, compassionate, and supportive assistive communication companion. "
+            "Keep replies concise (1-2 short sentences), reassuring, and natural when spoken aloud. "
+            "The patient controls every action. Do not diagnose or prescribe. If immediate danger is described, "
+            "advise using the app's confirmed caregiver or emergency pathway. "
+            f"Reply in the requested locale ({request.locale or 'en-US'}) when appropriate."
+        )
+        user_text = f"Message: {request.message}"
+        if context:
+            user_text += f"\nContext: {json.dumps(context, ensure_ascii=False)}"
+
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self._model}:generateContent"
+            f"?key={self._api_key}"
+        )
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": system_instruction}]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": user_text}]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": self._max_output_tokens,
+            },
+        }
+
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(self._timeout_seconds), follow_redirects=False
+        ) as client:
+            response = await client.post(
+                url,
+                headers={"Content-Type": "application/json"},
+                json=payload,
+            )
+        response.raise_for_status()
+        data = response.json()
+
+        reply = ""
+        candidates = data.get("candidates") or []
+        if candidates and isinstance(candidates, list):
+            first = candidates[0]
+            content = first.get("content") or {}
+            parts = content.get("parts") or []
+            if parts and isinstance(parts, list):
+                reply = parts[0].get("text", "")
+
+        if not reply:
+            raise RuntimeError("Gemini response contained no output text")
+
+        return ProviderReply(
+            reply=reply.strip(),
+            previous_response_id=None,
+            citations=(),
+        )
+
+
 class AshaService:
     def __init__(self, provider: ChatProvider | None, retriever: Retriever | None = None) -> None:
         self._provider = provider
@@ -194,18 +278,29 @@ class AshaService:
 
 
 def build_asha_service(settings: Settings) -> AshaService:
-    key = settings.openai_api_key
     provider: ChatProvider | None = None
     retriever: Retriever = NullRetriever()
-    if key is not None:
+
+    gemini_key = settings.gemini_api_key
+    openai_key = settings.openai_api_key
+
+    if gemini_key is not None:
+        provider = GeminiChatProvider(
+            api_key=gemini_key.get_secret_value(),
+            model=settings.gemini_model,
+            timeout_seconds=settings.gemini_timeout_seconds,
+            max_output_tokens=settings.gemini_max_output_tokens,
+        )
+    elif openai_key is not None:
         provider = OpenAIResponsesProvider(
-            api_key=key.get_secret_value(),
+            api_key=openai_key.get_secret_value(),
             model=settings.openai_model,
             timeout_seconds=settings.openai_timeout_seconds,
             max_output_tokens=settings.openai_max_output_tokens,
         )
         if settings.openai_vector_store_id is not None:
             retriever = PermissionScopedFileSearchRetriever(settings.openai_vector_store_id)
+
     return AshaService(provider, retriever)
 
 

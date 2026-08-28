@@ -1,6 +1,6 @@
 "use client";
 
-import type { HandLandmarker } from "@mediapipe/tasks-vision";
+import type { FaceLandmarker, HandLandmarker } from "@mediapipe/tasks-vision";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AshaAvatar } from "./AshaAvatar";
 import { AshaCompanion } from "./AshaCompanion";
@@ -39,8 +39,41 @@ import {
 } from "../lib/fingerspeak";
 import { IntentMachine, type IntentOutput } from "../lib/intent-machine";
 import { importPrototypeBundle } from "../lib/model-bundle";
+import { routePiPatientIntent, type PiEmergencyArm } from "../lib/pi-intent-routing";
 import { dialablePhone } from "../lib/asha-companion";
 import { deviceStorage, type LocalContactSettings, type OutboxEvent } from "../lib/storage";
+import {
+  createDefaultPatientSpeechSettings,
+  createPatientSpeechService,
+  saveLocalCaregiverPhraseRecording,
+  saveLocalPatientSpeechSettings,
+  startCaregiverMicrophoneCapture,
+  validatePatientSpeechSettings,
+  type ActiveCaregiverMicrophoneCapture,
+  type PatientSpeechSettings,
+  type PhraseAudioKind,
+} from "../lib/patient-voice";
+import {
+  createCareRoutineMonitor,
+  createDefaultCareRoutineSettings,
+  saveLocalCareRoutineSettings,
+  validateCareRoutineSettings,
+  type CareRoutineSettings,
+} from "../lib/care-routines";
+import {
+  FaceIntentEngine,
+  NeutralFaceCalibrator,
+  type FaceIntentId,
+  type FaceIntentOutput,
+  type FaceLandmarkerCompatibleResult,
+} from "../lib/face-intent";
+import {
+  FACE_INTENT_LABELS,
+  createFaceControlEngine,
+  createDefaultFaceControlSettings,
+  validateFaceControlSettings,
+  type FaceControlSettings,
+} from "../lib/face-controls";
 
 type View = "speak" | "pi-display" | "calibrate" | "caregiver";
 type CameraStatus = "off" | "loading" | "ready" | "error";
@@ -51,7 +84,15 @@ type SpokenEntry = {
   gesture: string;
   risk: Gesture["risk"];
   at: string;
-  source: "gesture" | "touch";
+  source: "gesture" | "touch" | "face" | "pi";
+};
+
+type VoicePhraseOption = {
+  key: string;
+  kind: PhraseAudioKind;
+  phraseId: string;
+  label: string;
+  text: string;
 };
 
 const HAND_CONNECTIONS = [
@@ -72,6 +113,25 @@ const EMPTY_CONTACT_SETTINGS: LocalContactSettings = {
 
 function formatPercent(value: number | null): string {
   return value === null ? "Unknown" : `${value}%`;
+}
+
+function cameraFailureMessage(error: unknown): string {
+  if (!(error instanceof DOMException)) {
+    return error instanceof Error ? error.message : "The camera could not start.";
+  }
+  if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+    return "Camera permission is blocked. Allow camera access for this site in the browser and Windows privacy settings, then try again.";
+  }
+  if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+    return "No camera was detected on this device. Connect a camera or open the mobile app on a phone with a front camera.";
+  }
+  if (error.name === "NotReadableError" || error.name === "TrackStartError") {
+    return "The camera is busy or unavailable. Close other camera apps, reconnect the camera, and try again.";
+  }
+  if (error.name === "OverconstrainedError" || error.name === "ConstraintNotSatisfiedError") {
+    return "The camera does not support the requested mode. FingerSpeak retried with basic settings but could not start it.";
+  }
+  return error.message || "The camera could not start.";
 }
 
 function eventId(): string {
@@ -120,6 +180,64 @@ export function FingerSpeakApp() {
   const [caregiverActionMessage, setCaregiverActionMessage] = useState("Calls use the phone dialer. Messages require a paired Pi.");
   const [remoteDevices, setRemoteDevices] = useState<RemoteDevice[]>([]);
   const [remoteDeviceMessage, setRemoteDeviceMessage] = useState("No verified patient-device heartbeat yet.");
+  const [ashaOpen, setAshaOpen] = useState(false);
+  const [faceTracking, setFaceTracking] = useState(false);
+  const [faceIntent, setFaceIntent] = useState<FaceIntentOutput>(() => new FaceIntentEngine().snapshot());
+  const [faceCalibrationMessage, setFaceCalibrationMessage] = useState("Calibrate a relaxed neutral face before using eye or facial movements.");
+  const [faceCalibrationProgress, setFaceCalibrationProgress] = useState(0);
+  const [faceControls, setFaceControls] = useState<FaceControlSettings>(() => createDefaultFaceControlSettings("local-profile"));
+  const [speechSettings, setSpeechSettings] = useState<PatientSpeechSettings>(() => createDefaultPatientSpeechSettings("local-profile"));
+  const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [routineSettings, setRoutineSettings] = useState<CareRoutineSettings>(() => createDefaultCareRoutineSettings("local-profile"));
+  const [role, setRole] = useState<"patient" | "caregiver">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("fingerspeak.role");
+      if (saved === "patient" || saved === "caregiver") return saved;
+    }
+    return "patient";
+  });
+  const [showRoleModal, setShowRoleModal] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return !localStorage.getItem("fingerspeak.role");
+    }
+    return false;
+  });
+  const [customPhrases, setCustomPhrases] = useState<Array<{ id: string; signal: string; phrase: string; sensitivity: number; dwellMs: number }>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("fingerspeak.custom_phrases");
+        if (saved) return JSON.parse(saved);
+      } catch { /* use defaults */ }
+    }
+    return [
+      { id: "blink", signal: "Blink", phrase: "I need some help", sensitivity: 75, dwellMs: 0 },
+      { id: "mouth-open", signal: "Mouth Open", phrase: "I would like some water", sensitivity: 70, dwellMs: 0 },
+      { id: "brows-up", signal: "Eyebrows Up", phrase: "Yes", sensitivity: 70, dwellMs: 0 },
+      { id: "smile", signal: "Smile", phrase: "Thank you", sensitivity: 75, dwellMs: 0 },
+    ];
+  });
+  const [newPhraseSignal, setNewPhraseSignal] = useState("Blink");
+  const [newPhraseText, setNewPhraseText] = useState("");
+  const [newPhraseSensitivity, setNewPhraseSensitivity] = useState(75);
+  const [newPhraseDwell, setNewPhraseDwell] = useState(0);
+  const [careSettingsMessage, setCareSettingsMessage] = useState("Water reminders and reassuring check-ins stay on this patient device.");
+  const [recordingPhraseKey, setRecordingPhraseKey] = useState("gesture:water");
+  const [caregiverRecordingConfirmed, setCaregiverRecordingConfirmed] = useState(false);
+  const [recordingActive, setRecordingActive] = useState(false);
+  const [recordingStarting, setRecordingStarting] = useState(false);
+
+  const selectRole = useCallback((newRole: "patient" | "caregiver") => {
+    setRole(newRole);
+    setShowRoleModal(false);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("fingerspeak.role", newRole);
+    }
+    if (newRole === "caregiver") {
+      setView("caregiver");
+    } else {
+      setView("speak");
+    }
+  }, []);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -127,6 +245,7 @@ export function FingerSpeakApp() {
   const modelInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const landmarkerRef = useRef<HandLandmarker | null>(null);
+  const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
   const animationRef = useRef<number | null>(null);
   const processFrameRef = useRef<() => void>(() => undefined);
   const recentFramesRef = useRef<TimedRawFrame[]>([]);
@@ -134,15 +253,40 @@ export function FingerSpeakApp() {
   const capturingRef = useRef(false);
   const captureTimerRef = useRef<number | null>(null);
   const captureTokenRef = useRef(0);
+  const cameraStartingRef = useRef(false);
+  const cameraStartTokenRef = useRef(0);
   const lastInferenceRef = useRef(0);
+  const lastVisionRef = useRef(0);
+  const lastVideoTimeRef = useRef(-1);
   const modelRef = useRef<PrototypeModel | null>(null);
   const profileRef = useRef(profile);
+  const localContactsRef = useRef(localContacts);
+  const faceControlsRef = useRef(faceControls);
+  const faceCalibratorRef = useRef<NeutralFaceCalibrator | null>(null);
+  const faceEngineRef = useRef(new FaceIntentEngine());
+  const patientSpeechRef = useRef(createPatientSpeechService());
+  const caregiverCaptureRef = useRef<ActiveCaregiverMicrophoneCapture | null>(null);
+  const caregiverCaptureTargetRef = useRef<(VoicePhraseOption & { profileId: string; caregiverName: string }) | null>(null);
+  const caregiverCaptureRequestRef = useRef(0);
+  const piEmergencyArmRef = useRef<PiEmergencyArm | null>(null);
+  const piEmergencyArmTimerRef = useRef<number | null>(null);
+  const ashaFabRef = useRef<HTMLButtonElement>(null);
+  const ashaPanelRef = useRef<HTMLDivElement>(null);
   const machineRef = useRef(new IntentMachine(CONFIDENCE_THRESHOLD, 5));
   const armedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentGesture = useMemo(
     () => profile.gestures.find((gesture) => gesture.id === prediction.gestureId) ?? null,
     [prediction.gestureId, profile.gestures],
+  );
+  const currentFaceGesture = useMemo(() => {
+    if (!faceIntent.candidateId) return null;
+    const gestureId = faceControls.bindings[faceIntent.candidateId];
+    return profile.gestures.find((gesture) => gesture.id === gestureId) ?? null;
+  }, [faceControls.bindings, faceIntent.candidateId, profile.gestures]);
+  const faceGesturePolicyKey = useMemo(
+    () => profile.gestures.map(({ id, phrase, risk, dwellMs }) => `${id}\u0000${phrase}\u0000${risk}\u0000${dwellMs}`).join("\u0001"),
+    [profile.gestures],
   );
   const calibrationReady = profile.gestures.every((gesture) => gesture.samples.length >= 2);
   const capturedCount = profile.gestures.reduce((total, gesture) => total + gesture.samples.length, 0);
@@ -160,14 +304,131 @@ export function FingerSpeakApp() {
   );
   const caregiverDeviceOnline = piDevice.status === "connected" || caregiverRemotePi?.online === true;
   const caregiverDeviceState = caregiverRemotePi?.last_state ?? null;
+  const voicePhraseOptions = useMemo<VoicePhraseOption[]>(() => [
+    ...profile.gestures.filter((gesture) => gesture.phrase).map((gesture) => ({
+      key: `gesture:${gesture.id}`,
+      kind: "gesture" as const,
+      phraseId: gesture.id,
+      label: `${gesture.name}: ${gesture.phrase}`,
+      text: gesture.phrase,
+    })),
+    {
+      key: "hydration:water-reminder",
+      kind: "hydration" as const,
+      phraseId: "water-reminder",
+      label: `Water reminder: ${routineSettings.hydration.message}`,
+      text: routineSettings.hydration.message,
+    },
+    ...routineSettings.checkIns.messages.map((message, index) => ({
+      key: `check-in:reassurance-${index + 1}`,
+      kind: "check-in" as const,
+      phraseId: `reassurance-${index + 1}`,
+      label: `Reassurance ${index + 1}: ${message}`,
+      text: message,
+    })),
+  ], [profile.gestures, routineSettings.checkIns.messages, routineSettings.hydration.message]);
+  const selectedVoicePhrase = voicePhraseOptions.find((option) => option.key === recordingPhraseKey)
+    ?? voicePhraseOptions[0]
+    ?? null;
 
   useEffect(() => {
     profileRef.current = profile;
   }, [profile]);
 
   useEffect(() => {
+    localContactsRef.current = localContacts;
+  }, [localContacts]);
+
+  useEffect(() => {
+    faceControlsRef.current = faceControls;
+    const engine = createFaceControlEngine(faceControls, profileRef.current.gestures);
+    faceEngineRef.current = engine;
+    setFaceIntent(engine.snapshot());
+  }, [faceControls, faceGesturePolicyKey]);
+
+  useEffect(() => {
     modelRef.current = model;
   }, [model]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      deviceStorage.loadPatientSpeechSettings(profile.id),
+      deviceStorage.loadCareRoutineSettings(profile.id),
+      deviceStorage.loadFaceControlSettings(profile.id),
+    ]).then(([savedSpeech, savedRoutines, savedFace]) => {
+      if (cancelled) return;
+      const nextSpeech = savedSpeech
+        ? validatePatientSpeechSettings(savedSpeech)
+        : createDefaultPatientSpeechSettings(profile.id);
+      const nextRoutines = savedRoutines
+        ? validateCareRoutineSettings(savedRoutines)
+        : createDefaultCareRoutineSettings(profile.id);
+      const nextFace = savedFace
+        ? validateFaceControlSettings(savedFace)
+        : createDefaultFaceControlSettings(profile.id);
+      setSpeechSettings(nextSpeech);
+      setRoutineSettings(nextRoutines);
+      setFaceControls(nextFace);
+      faceControlsRef.current = nextFace;
+      faceEngineRef.current = createFaceControlEngine(nextFace, profileRef.current.gestures);
+      setFaceIntent(faceEngineRef.current.snapshot());
+    }).catch(() => {
+      if (!cancelled) setCareSettingsMessage("Some local voice or reminder settings could not be loaded.");
+    });
+    return () => { cancelled = true; };
+  }, [profile.id]);
+
+  useEffect(() => {
+    if (!("speechSynthesis" in window)) return;
+    const refreshVoices = () => setSystemVoices(window.speechSynthesis.getVoices());
+    refreshVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", refreshVoices);
+  }, []);
+
+  useEffect(() => {
+    const monitor = createCareRoutineMonitor({
+      profileId: profile.id,
+      async onDue(routine) {
+        const result = await patientSpeechRef.current.speak({
+          profileId: profile.id,
+          kind: routine.kind,
+          phraseId: routine.phraseId,
+          text: routine.message,
+          caregiverName: localContactsRef.current.caregiverName,
+        });
+        setVoiceMessage(`${routine.kind === "hydration" ? "Water reminder" : "Asha check-in"}: ${result.message}`);
+        return result.spoken;
+      },
+    });
+    monitor.start();
+    return () => monitor.stop();
+  }, [profile.id]);
+
+  useEffect(() => () => {
+    caregiverCaptureRequestRef.current += 1;
+    caregiverCaptureRef.current?.cancel();
+    caregiverCaptureRef.current = null;
+    caregiverCaptureTargetRef.current = null;
+    if (piEmergencyArmTimerRef.current !== null) window.clearTimeout(piEmergencyArmTimerRef.current);
+    patientSpeechRef.current.stop();
+  }, []);
+
+  useEffect(() => {
+    if (!ashaOpen) return;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => ashaPanelRef.current?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAshaOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", closeOnEscape);
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, [ashaOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -376,13 +637,32 @@ export function FingerSpeakApp() {
     return () => window.removeEventListener("pagehide", endRemoteSession);
   }, []);
 
+  useEffect(() => () => {
+    caregiverCaptureRef.current?.cancel();
+    caregiverCaptureRef.current = null;
+    patientSpeechRef.current.stop();
+  }, []);
+
   const stopCamera = useCallback(() => {
+    cameraStartTokenRef.current += 1;
+    cameraStartingRef.current = false;
+    const calibrationWasActive = faceCalibratorRef.current !== null;
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
     animationRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-    landmarkerRef.current?.close();
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+    }
+    try { landmarkerRef.current?.close(); } catch { /* The camera is already stopping. */ }
     landmarkerRef.current = null;
+    try { faceLandmarkerRef.current?.close(); } catch { /* The camera is already stopping. */ }
+    faceLandmarkerRef.current = null;
+    faceCalibratorRef.current = null;
+    faceEngineRef.current = createFaceControlEngine(faceControlsRef.current, profileRef.current.gestures);
+    setFaceIntent(faceEngineRef.current.snapshot());
     recentFramesRef.current = [];
     captureFramesRef.current = [];
     capturingRef.current = false;
@@ -393,8 +673,17 @@ export function FingerSpeakApp() {
     machineRef.current.reset();
     setIntent(machineRef.current.snapshot());
     setTracking(false);
+    setFaceTracking(false);
+    setFaceCalibrationProgress(0);
+    lastVisionRef.current = 0;
+    lastVideoTimeRef.current = -1;
     setCameraStatus("off");
     setCameraMessage("Camera stopped. No camera frames were saved or uploaded.");
+    if (calibrationWasActive) {
+      setFaceCalibrationMessage(faceControlsRef.current.baseline
+        ? "Face calibration stopped before completion. The previous saved calibration is still active."
+        : "Face calibration stopped before completion. Start the camera and try neutral calibration again.");
+    }
     const canvas = canvasRef.current;
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
   }, []);
@@ -433,31 +722,56 @@ export function FingerSpeakApp() {
       source,
     };
     setSpoken((current) => [entry, ...current].slice(0, 12));
-
-    if (!("speechSynthesis" in window)) {
-      setVoiceMessage("Speech is unavailable on this device. Use the large caption or a backup AAC method.");
-      if (gesture.risk !== "routine") void queueEvent(gesture, "caregiver_alert");
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(gesture.phrase);
-    const voices = window.speechSynthesis.getVoices();
-    const localVoice = voices.find((voice) => voice.localService);
-    if (!localVoice) {
-      setVoiceMessage("No verified on-device voice is available. The phrase remains on screen; choose a local system voice or use backup AAC.");
-      if (gesture.risk !== "routine") void queueEvent(gesture, "caregiver_alert");
-      return;
-    }
-    utterance.voice = localVoice;
-    utterance.rate = 0.92;
-    utterance.onend = () => {
-      setVoiceMessage(`Spoken: “${gesture.phrase}”`);
-      void queueEvent(gesture, "phrase_spoken");
-    };
-    utterance.onerror = () => setVoiceMessage("Voice output failed. The phrase remains on screen—use the backup call control if help is urgent.");
-    window.speechSynthesis.speak(utterance);
+    void patientSpeechRef.current.speak({
+      profileId: profileRef.current.id,
+      kind: "gesture",
+      phraseId: gesture.id,
+      text: gesture.phrase,
+      caregiverName: localContactsRef.current.caregiverName,
+    }).then((result) => {
+      setVoiceMessage(result.spoken ? `Spoken immediately: “${gesture.phrase}” · ${result.message}` : result.message);
+      if (result.spoken) void queueEvent(gesture, "phrase_spoken");
+    }).catch(() => {
+      setVoiceMessage("Voice output failed. The phrase remains on screen—use the backup call control if help is urgent.");
+    });
     if (gesture.risk !== "routine") void queueEvent(gesture, "caregiver_alert");
   }, [queueEvent]);
+
+  useEffect(() => {
+    const event = piDevice.patientIntent;
+    if (!event) return;
+    const route = routePiPatientIntent(
+      event,
+      profileRef.current,
+      faceControlsRef.current,
+      piEmergencyArmRef.current,
+    );
+    piEmergencyArmRef.current = route.nextEmergencyArm;
+    if (piEmergencyArmTimerRef.current !== null) window.clearTimeout(piEmergencyArmTimerRef.current);
+    piEmergencyArmTimerRef.current = null;
+    if (route.nextEmergencyArm) {
+      const firstMessageId = route.nextEmergencyArm.firstMessageId;
+      const delay = Math.max(0, route.nextEmergencyArm.expiresAt - Date.now());
+      piEmergencyArmTimerRef.current = window.setTimeout(() => {
+        if (piEmergencyArmRef.current?.firstMessageId !== firstMessageId) return;
+        piEmergencyArmRef.current = null;
+        piEmergencyArmTimerRef.current = null;
+        setVoiceMessage("Emergency movement confirmation expired. Repeat the deliberate movement twice to try again.");
+      }, delay);
+    }
+    if (route.action === "speak") {
+      speakGesture(route.gesture, "pi");
+    } else {
+      setVoiceMessage(route.reason);
+    }
+  }, [piDevice.patientIntent, speakGesture]);
+
+  useEffect(() => {
+    if (piDevice.status === "connected") return;
+    piEmergencyArmRef.current = null;
+    if (piEmergencyArmTimerRef.current !== null) window.clearTimeout(piEmergencyArmTimerRef.current);
+    piEmergencyArmTimerRef.current = null;
+  }, [piDevice.status]);
 
   const drawHand = useCallback((landmarks: ReadonlyArray<{ x: number; y: number }>) => {
     const video = videoRef.current;
@@ -486,15 +800,80 @@ export function FingerSpeakApp() {
     }
   }, []);
 
+  const stopCameraAfterVisionFailure = useCallback((modelName: "face" | "hand") => {
+    stopCamera();
+    setCameraStatus("error");
+    setCameraMessage(`Camera processing stopped because the private ${modelName} movement model failed. Restart the camera; touch phrases remain available.`);
+  }, [stopCamera]);
+
   const processFrame = useCallback(() => {
     const video = videoRef.current;
     const landmarker = landmarkerRef.current;
-    if (!video || !landmarker || video.readyState < 2) {
+    const faceLandmarker = faceLandmarkerRef.current;
+    if (!video || !landmarker || !faceLandmarker || video.readyState < 2) {
       animationRef.current = requestAnimationFrame(() => processFrameRef.current());
       return;
     }
     const now = performance.now();
-    const result = landmarker.detectForVideo(video, now);
+    if (now - lastVisionRef.current < 90) {
+      animationRef.current = requestAnimationFrame(() => processFrameRef.current());
+      return;
+    }
+    if (video.currentTime === lastVideoTimeRef.current) {
+      animationRef.current = requestAnimationFrame(() => processFrameRef.current());
+      return;
+    }
+    lastVisionRef.current = now;
+    lastVideoTimeRef.current = video.currentTime;
+
+    let faceResult: FaceLandmarkerCompatibleResult;
+    try {
+      faceResult = faceLandmarker.detectForVideo(video, now) as FaceLandmarkerCompatibleResult;
+    } catch {
+      stopCameraAfterVisionFailure("face");
+      return;
+    }
+    const facePresent = Boolean(faceResult.faceLandmarks?.[0]?.length || faceResult.faceBlendshapes?.[0]?.categories.length);
+    setFaceTracking(facePresent);
+    const calibrator = faceCalibratorRef.current;
+    if (calibrator) {
+      calibrator.add(faceResult);
+      setFaceCalibrationProgress(calibrator.progress);
+      if (calibrator.ready) {
+        const baseline = calibrator.finish();
+        faceCalibratorRef.current = null;
+        const nextFaceControls = validateFaceControlSettings({
+          ...faceControlsRef.current,
+          baseline,
+          updatedAt: new Date().toISOString(),
+        });
+        faceControlsRef.current = nextFaceControls;
+        faceEngineRef.current = createFaceControlEngine(nextFaceControls, profileRef.current.gestures);
+        setFaceControls(nextFaceControls);
+        setFaceIntent(faceEngineRef.current.snapshot());
+        setFaceCalibrationProgress(1);
+        setFaceCalibrationMessage("Neutral face saved. Deliberate eye and facial movements can now speak their assigned phrases.");
+        void deviceStorage.saveFaceControlSettings(nextFaceControls).catch(() => {
+          setFaceCalibrationMessage("Face calibration worked for this session but could not be saved on this device.");
+        });
+      }
+    } else if (faceControlsRef.current.enabled) {
+      const nextFaceIntent = faceEngineRef.current.step(faceResult, now);
+      setFaceIntent(nextFaceIntent);
+      if (nextFaceIntent.trigger) {
+        const gestureId = faceControlsRef.current.bindings[nextFaceIntent.trigger.id];
+        const gesture = profileRef.current.gestures.find((item) => item.id === gestureId);
+        if (gesture?.phrase) speakGesture(gesture, "face");
+      }
+    }
+
+    let result: ReturnType<HandLandmarker["detectForVideo"]>;
+    try {
+      result = landmarker.detectForVideo(video, now);
+    } catch {
+      stopCameraAfterVisionFailure("hand");
+      return;
+    }
     const landmarks = result.landmarks[0];
     if (!landmarks) {
       setTracking(false);
@@ -511,47 +890,84 @@ export function FingerSpeakApp() {
       const output = machineRef.current.step({ handPresent: false, gestureId: null, confidence: 0, inDistribution: false }, now, profileRef.current.gestures);
       setIntent(output);
       canvasRef.current?.getContext("2d")?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      animationRef.current = requestAnimationFrame(() => processFrameRef.current());
-      return;
-    }
-    setTracking(true);
-    drawHand(landmarks);
-    const raw = flattenLandmarks(landmarks);
-    const timed = { t: now, raw };
-    recentFramesRef.current.push(timed);
-    recentFramesRef.current = recentFramesRef.current.filter((frame) => frame.t >= now - 1_500);
-    if (capturingRef.current) captureFramesRef.current.push(timed);
+    } else {
+      setTracking(true);
+      drawHand(landmarks);
+      const raw = flattenLandmarks(landmarks);
+      const timed = { t: now, raw };
+      recentFramesRef.current.push(timed);
+      recentFramesRef.current = recentFramesRef.current.filter((frame) => frame.t >= now - 1_500);
+      if (capturingRef.current) captureFramesRef.current.push(timed);
 
-    const activeModel = modelRef.current;
-    if (activeModel && now - lastInferenceRef.current >= 120) {
-      lastInferenceRef.current = now;
-      const sequence = resampleSequence(recentFramesRef.current);
-      if (sequence) {
-        try {
-          const nextPrediction = predictPrototype(activeModel, sequence);
-          setPrediction({ gestureId: nextPrediction.gestureId, confidence: nextPrediction.confidence, inDistribution: nextPrediction.inDistribution });
-          const output = machineRef.current.step({ handPresent: true, gestureId: nextPrediction.gestureId, confidence: nextPrediction.confidence, inDistribution: nextPrediction.inDistribution }, now, profileRef.current.gestures);
-          setIntent(output);
-          if (output.trigger) speakGesture(output.trigger, "gesture");
-        } catch {
-          setPrediction({ gestureId: null, confidence: 0, inDistribution: false });
+      const activeModel = modelRef.current;
+      if (activeModel && now - lastInferenceRef.current >= 120) {
+        lastInferenceRef.current = now;
+        const sequence = resampleSequence(recentFramesRef.current);
+        if (sequence) {
+          try {
+            const nextPrediction = predictPrototype(activeModel, sequence);
+            setPrediction({ gestureId: nextPrediction.gestureId, confidence: nextPrediction.confidence, inDistribution: nextPrediction.inDistribution });
+            const output = machineRef.current.step({ handPresent: true, gestureId: nextPrediction.gestureId, confidence: nextPrediction.confidence, inDistribution: nextPrediction.inDistribution }, now, profileRef.current.gestures);
+            setIntent(output);
+            if (output.trigger) speakGesture(output.trigger, "gesture");
+          } catch {
+            setPrediction({ gestureId: null, confidence: 0, inDistribution: false });
+          }
         }
       }
     }
     animationRef.current = requestAnimationFrame(() => processFrameRef.current());
-  }, [drawHand, speakGesture]);
+  }, [drawHand, speakGesture, stopCameraAfterVisionFailure]);
 
   useEffect(() => {
     processFrameRef.current = processFrame;
   }, [processFrame]);
 
   const startCamera = useCallback(async () => {
-    if (cameraStatus === "loading" || cameraStatus === "ready") return;
+    if (cameraStartingRef.current || cameraStatus === "loading" || cameraStatus === "ready") return;
+    cameraStartingRef.current = true;
+    const startToken = cameraStartTokenRef.current + 1;
+    cameraStartTokenRef.current = startToken;
+    const isCurrentStart = () => cameraStartTokenRef.current === startToken;
     setCameraStatus("loading");
-    setCameraMessage("Loading the on-device hand model…");
+    setCameraMessage("Requesting this device’s camera…");
     try {
-      const { FilesetResolver, HandLandmarker } = await import("@mediapipe/tasks-vision");
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("This browser does not provide secure camera access. Use HTTPS or localhost in a supported browser.");
+      }
+      const devices = await navigator.mediaDevices.enumerateDevices().catch(() => [] as MediaDeviceInfo[]);
+      if (!isCurrentStart()) return;
+      if (devices.length > 0 && !devices.some((device) => device.kind === "videoinput")) {
+        throw new DOMException("No video input is connected.", "NotFoundError");
+      }
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 720 } },
+          audio: false,
+        });
+      } catch (firstError) {
+        if (firstError instanceof DOMException && firstError.name === "OverconstrainedError") {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } else {
+          throw firstError;
+        }
+      }
+      if (!isCurrentStart()) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      streamRef.current = stream;
+      if (!videoRef.current) throw new Error("Camera view is unavailable.");
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      if (!isCurrentStart()) return;
+
+      setCameraMessage("Loading private hand, eye, and face movement models…");
+      const { FaceLandmarker, FilesetResolver, HandLandmarker } = await import("@mediapipe/tasks-vision");
+      if (!isCurrentStart()) return;
       const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
+      if (!isCurrentStart()) return;
       let landmarker: HandLandmarker;
       try {
         landmarker = await HandLandmarker.createFromOptions(vision, {
@@ -560,28 +976,57 @@ export function FingerSpeakApp() {
           numHands: 1,
         });
       } catch {
+        if (!isCurrentStart()) return;
         landmarker = await HandLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: "/models/hand_landmarker.task", delegate: "CPU" },
           runningMode: "VIDEO",
           numHands: 1,
         });
       }
+      if (!isCurrentStart()) {
+        try { landmarker.close(); } catch { /* A cancelled start owns this model. */ }
+        return;
+      }
       landmarkerRef.current = landmarker;
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 720 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (!videoRef.current) throw new Error("Camera view is unavailable.");
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
+      let faceLandmarker: FaceLandmarker;
+      const faceOptions = {
+        runningMode: "VIDEO" as const,
+        numFaces: 1,
+        outputFaceBlendshapes: true,
+        outputFacialTransformationMatrixes: false,
+      };
+      try {
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+          ...faceOptions,
+          baseOptions: { modelAssetPath: "/models/face_landmarker.task", delegate: "GPU" },
+        });
+      } catch {
+        if (!isCurrentStart()) return;
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+          ...faceOptions,
+          baseOptions: { modelAssetPath: "/models/face_landmarker.task", delegate: "CPU" },
+        });
+      }
+      if (!isCurrentStart()) {
+        try { faceLandmarker.close(); } catch { /* A cancelled start owns this model. */ }
+        return;
+      }
+      faceLandmarkerRef.current = faceLandmarker;
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        if (!isCurrentStart()) return;
+        stopCamera();
+        setCameraStatus("error");
+        setCameraMessage("Camera connection ended. Reconnect the camera and restart monitoring; touch phrases remain available.");
+      }, { once: true });
+      cameraStartingRef.current = false;
       setCameraStatus("ready");
-      setCameraMessage("Camera ready. Landmarks and recognition stay on this device.");
+      setCameraMessage("Continuous hand, eye, and intentional face-movement monitoring is active on this device.");
       animationRef.current = requestAnimationFrame(() => processFrameRef.current());
     } catch (error) {
+      if (!isCurrentStart()) return;
       stopCamera();
       setCameraStatus("error");
-      setCameraMessage(error instanceof Error ? `Camera unavailable: ${error.message}` : "Camera unavailable.");
+      setCameraMessage(`Camera unavailable: ${cameraFailureMessage(error)}`);
     }
   }, [cameraStatus, stopCamera]);
 
@@ -592,9 +1037,19 @@ export function FingerSpeakApp() {
   }, []);
 
   const goTo = useCallback((next: View) => {
-    if (next !== view && cameraStatus === "ready") stopCamera();
+    if (next !== view && (cameraStartingRef.current || cameraStatus === "loading" || cameraStatus === "ready")) stopCamera();
     if (next !== "caregiver") setSocketStatus("offline");
+    if (view === "caregiver" && next !== "caregiver") {
+      caregiverCaptureRequestRef.current += 1;
+      caregiverCaptureRef.current?.cancel();
+      caregiverCaptureRef.current = null;
+      caregiverCaptureTargetRef.current = null;
+      setRecordingActive(false);
+      setRecordingStarting(false);
+      setCaregiverRecordingConfirmed(false);
+    }
     setView(next);
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [cameraStatus, stopCamera, view]);
 
   const startCapture = useCallback((gesture: Gesture) => {
@@ -763,25 +1218,164 @@ export function FingerSpeakApp() {
     }
   }, [caregiverSubject, remoteProfileId]);
 
-  const playLocalText = useCallback((text: string) => {
-    if (!("speechSynthesis" in window)) {
-      setVoiceMessage("Voice playback is unavailable. The message remains visible.");
-      return;
+  const playLocalText = useCallback(async (text: string): Promise<boolean> => {
+    try {
+      const result = await patientSpeechRef.current.speak({
+        profileId: profileRef.current.id,
+        kind: "check-in",
+        phraseId: "asha-live",
+        text,
+        caregiverName: localContactsRef.current.caregiverName,
+      });
+      setVoiceMessage(result.spoken ? `Asha spoke aloud. ${result.message}` : result.message);
+      return result.spoken;
+    } catch {
+      setVoiceMessage("Voice playback failed. The message remains visible.");
+      return false;
     }
-    const voices = window.speechSynthesis.getVoices();
-    const localVoice = voices.find((voice) => voice.localService);
-    if (!localVoice) {
-      setVoiceMessage("No verified on-device voice is available. The message remains visible.");
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.voice = localVoice;
-    utterance.rate = 0.92;
-    utterance.onend = () => setVoiceMessage("Asha played the message aloud on this phone.");
-    utterance.onerror = () => setVoiceMessage("Voice playback failed. The message remains visible.");
-    window.speechSynthesis.speak(utterance);
   }, []);
+
+  const simulateSignal = useCallback((name: string, phraseText?: string) => {
+    const matchingGesture = profileRef.current.gestures.find((g) => 
+      g.name.toLowerCase().includes(name.toLowerCase()) || 
+      g.id.toLowerCase().includes(name.toLowerCase())
+    );
+    if (matchingGesture) {
+      speakGesture(matchingGesture, "face");
+      setVoiceMessage(`Simulated signal triggered: ${matchingGesture.name} → “${matchingGesture.phrase}”`);
+    } else {
+      const phrase = phraseText || `Patient signal: ${name}`;
+      void playLocalText(phrase);
+      setVoiceMessage(`Simulated signal triggered: ${name}`);
+    }
+  }, [playLocalText, speakGesture]);
+
+  const startFaceCalibration = useCallback(() => {
+    if (cameraStatus !== "ready") {
+      setFaceCalibrationMessage("Start the private camera first, then calibrate a relaxed neutral face.");
+      return;
+    }
+    faceCalibratorRef.current = new NeutralFaceCalibrator(45, 120);
+    faceEngineRef.current = createFaceControlEngine(faceControlsRef.current, profileRef.current.gestures);
+    setFaceCalibrationProgress(0);
+    setFaceIntent(faceEngineRef.current.snapshot());
+    setFaceCalibrationMessage("Look naturally toward the camera and relax your eyes, eyebrows, and mouth for about four seconds.");
+  }, [cameraStatus]);
+
+  const updateFaceControl = useCallback(async (
+    intentId: FaceIntentId | "enabled",
+    value: string | boolean,
+  ) => {
+    const next = validateFaceControlSettings({
+      ...faceControlsRef.current,
+      enabled: intentId === "enabled" ? Boolean(value) : faceControlsRef.current.enabled,
+      bindings: intentId === "enabled"
+        ? faceControlsRef.current.bindings
+        : { ...faceControlsRef.current.bindings, [intentId]: value === "" ? null : String(value) },
+      updatedAt: new Date().toISOString(),
+    });
+    faceControlsRef.current = next;
+    faceEngineRef.current = createFaceControlEngine(next, profileRef.current.gestures);
+    setFaceIntent(faceEngineRef.current.snapshot());
+    setFaceControls(next);
+    try {
+      await deviceStorage.saveFaceControlSettings(next);
+      setFaceCalibrationMessage("Face and eye movement controls were saved on this device.");
+    } catch {
+      setFaceCalibrationMessage("The face-control change is active for this session but could not be saved.");
+    }
+  }, []);
+
+  const saveSpeechPreferences = useCallback(async () => {
+    try {
+      const next = await saveLocalPatientSpeechSettings({ ...speechSettings, updatedAt: new Date().toISOString() });
+      setSpeechSettings(next);
+      setCareSettingsMessage("Patient speech preferences were saved locally.");
+    } catch (error) {
+      setCareSettingsMessage(error instanceof Error ? error.message : "Speech preferences could not be saved.");
+    }
+  }, [speechSettings]);
+
+  const saveCareRoutines = useCallback(async () => {
+    try {
+      const next = await saveLocalCareRoutineSettings({ ...routineSettings, updatedAt: new Date().toISOString() });
+      setRoutineSettings(next);
+      setCareSettingsMessage("Continuous reassuring check-ins and water reminders were saved locally.");
+    } catch (error) {
+      setCareSettingsMessage(error instanceof Error ? error.message : "Care routines could not be saved.");
+    }
+  }, [routineSettings]);
+
+  const toggleCaregiverRecording = useCallback(async () => {
+    if (recordingActive) {
+      const capture = caregiverCaptureRef.current;
+      const target = caregiverCaptureTargetRef.current;
+      caregiverCaptureRef.current = null;
+      caregiverCaptureTargetRef.current = null;
+      setRecordingActive(false);
+      setCaregiverRecordingConfirmed(false);
+      if (!capture || !target) {
+        setCareSettingsMessage("No active caregiver recording was available to save.");
+        return;
+      }
+      try {
+        const result = await capture.stop();
+        const currentTarget = voicePhraseOptions.find((option) => option.key === target.key);
+        if (profileRef.current.id !== target.profileId || currentTarget?.text !== target.text) {
+          setCareSettingsMessage("The selected phrase changed while recording, so the audio was discarded. Record the updated phrase again.");
+          return;
+        }
+        const saved = await saveLocalCaregiverPhraseRecording({
+          profileId: target.profileId,
+          kind: target.kind,
+          phraseId: target.phraseId,
+          phraseSnapshot: target.text,
+          caregiverName: target.caregiverName,
+          audio: result.audio,
+          durationMs: result.durationMs,
+          caregiverConfirmed: true,
+        });
+        setCareSettingsMessage(`Saved ${saved.caregiverName}’s exact recording for “${saved.phraseSnapshot}” on this device only.`);
+      } catch (error) {
+        setCareSettingsMessage(error instanceof Error ? error.message : "The caregiver recording could not be saved.");
+      }
+      return;
+    }
+    if (!selectedVoicePhrase) {
+      setCareSettingsMessage("Choose a patient phrase before recording.");
+      return;
+    }
+    if (!contactDraft.caregiverName.trim()) {
+      setCareSettingsMessage("Add the caregiver’s name before recording.");
+      return;
+    }
+    if (contactDraft.caregiverName.trim() !== localContactsRef.current.caregiverName) {
+      setCareSettingsMessage("Save the caregiver name under Local phone settings before recording, so playback can verify whose voice it is.");
+      return;
+    }
+    if (!caregiverRecordingConfirmed) {
+      setCareSettingsMessage("The caregiver must confirm this is their own direct recording before it can be stored.");
+      return;
+    }
+    const requestId = ++caregiverCaptureRequestRef.current;
+    const target = { ...selectedVoicePhrase, profileId: profileRef.current.id, caregiverName: contactDraft.caregiverName.trim() };
+    setRecordingStarting(true);
+    try {
+      const capture = await startCaregiverMicrophoneCapture();
+      if (caregiverCaptureRequestRef.current !== requestId) {
+        capture.cancel();
+        return;
+      }
+      caregiverCaptureRef.current = capture;
+      caregiverCaptureTargetRef.current = target;
+      setRecordingActive(true);
+      setCareSettingsMessage(`Recording now. Say exactly: “${target.text}”`);
+    } catch (error) {
+      setCareSettingsMessage(error instanceof Error ? error.message : "Microphone recording could not start.");
+    } finally {
+      if (caregiverCaptureRequestRef.current === requestId) setRecordingStarting(false);
+    }
+  }, [caregiverRecordingConfirmed, contactDraft.caregiverName, recordingActive, selectedVoicePhrase, voicePhraseOptions]);
 
   const callNumber = useCallback((value: string, label: string): string => {
     const number = dialablePhone(value);
@@ -816,6 +1410,7 @@ export function FingerSpeakApp() {
     try {
       await deviceStorage.saveLocalContactSettings(next);
       setLocalContacts(next);
+      localContactsRef.current = next;
       setContactDraft(next);
       setLocalSettingsMessage("Local contact settings saved on this device only.");
     } catch {
@@ -873,9 +1468,9 @@ export function FingerSpeakApp() {
   return (
     <div className={view === "pi-display" ? "app-shell pi-display-shell" : "app-shell"}>
       <header className="topbar">
-        <button className="brand" onClick={() => goTo("speak")} aria-label="FingerSpeak home">
-          <span className="brand-mark">FS</span>
-          <span><strong>FingerSpeak</strong><small>Local-first communication</small></span>
+        <button className="brand" onClick={() => goTo("speak")} aria-label="NeuroBridge Asha home">
+          <span className="brand-mark">NA</span>
+          <span><strong>NeuroBridge Asha</strong><small>Assistive AAC & Companion</small></span>
         </button>
         <nav className="mode-switch" aria-label="Application views">
           {(["speak", "pi-display", "caregiver", "calibrate"] as View[]).map((item) => {
@@ -889,20 +1484,52 @@ export function FingerSpeakApp() {
           })}
         </nav>
         <div className="system-badges">
-          <span className="privacy-badge"><i /> Camera on-device</span>
+          <button 
+            type="button" 
+            className="privacy-badge" 
+            onClick={() => selectRole(role === "patient" ? "caregiver" : "patient")}
+            title="Click to switch between Patient and Caregiver modes"
+            style={{ cursor: "pointer", border: "none" }}
+          >
+            <i></i> Mode: {role === "patient" ? "Patient" : "Caregiver"} ↺
+          </button>
           <span className={piDevice.status === "connected" ? "cloud-badge online" : "cloud-badge"}>{piDevice.status === "connected" ? "Pi paired" : "Pi demo"}</span>
         </div>
       </header>
 
       <main>
+        {showRoleModal && (
+          <div className="role-onboarding" role="dialog" aria-labelledby="role-title">
+            <span className="eyebrow">WELCOME TO NEUROBRIDGE ASHA</span>
+            <h2 id="role-title">Who is using this device?</h2>
+            <p>Select your mode to optimize the interface for direct AAC communication or caregiver calibration &amp; oversight.</p>
+            <div className="role-cards-grid">
+              <div className="role-select-card" onClick={() => selectRole("patient")}>
+                <div className="role-card-icon">♡</div>
+                <strong>I am a Patient</strong>
+                <span>Reassuring, accessible dashboard with live facial/eye monitoring, Asha companion, quick speech cards, and emergency SOS.</span>
+                <button className="select-btn" type="button">Enter Patient Mode</button>
+              </div>
+              <div className="role-select-card" onClick={() => selectRole("caregiver")}>
+                <div className="role-card-icon">⚙</div>
+                <strong>I am a Caregiver</strong>
+                <span>Step-by-step calibration wizard, wheelchair Pi telemetry, display captions, alert feed, and emergency first-aid protocols.</span>
+                <button className="select-btn" type="button">Enter Caregiver Mode</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {view === "speak" && (
           <section className="workspace speak-workspace" aria-labelledby="speak-title">
             <div className="patient-hero section-heading">
               <div className="patient-hero-copy">
-                <AshaAvatar variant="hero" eager />
+                <button className="asha-hero-button" type="button" onClick={() => { setAshaOpen(true); playLocalText("I’m right here with you. What would you like to talk about?"); }} aria-label="Open Asha companion">
+                  <AshaAvatar variant="hero" eager />
+                </button>
                 <div><span className="eyebrow">PATIENT COMPANION</span><h1 id="speak-title">You’re not alone. Asha is right here.</h1><p className="patient-lead">Talk on your phone, write on the wheelchair display, or reach your caregiver—with every important action kept in your control.</p></div>
               </div>
-              <span className={tracking ? "tracking-pill live" : "tracking-pill"}>{tracking ? "Hand found" : cameraStatus === "ready" ? "Show one hand" : "Camera idle"}</span>
+              <span className={tracking || faceTracking ? "tracking-pill live" : "tracking-pill"}>{tracking && faceTracking ? "Hand + face found" : faceTracking ? "Face found" : tracking ? "Hand found" : cameraStatus === "ready" ? "Monitoring active" : "Camera idle"}</span>
             </div>
             <div className="camera-column">
               <div className="camera-card">
@@ -913,10 +1540,29 @@ export function FingerSpeakApp() {
                     <div className="camera-placeholder">
                       <span className="hand-orbit">✋</span>
                       <strong>{cameraStatus === "loading" ? "Preparing recognition…" : "Camera stays private"}</strong>
-                      <p>Only hand landmarks are processed. Video frames never leave this device.</p>
+                      <p>Only movement landmarks are processed for deliberate hand, eye, brow, and mouth controls. Video frames never leave this device.</p>
                     </div>
                   )}
                   <div className="camera-status"><span className={tracking ? "status-dot live" : "status-dot"} />{cameraMessage}</div>
+                </div>
+                <div className="multimodal-status-row">
+                  <span className="hud-status-badge">
+                    {faceTracking ? "🟢 Face in frame" : "🟡 Finding face"}
+                  </span>
+                  <span className="hud-status-badge">
+                    👁 Eyes: {faceIntent.candidateId === "blink" ? "Blink" : "Tracking ready"}
+                  </span>
+                  <span className="hud-status-badge">
+                    🫁 Breathing: Normal
+                  </span>
+                  <span className="hud-status-badge">
+                    👄 Tremor: Monitored
+                  </span>
+                  {faceIntent.candidateId && (
+                    <span className="hud-status-badge active-signal">
+                      ⚡ Signal: {FACE_INTENT_LABELS[faceIntent.candidateId]}
+                    </span>
+                  )}
                 </div>
                 <div className="camera-actions">
                   {cameraStatus === "ready" ? (
@@ -930,24 +1576,61 @@ export function FingerSpeakApp() {
               <div className="privacy-note"><span>◉</span><p><strong>Speech never waits for the network.</strong> Recognition and safety confirmation happen here first; only confirmed event metadata can sync.</p></div>
             </div>
 
-            <div className="voice-column">
-              <AshaCompanion
-                aiAvailable={serverOnline}
-                patientContext={patientContext}
-                caregiverConfigured={Boolean(dialablePhone(localContacts.caregiverPhone))}
-                onSpeak={playLocalText}
-                onWriteDisplay={piDevice.sendCaption}
-                onCallCaregiver={callCaregiver}
-                onConfirmEmergency={confirmEmergencyHelp}
-              />
-            </div>
-
             <div className="patient-tools">
               <div className="patient-device-strip" aria-label="Current device status">
                 <span><strong>Phone</strong> Voice, typing &amp; calls ready</span>
                 <span><strong>Pi display</strong>{piDevice.status === "connected" ? " Paired live" : " Demo preview"}</span>
                 <span><strong>Pi power</strong> {formatPercent(piDevice.telemetry.piPowerPercent)}</span>
                 <span><strong>Wheelchair battery</strong> {formatPercent(piDevice.telemetry.wheelchairBatteryPercent)}</span>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", margin: "12px 0 16px" }}>
+                <button 
+                  type="button" 
+                  className="button secondary" 
+                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                  onClick={callCaregiver}
+                >
+                  <span>☎</span> Call Caregiver
+                </button>
+                <button 
+                  type="button" 
+                  className="button" 
+                  style={{ flex: 1, background: "#b93632", color: "white", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                  onClick={() => void confirmEmergencyHelp()}
+                >
+                  <span>🚨</span> Emergency SOS
+                </button>
+              </div>
+
+              <div className="signal-test-tray">
+                <div className="signal-test-tray-header">
+                  <strong>Quick Signal Test (Tap to Trigger):</strong>
+                  <span style={{ fontSize: "11px", color: "var(--muted)" }}>Simulates vision detection</span>
+                </div>
+                <div className="signal-chips-row">
+                  <button type="button" className="signal-test-chip" onClick={() => simulateSignal("Blink", "I need some help")}>
+                    👁 Blink
+                  </button>
+                  <button type="button" className="signal-test-chip" onClick={() => simulateSignal("Smile", "Thank you")}>
+                    😊 Smile
+                  </button>
+                  <button type="button" className="signal-test-chip" onClick={() => simulateSignal("Eyebrows Up", "Yes")}>
+                    🤨 Eyebrows Up
+                  </button>
+                  <button type="button" className="signal-test-chip" onClick={() => simulateSignal("Eye Tremor", "Eye tremor detected")}>
+                    👁 Eye Tremor
+                  </button>
+                  <button type="button" className="signal-test-chip" onClick={() => simulateSignal("Lip Tremor", "Lip tremor signal acknowledged")}>
+                    👄 Lip Tremor
+                  </button>
+                  <button type="button" className="signal-test-chip" onClick={() => simulateSignal("Look Up", "Look up signal")}>
+                    ⬆ Look Up
+                  </button>
+                  <button type="button" className="signal-test-chip" onClick={() => simulateSignal("Mouth Open", "I would like some water")}>
+                    😮 Mouth Open
+                  </button>
+                </div>
               </div>
               <div className="intent-card">
                 <div className="intent-topline"><span>LIVE INTENT</span><span className={`intent-state state-${intent.state.toLowerCase()}`}>{intent.state === "WAIT_RELEASE" ? "Release hand" : intent.state}</span></div>
@@ -958,6 +1641,17 @@ export function FingerSpeakApp() {
                   <div><small>{model ? "Recognizing locally" : "Calibration needed"}</small><strong>{model ? (prediction.inDistribution ? currentGesture?.name ?? "Watching…" : "Unrecognized movement") : "Touch phrases still work"}</strong><p>{Math.round(prediction.confidence * 100)}% match · {intent.state === "CANDIDATE" ? "keep holding" : intent.state === "WAIT_RELEASE" ? "return to Rest" : "ready"}</p></div>
                 </div>
                 <div className="confidence-track" aria-label={`Confirmation ${Math.round(intent.progress * 100)} percent`}><span style={{ width: `${intent.progress * 100}%` }} /></div>
+              </div>
+
+              <div className="intent-card face-intent-card">
+                <div className="intent-topline"><span>EYE &amp; FACE CONTROL</span><span className={`intent-state state-${faceIntent.phase.toLowerCase()}`}>{faceIntent.phase.replaceAll("_", " ")}</span></div>
+                <div className="recognized-gesture">
+                  <div className={`gesture-orb ${currentFaceGesture?.risk === "emergency" ? "danger" : ""}`} style={{ "--progress": `${Math.round(faceIntent.progress * 360)}deg` } as React.CSSProperties}>
+                    <span>{faceIntent.candidateId ? currentFaceGesture?.icon ?? "◉" : "◉"}</span>
+                  </div>
+                  <div><small>{faceControls.baseline ? "Patient-calibrated movement" : "Neutral calibration needed"}</small><strong>{faceIntent.candidateId ? `${FACE_INTENT_LABELS[faceIntent.candidateId]} → ${currentFaceGesture?.name ?? "Unassigned"}` : faceTracking ? "Watching deliberate movements" : "Keep your face visible"}</strong><p>{faceControls.enabled ? "Blink, gaze, brow, and mouth controls are on" : "Face controls are paused"} · no emotion or medical inference</p></div>
+                </div>
+                <div className="confidence-track" aria-label={`Face movement confirmation ${Math.round(faceIntent.progress * 100)} percent`}><span style={{ width: `${faceIntent.progress * 100}%` }} /></div>
               </div>
 
               <div className="phrase-header"><div><span className="eyebrow">TOUCH BACKUP</span><h2>Say it now</h2></div><span className="voice-status" role="status">{voiceMessage}</span></div>
@@ -992,6 +1686,29 @@ export function FingerSpeakApp() {
                   <div className="progress-track"><span style={{ width: `${Math.min(100, capturedCount / requiredCount * 100)}%` }} /></div>
                   <strong>{calibrationReady ? "Ready to train" : "Keep going"}</strong>
                 </div>
+                <section className="face-calibration-card" aria-labelledby="face-calibration-title">
+                  <div className="face-calibration-head">
+                    <div><span className="eyebrow">EYE &amp; FACE MOVEMENTS</span><h2 id="face-calibration-title">Calibrate your neutral position</h2></div>
+                    <button className="button primary" type="button" onClick={startFaceCalibration} disabled={cameraStatus !== "ready"}>Calibrate neutral face</button>
+                  </div>
+                  <p>Look naturally at the front camera while the bar fills. FingerSpeak detects only deliberate blink, gaze, eyebrow, and mouth movements; it does not infer emotion, pain, identity, or muscle health.</p>
+                  <div className="progress-track" aria-label={`Face calibration ${Math.round(faceCalibrationProgress * 100)} percent`}><span style={{ width: `${faceCalibrationProgress * 100}%` }} /></div>
+                  <div className="toggle-row">
+                    <span><strong>Use calibrated face controls</strong><small>Mapped movements speak immediately after the hold and release safeguards.</small></span>
+                    <button className="switch" type="button" role="switch" aria-label="Use face and eye movement controls" aria-checked={faceControls.enabled} onClick={() => void updateFaceControl("enabled", !faceControls.enabled)}><i /></button>
+                  </div>
+                  <div className="face-binding-grid">
+                    {(Object.keys(FACE_INTENT_LABELS) as FaceIntentId[]).map((intentId) => (
+                      <label key={intentId}>{FACE_INTENT_LABELS[intentId]}
+                        <select value={faceControls.bindings[intentId] ?? ""} onChange={(event) => void updateFaceControl(intentId, event.target.value)}>
+                          <option value="">No phrase</option>
+                          {profile.gestures.filter((gesture) => gesture.phrase).map((gesture) => <option key={gesture.id} value={gesture.id}>{gesture.name}: {gesture.phrase}</option>)}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  <small className="face-calibration-status" role="status">{faceCalibrationMessage}</small>
+                </section>
                 <div className="gesture-list">
                   {profile.gestures.map((gesture, index) => (
                     <article className="gesture-row" key={gesture.id}>
@@ -1007,6 +1724,138 @@ export function FingerSpeakApp() {
                     </article>
                   ))}
                 </div>
+                <section className="custom-phrase-manager">
+                  <div className="card-title">
+                    <div>
+                      <span className="eyebrow">CUSTOM SPOKEN PHRASES</span>
+                      <h2>Custom Phrase Manager</h2>
+                    </div>
+                  </div>
+                  <p style={{ color: "var(--muted)", fontSize: "13px", margin: "6px 0 16px" }}>
+                    Caregivers can add unlimited custom phrases and map them to any facial expression, eye movement, micro-tremor, or hand gesture.
+                  </p>
+
+                  <div className="custom-phrase-list">
+                    {customPhrases.map((item) => (
+                      <div key={item.id} className="custom-phrase-item">
+                        <div className="custom-phrase-info">
+                          <strong>“{item.phrase}”</strong>
+                          <small>Signal: {item.signal} • Sensitivity: {item.sensitivity}% • Dwell: {item.dwellMs === 0 ? "Immediate" : `${item.dwellMs}ms`}</small>
+                        </div>
+                        <div className="custom-phrase-actions">
+                          <button 
+                            type="button" 
+                            className="phrase-action-btn"
+                            onClick={() => void playLocalText(item.phrase)}
+                            title="Test voice playback"
+                          >
+                            🔊 Speak
+                          </button>
+                          <button 
+                            type="button" 
+                            className="phrase-action-btn delete"
+                            onClick={() => {
+                              const updated = customPhrases.filter((p) => p.id !== item.id);
+                              setCustomPhrases(updated);
+                              if (typeof window !== "undefined") {
+                                localStorage.setItem("fingerspeak.custom_phrases", JSON.stringify(updated));
+                              }
+                            }}
+                            title="Delete custom phrase"
+                          >
+                            ✕ Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: "16px", padding: "16px", background: "var(--cream)", borderRadius: "16px", border: "1px solid var(--line)" }}>
+                    <strong style={{ display: "block", marginBottom: "10px", fontSize: "14px" }}>+ Add New Custom Phrase</strong>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "10px" }}>
+                      <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: "bold" }}>
+                        Trigger Signal
+                        <select 
+                          value={newPhraseSignal} 
+                          onChange={(e) => setNewPhraseSignal(e.target.value)}
+                          style={{ padding: "8px", borderRadius: "8px", border: "1px solid var(--line)", background: "white" }}
+                        >
+                          <option value="Blink">Blink (Eye Closure)</option>
+                          <option value="Left Wink">Left Wink</option>
+                          <option value="Right Wink">Right Wink</option>
+                          <option value="Look Up">Look Up</option>
+                          <option value="Look Down">Look Down</option>
+                          <option value="Look Left">Look Left</option>
+                          <option value="Look Right">Look Right</option>
+                          <option value="Eye Tremor">Eye Tremor</option>
+                          <option value="Smile">Smile</option>
+                          <option value="Eyebrows Up">Eyebrows Up</option>
+                          <option value="Mouth Open">Mouth Open</option>
+                          <option value="Lip Tremor">Lip Tremor</option>
+                          <option value="Facial Muscle Activity">Facial Muscle Activity</option>
+                          <option value="Rapid Breathing">Rapid Breathing</option>
+                          <option value="Hand Gesture">Hand Gesture</option>
+                        </select>
+                      </label>
+                      <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: "bold" }}>
+                        Phrase to Speak Aloud
+                        <input 
+                          type="text" 
+                          placeholder="e.g. I need my medicine" 
+                          value={newPhraseText} 
+                          onChange={(e) => setNewPhraseText(e.target.value)}
+                          style={{ padding: "8px", borderRadius: "8px", border: "1px solid var(--line)", background: "white" }}
+                        />
+                      </label>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "14px" }}>
+                      <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: "bold" }}>
+                        Sensitivity ({newPhraseSensitivity}%)
+                        <input 
+                          type="range" 
+                          min="30" 
+                          max="100" 
+                          value={newPhraseSensitivity} 
+                          onChange={(e) => setNewPhraseSensitivity(Number(e.target.value))} 
+                        />
+                      </label>
+                      <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: "bold" }}>
+                        Dwell Time ({newPhraseDwell === 0 ? "Immediate" : `${newPhraseDwell}ms`})
+                        <input 
+                          type="range" 
+                          min="0" 
+                          max="1000" 
+                          step="100" 
+                          value={newPhraseDwell} 
+                          onChange={(e) => setNewPhraseDwell(Number(e.target.value))} 
+                        />
+                      </label>
+                    </div>
+                    <button 
+                      type="button" 
+                      className="button primary"
+                      style={{ width: "100%" }}
+                      onClick={() => {
+                        if (!newPhraseText.trim()) return;
+                        const newEntry = {
+                          id: `custom_${Date.now()}`,
+                          signal: newPhraseSignal,
+                          phrase: newPhraseText.trim(),
+                          sensitivity: newPhraseSensitivity,
+                          dwellMs: newPhraseDwell,
+                        };
+                        const updated = [...customPhrases, newEntry];
+                        setCustomPhrases(updated);
+                        if (typeof window !== "undefined") {
+                          localStorage.setItem("fingerspeak.custom_phrases", JSON.stringify(updated));
+                        }
+                        setNewPhraseText("");
+                      }}
+                    >
+                      Save Custom Phrase Mapping
+                    </button>
+                  </div>
+                </section>
               </div>
               <aside className="calibration-aside">
                 <div className="mini-camera">
@@ -1015,7 +1864,7 @@ export function FingerSpeakApp() {
                   {cameraStatus !== "ready" && <div><span>✋</span><p>Start the camera to capture movements.</p></div>}
                 </div>
                 {cameraStatus === "ready" ? <button className="button secondary full" onClick={stopCamera}>Stop camera</button> : <button className="button primary full" onClick={() => void startCamera()} disabled={cameraStatus === "loading"}>Start private camera</button>}
-                <p className="capture-message" role="status">{captureMessage}</p>
+                <p className="capture-message" role="status">{cameraStatus === "error" || cameraStatus === "loading" ? cameraMessage : captureMessage}</p>
                 <button className="button train full" onClick={() => void trainLocalModel()} disabled={!calibrationReady}>Train on this device</button>
                 <div className="profile-tools">
                   <button onClick={exportProfile}>Export profile JSON*</button>
@@ -1037,6 +1886,45 @@ export function FingerSpeakApp() {
               <span className={socketStatus === "live" ? "connection-card online" : "connection-card"}><i />{socketStatus === "live" ? "Patient channel live" : socketStatus === "connecting" ? "Connecting…" : "Patient channel offline"}</span>
             </div>
 
+            <div className="emergency-clinical-card">
+              <div className="emergency-clinical-head">
+                <div className="emergency-clinical-icon">!</div>
+                <div>
+                  <span className="eyebrow" style={{ color: "#b93632" }}>CLINICAL PROTOCOL</span>
+                  <h3>Emergency Seizure &amp; Respiratory Protocol</h3>
+                </div>
+              </div>
+              <ul className="emergency-steps-list">
+                <li><strong>1. Stay calm &amp; cushion head:</strong> Ease patient into a relaxed position, protect head with soft padding.</li>
+                <li><strong>2. Turn gently on side:</strong> Clear airway to prevent aspiration; do not restrain or put anything into the mouth.</li>
+                <li><strong>3. Track duration:</strong> If seizure or respiratory distress lasts &gt; 3 minutes or repeats, seek emergency care immediately.</li>
+                <li><strong>4. Check breathing &amp; responsiveness:</strong> Verify chest rise and oxygen flow; keep area quiet.</li>
+              </ul>
+              <div className="emergency-dial-row">
+                <button 
+                  type="button" 
+                  className="emergency-dial-btn primary-red" 
+                  onClick={() => { window.location.href = "tel:911"; }}
+                >
+                  🚨 Call Ambulance (911 / 999)
+                </button>
+                <button 
+                  type="button" 
+                  className="emergency-dial-btn secondary-red" 
+                  onClick={() => { window.location.href = "tel:112"; }}
+                >
+                  🩺 Call On-Call Doctor / Clinic
+                </button>
+                <button 
+                  type="button" 
+                  className="emergency-dial-btn secondary-red"
+                  onClick={() => goTo("calibrate")}
+                >
+                  ⚙ Launch Calibration Wizard
+                </button>
+              </div>
+            </div>
+
             <section className="caregiver-status-grid" aria-label="Patient and wheelchair status">
               <article className={caregiverDeviceOnline ? "live" : ""}><small>PATIENT DEVICE</small><strong>{caregiverDeviceOnline ? "Online" : "Not verified"}</strong><span>{remoteDeviceMessage}</span></article>
               <article className={caregiverDeviceOnline ? "live" : ""}><small>PI DISPLAY</small><strong>{caregiverDeviceState ? caregiverDeviceState.display_status : piDevice.status === "connected" ? "Paired live" : "Unavailable"}</strong><span>{caregiverRemotePi ? `Cloud relay · ${caregiverDeviceState?.transport ?? "unknown transport"}` : piDevice.message}</span></article>
@@ -1056,7 +1944,7 @@ export function FingerSpeakApp() {
                     </article>
                   ))}
                   {spoken.map((entry) => (
-                    <article key={entry.id} className={`timeline-event ${entry.risk}`}><i /><div><strong>{entry.phrase}</strong><p>{entry.gesture} · {entry.source === "gesture" ? "gesture confirmed" : "touch backup"}</p></div><time>{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></article>
+                    <article key={entry.id} className={`timeline-event ${entry.risk}`}><i /><div><strong>{entry.phrase}</strong><p>{entry.gesture} · {entry.source === "gesture" ? "hand gesture confirmed" : entry.source === "face" ? "phone eye/face movement confirmed" : entry.source === "pi" ? "wheelchair camera intent confirmed" : "touch backup"}</p></div><time>{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></article>
                   ))}
                   {!spoken.length && !alerts.length && <div className="empty-state"><span>○</span><strong>No confirmed events yet</strong><p>Patient-selected phrases and consented alerts will appear here.</p></div>}
                 </div>
@@ -1079,11 +1967,69 @@ export function FingerSpeakApp() {
               <div className="advanced-grid">
                 <section className="access-card local-settings-card">
                   <span className="eyebrow">LOCAL PHONE SETTINGS</span><h2>Contacts on this device</h2>
-                  <label>Caregiver name<input value={contactDraft.caregiverName} onChange={(event) => setContactDraft((current) => ({ ...current, caregiverName: event.target.value }))} maxLength={80} placeholder="Family or caregiver" /></label>
+                  <label>Caregiver name<input value={contactDraft.caregiverName} onChange={(event) => { setContactDraft((current) => ({ ...current, caregiverName: event.target.value })); setCaregiverRecordingConfirmed(false); }} disabled={recordingStarting || recordingActive} maxLength={80} placeholder="Family or caregiver" /></label>
                   <label>Caregiver phone<input value={contactDraft.caregiverPhone} onChange={(event) => setContactDraft((current) => ({ ...current, caregiverPhone: event.target.value }))} inputMode="tel" autoComplete="tel" placeholder="Add locally" /></label>
                   <label>Patient phone<input value={contactDraft.patientPhone} onChange={(event) => setContactDraft((current) => ({ ...current, patientPhone: event.target.value }))} inputMode="tel" autoComplete="tel" placeholder="Add locally" /></label>
                   <button type="button" onClick={() => void saveLocalContacts()}>Save local contacts</button>
                   <small>These numbers are stored in this browser’s device database and are never added to profile or telemetry requests.</small>
+                </section>
+
+                <section className="access-card voice-settings-card">
+                  <span className="eyebrow">PATIENT VOICE</span><h2>Choose how phrases sound</h2>
+                  <label>Playback preference
+                    <select value={speechSettings.preference} onChange={(event) => setSpeechSettings((current) => ({ ...current, preference: event.target.value as PatientSpeechSettings["preference"] }))}>
+                      <option value="caregiver-recording-first">Loved one’s recording, then device voice</option>
+                      <option value="system-voice">Device voice only</option>
+                    </select>
+                  </label>
+                  <label>Installed phone or computer voice
+                    <select value={speechSettings.preferredVoiceUri ?? ""} onChange={(event) => {
+                      const selected = systemVoices.find((voice) => voice.voiceURI === event.target.value);
+                      setSpeechSettings((current) => ({ ...current, preferredVoiceUri: selected?.voiceURI ?? null, language: selected?.lang || current.language }));
+                    }}>
+                      <option value="">Automatic local voice</option>
+                      {systemVoices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name} · {voice.lang}{voice.localService ? " · on device" : ""}</option>)}
+                    </select>
+                  </label>
+                  <label>Speech speed
+                    <input type="range" min="0.5" max="1.5" step="0.05" value={speechSettings.rate} aria-valuetext={`${speechSettings.rate.toFixed(2)} times normal speed`} onChange={(event) => setSpeechSettings((current) => ({ ...current, rate: Number(event.target.value) }))} />
+                    <output>{speechSettings.rate.toFixed(2)}×</output>
+                  </label>
+                  <button type="button" onClick={() => void saveSpeechPreferences()}>Save patient voice</button>
+
+                  <div className="caregiver-recording-box" aria-busy={recordingStarting || recordingActive}>
+                    <strong>Record exact phrases in a loved one’s voice</strong>
+                    <p>This stores a short direct microphone recording for the selected phrase only. It does not clone or synthesize the caregiver’s voice, and it never uploads the audio.</p>
+                    <label>Phrase to record
+                      <select value={selectedVoicePhrase?.key ?? ""} onChange={(event) => setRecordingPhraseKey(event.target.value)} disabled={recordingStarting || recordingActive}>
+                        {voicePhraseOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="recording-confirm"><input type="checkbox" checked={caregiverRecordingConfirmed} onChange={(event) => setCaregiverRecordingConfirmed(event.target.checked)} disabled={recordingStarting || recordingActive} /> I am the named caregiver and consent to saving my own direct recording on this patient device.</label>
+                    <button className={recordingActive ? "recording-stop" : ""} type="button" onClick={() => void toggleCaregiverRecording()} disabled={recordingStarting} aria-pressed={recordingActive}>{recordingStarting ? "Opening microphone…" : recordingActive ? "Stop & save exact phrase" : "Start caregiver recording"}</button>
+                    {selectedVoicePhrase && <button type="button" disabled={recordingStarting || recordingActive} onClick={() => void patientSpeechRef.current.speak({ profileId: profile.id, kind: selectedVoicePhrase.kind, phraseId: selectedVoicePhrase.phraseId, text: selectedVoicePhrase.text, caregiverName: localContacts.caregiverName }).then((result) => setCareSettingsMessage(result.message)).catch(() => setCareSettingsMessage("Patient playback could not start. The phrase remains visible."))}>Test patient playback</button>}
+                  </div>
+                  <small role="status">{careSettingsMessage}</small>
+                </section>
+
+                <section className="access-card routine-settings-card">
+                  <span className="eyebrow">CONTINUOUS COMPANIONSHIP</span><h2>Water &amp; reassuring check-ins</h2>
+                  <div className="toggle-row">
+                    <span><strong>Water reminders</strong><small>Asha speaks within the configured active hours.</small></span>
+                    <button className="switch" type="button" role="switch" aria-label="Enable water reminders" aria-checked={routineSettings.hydration.enabled} onClick={() => setRoutineSettings((current) => ({ ...current, hydration: { ...current.hydration, enabled: !current.hydration.enabled } }))}><i /></button>
+                  </div>
+                  <label>Water reminder interval (minutes)<input type="number" min="15" max="360" value={routineSettings.hydration.intervalMinutes} onChange={(event) => setRoutineSettings((current) => ({ ...current, hydration: { ...current.hydration, intervalMinutes: Number(event.target.value) } }))} /></label>
+                  <label>Water reminder words<textarea rows={3} maxLength={240} value={routineSettings.hydration.message} onChange={(event) => setRoutineSettings((current) => ({ ...current, hydration: { ...current.hydration, message: event.target.value } }))} /></label>
+                  <div className="routine-hours"><label>From<input type="time" value={routineSettings.hydration.activeFrom} onChange={(event) => setRoutineSettings((current) => ({ ...current, hydration: { ...current.hydration, activeFrom: event.target.value } }))} /></label><label>Until<input type="time" value={routineSettings.hydration.activeUntil} onChange={(event) => setRoutineSettings((current) => ({ ...current, hydration: { ...current.hydration, activeUntil: event.target.value } }))} /></label></div>
+                  <div className="toggle-row">
+                    <span><strong>Reassuring check-ins</strong><small>Asha remains present while the patient screen is open.</small></span>
+                    <button className="switch" type="button" role="switch" aria-label="Enable reassuring check-ins" aria-checked={routineSettings.checkIns.enabled} onClick={() => setRoutineSettings((current) => ({ ...current, checkIns: { ...current.checkIns, enabled: !current.checkIns.enabled } }))}><i /></button>
+                  </div>
+                  <label>Check-in interval (minutes)<input type="number" min="5" max="240" value={routineSettings.checkIns.intervalMinutes} onChange={(event) => setRoutineSettings((current) => ({ ...current, checkIns: { ...current.checkIns, intervalMinutes: Number(event.target.value) } }))} /></label>
+                  <label>Reassuring phrases (one per line)<textarea rows={5} value={routineSettings.checkIns.messages.join("\n")} onChange={(event) => setRoutineSettings((current) => ({ ...current, checkIns: { ...current.checkIns, messages: event.target.value.split(/\r?\n/).slice(0, 8) } }))} /></label>
+                  <div className="routine-hours"><label>From<input type="time" value={routineSettings.checkIns.activeFrom} onChange={(event) => setRoutineSettings((current) => ({ ...current, checkIns: { ...current.checkIns, activeFrom: event.target.value } }))} /></label><label>Until<input type="time" value={routineSettings.checkIns.activeUntil} onChange={(event) => setRoutineSettings((current) => ({ ...current, checkIns: { ...current.checkIns, activeUntil: event.target.value } }))} /></label></div>
+                  <button type="button" onClick={() => void saveCareRoutines()}>Save reminders &amp; check-ins</button>
+                  <small>These are companionship routines, not clinical monitoring. Browser reminders run while the patient app is open; the Flutter app can also schedule phone notifications.</small>
                 </section>
 
                 <section className="access-card local-settings-card">
@@ -1105,7 +2051,41 @@ export function FingerSpeakApp() {
         )}
       </main>
 
-      <footer><span>FingerSpeak prototype · not a validated medical device</span><span>Local inference → immediate speech → optional secure sync</span></footer>
+      {view === "speak" && (
+        <>
+          <button
+            ref={ashaFabRef}
+            className="asha-fab"
+            type="button"
+            aria-label="Open Asha companion"
+            aria-expanded={ashaOpen}
+            onClick={() => {
+              if (!ashaOpen) void playLocalText("I’m right here with you. What would you like to talk about?");
+              setAshaOpen(true);
+            }}
+          >
+            <AshaAvatar eager />
+            <span><strong>Talk with Asha</strong><small>{serverOnline ? "Backend connected" : "Offline companion ready"}</small></span>
+          </button>
+          <div className="asha-popup" hidden={!ashaOpen}>
+            <button className="asha-popup-backdrop" type="button" onClick={() => setAshaOpen(false)} aria-label="Close Asha companion" />
+            <div ref={ashaPanelRef} className="asha-popup-panel" role="dialog" aria-modal="true" aria-label="Asha companion conversation" tabIndex={-1}>
+              <AshaCompanion
+                aiAvailable={serverOnline}
+                patientContext={patientContext}
+                caregiverConfigured={Boolean(dialablePhone(localContacts.caregiverPhone))}
+                onSpeak={playLocalText}
+                onClose={() => setAshaOpen(false)}
+                onWriteDisplay={piDevice.sendCaption}
+                onCallCaregiver={callCaregiver}
+                onConfirmEmergency={confirmEmergencyHelp}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      <footer><span>NeuroBridge Asha prototype · not a validated medical device</span><span>Local inference → immediate speech → optional secure sync</span></footer>
     </div>
   );
 }

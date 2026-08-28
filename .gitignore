@@ -17,3 +17,16 @@ dist/
 coverage/
 *.log
 *.tsbuildinfo
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+apps/mobile/android/key.properties
+apps/mobile/android/**/*.jks
+apps/mobile/android/**/*.keystore
+apps/mobile/build/
+apps/mobile/.idea/
+.pytest-tmp-face-intent/
+*.ipa
+

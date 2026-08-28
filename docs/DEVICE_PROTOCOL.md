@@ -51,6 +51,7 @@ bidirectional override controls. A display implementation must render with a tex
 
 - `pairing.authenticated`
 - `device.status`
+- `patient.intent`
 - `command.ack`
 - `protocol.error`
 
@@ -70,6 +71,31 @@ Status always includes:
 Battery `null` means unavailable and must never be displayed as zero. Presence becomes false after
 the heartbeat timeout. Status snapshots are sent after authentication, periodically, and after
 commands.
+
+An authenticated phone may receive a `patient.intent` at any time, independently of client
+commands:
+
+```json
+{
+  "version": 1,
+  "message_id": "22222222-2222-4222-8222-222222222222",
+  "device_id": "fingerspeak-pi",
+  "type": "patient.intent",
+  "sent_at": "2026-08-22T12:00:01Z",
+  "sequence": 12,
+  "payload": {
+    "intent": "blink",
+    "confidence": 0.91,
+    "detected_at": "2026-08-22T12:00:01Z"
+  }
+}
+```
+
+The only valid intent values are `blink`, `look_left`, `look_right`, `eyebrows_up`, and
+`mouth_open`. The payload cannot contain frames, image URLs, landmarks, identity, emotion, pain, or
+medical classifications. The edge applies calibration, debounce/hold, cooldown, and release before
+broadcast. The phone deduplicates `message_id`; because gesture-to-phrase bindings remain local to
+the phone, an emergency mapping must still use the phone's separate confirmation policy.
 
 Display commands are idempotent by `message_id`. An exact retry returns a duplicate acknowledgement
 without rendering twice; reusing the ID with different content is an error. An unexpired emergency

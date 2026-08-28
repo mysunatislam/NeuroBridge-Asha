@@ -33,6 +33,13 @@ LanguageTag = Annotated[
     Field(min_length=2, max_length=35, pattern=r"^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$"),
 ]
 CorrelationId = Annotated[str, Field(min_length=1, max_length=120)]
+PatientIntentName = Literal[
+    "blink",
+    "look_left",
+    "look_right",
+    "eyebrows_up",
+    "mouth_open",
+]
 
 
 class StrictModel(BaseModel):
@@ -201,7 +208,18 @@ class ProtocolError(ServerEnvelope):
     payload: ProtocolErrorPayload
 
 
-ServerMessage = PairingAuthenticated | DeviceStatus | CommandAck | ProtocolError
+class PatientIntentPayload(StrictModel):
+    intent: PatientIntentName
+    confidence: Annotated[float, Field(ge=0, le=1)]
+    detected_at: AwareDatetime
+
+
+class PatientIntent(ServerEnvelope):
+    type: Literal["patient.intent"] = "patient.intent"
+    payload: PatientIntentPayload
+
+
+ServerMessage = PairingAuthenticated | DeviceStatus | CommandAck | ProtocolError | PatientIntent
 
 
 def parse_client_message(raw: str) -> ClientMessage:

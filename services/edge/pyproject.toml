@@ -16,6 +16,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Raspberry Pi OS provides Picamera2 through apt. These extras add only the local
+# Face Landmarker runtime and intentionally remain absent from normal simulator/CI installs.
+vision = [
+  "mediapipe>=0.10.14,<0.11",
+  "numpy>=1.26,<3",
+]
+hardware = [
+  "mediapipe>=0.10.14,<0.11",
+  "numpy>=1.26,<3",
+]
 dev = [
   "httpx>=0.28,<1",
   "pytest>=8.4,<9",

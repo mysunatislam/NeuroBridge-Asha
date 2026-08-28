@@ -7,8 +7,11 @@ import {
   createPairingAuthentication,
   parsePairingAuthenticatedMessage,
   parsePiCommandResult,
+  parsePiPatientIntentMessage,
   parsePiTelemetryMessage,
   PI_DEVICE_SUBPROTOCOL,
+  PI_INTENT_COOLDOWN_MS,
+  PiPatientIntentGate,
 } from "../app/lib/pi-device";
 
 test("phone commands match the edge v1 envelope", () => {
@@ -112,3 +115,51 @@ test("edge status maps snake-case telemetry without inventing battery values", (
     lastSeen: "2026-08-22T06:00:00Z",
   });
 });
+
+test("patient intent parser accepts only the strict media-free v1 envelope", () => {
+  const value = patientIntentEnvelope();
+  assert.deepEqual(parsePiPatientIntentMessage(JSON.stringify(value)), {
+    messageId: value.message_id,
+    deviceId: "fingerspeak-pi",
+    sequence: 44,
+    sentAt: "2026-08-22T06:00:01Z",
+    intent: "look_right",
+    confidence: 0.91,
+    detectedAt: "2026-08-22T06:00:00.900Z",
+  });
+
+  assert.equal(parsePiPatientIntentMessage(JSON.stringify({ ...value, frame: "not allowed" })), null);
+  assert.equal(parsePiPatientIntentMessage(JSON.stringify({ ...value, payload: { ...value.payload, phrase: "Injected phrase" } })), null);
+  assert.equal(parsePiPatientIntentMessage(JSON.stringify({ ...value, payload: { ...value.payload, confidence: 1.1 } })), null);
+  assert.equal(parsePiPatientIntentMessage(JSON.stringify({ ...value, sent_at: "2026-08-22 06:00:01" })), null);
+});
+
+test("patient intent gate rejects replay, flood, stale, and out-of-order events", () => {
+  const now = Date.parse("2026-08-22T06:00:02Z");
+  const first = parsePiPatientIntentMessage(JSON.stringify(patientIntentEnvelope()))!;
+  const gate = new PiPatientIntentGate();
+  assert.equal(gate.accept(first, now), true);
+  assert.equal(gate.accept(first, now + PI_INTENT_COOLDOWN_MS + 1), false);
+
+  const tooSoon = { ...first, messageId: "22222222-2222-4222-8222-222222222222", sequence: 45 };
+  assert.equal(gate.accept(tooSoon, now + PI_INTENT_COOLDOWN_MS - 1), false);
+  const later = { ...first, messageId: "33333333-3333-4333-8333-333333333333", sequence: 46 };
+  assert.equal(gate.accept(later, now + PI_INTENT_COOLDOWN_MS + 1), true);
+  const outOfOrder = { ...first, messageId: "44444444-4444-4444-8444-444444444444", sequence: 45 };
+  assert.equal(gate.accept(outOfOrder, now + PI_INTENT_COOLDOWN_MS * 3), false);
+
+  const stale = { ...first, messageId: "55555555-5555-4555-8555-555555555555", sequence: 47, sentAt: "2026-08-22T05:58:00Z", detectedAt: "2026-08-22T05:58:00Z" };
+  assert.equal(gate.accept(stale, now + PI_INTENT_COOLDOWN_MS * 4), false);
+});
+
+function patientIntentEnvelope() {
+  return {
+    version: 1,
+    message_id: "11111111-1111-4111-8111-111111111111",
+    device_id: "fingerspeak-pi",
+    type: "patient.intent",
+    sent_at: "2026-08-22T06:00:01Z",
+    sequence: 44,
+    payload: { intent: "look_right", confidence: 0.91, detected_at: "2026-08-22T06:00:00.900Z" },
+  };
+}

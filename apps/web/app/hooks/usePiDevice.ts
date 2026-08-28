@@ -10,9 +10,12 @@ import {
   normalizePiWebSocketUrl,
   parsePairingAuthenticatedMessage,
   parsePiCommandResult,
+  parsePiPatientIntentMessage,
   parsePiTelemetryMessage,
+  PiPatientIntentGate,
   PI_DEVICE_SUBPROTOCOL,
   type PiCredentialKind,
+  type PiPatientIntent,
   type PiTelemetry,
 } from "../lib/pi-device";
 
@@ -32,6 +35,7 @@ export function usePiDevice() {
   const [status, setStatus] = useState<PiConnectionStatus>("demo");
   const [telemetry, setTelemetry] = useState<PiTelemetry>(() => createDemoTelemetry());
   const [message, setMessage] = useState("Demo mode · no authenticated Raspberry Pi is connected.");
+  const [patientIntent, setPatientIntent] = useState<PiPatientIntent | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<number | null>(null);
   const heartbeatRef = useRef<number | null>(null);
@@ -39,6 +43,7 @@ export function usePiDevice() {
   const sequenceRef = useRef(0);
   const reconnectAttemptRef = useRef(0);
   const pendingCommandsRef = useRef(new Map<string, { resolve(accepted: boolean): void; timeout: number }>());
+  const patientIntentGateRef = useRef(new PiPatientIntentGate());
 
   const settlePendingCommands = useCallback((accepted = false) => {
     for (const pending of pendingCommandsRef.current.values()) {
@@ -69,6 +74,7 @@ export function usePiDevice() {
     if (reconnectRef.current !== null) window.clearTimeout(reconnectRef.current);
     if (heartbeatRef.current !== null) window.clearInterval(heartbeatRef.current);
     settlePendingCommands(false);
+    patientIntentGateRef.current.reset();
     socketRef.current?.close(1000, "Pi endpoint changed");
     socketRef.current = null;
 
@@ -139,6 +145,13 @@ export function usePiDevice() {
             pendingCommandsRef.current.delete(commandResult.commandId);
             pending.resolve(commandResult.accepted);
             setMessage(commandResult.accepted ? "Raspberry Pi confirmed the display update." : `The Pi rejected the command: ${commandResult.detail}`);
+          }
+          return;
+        }
+        const nextPatientIntent = parsePiPatientIntentMessage(raw);
+        if (nextPatientIntent) {
+          if (!cancelled && nextPatientIntent.deviceId === DEVICE_ID && patientIntentGateRef.current.accept(nextPatientIntent)) {
+            setPatientIntent(nextPatientIntent);
           }
           return;
         }
@@ -257,5 +270,5 @@ export function usePiDevice() {
     return sendCommand(command);
   }, [sendCommand]);
 
-  return { endpoint, pairingToken, status, telemetry, message, configureConnection, sendCaption, sendEmergency };
+  return { endpoint, pairingToken, status, telemetry, patientIntent, message, configureConnection, sendCaption, sendEmergency };
 }
