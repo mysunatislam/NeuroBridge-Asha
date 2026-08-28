@@ -42,25 +42,33 @@ class _FingerSpeakMobileAppState extends State<FingerSpeakMobileApp> {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0B756A),
-          primary: const Color(0xFF0B756A),
-          secondary: const Color(0xFFFFD166),
-          surface: const Color(0xFF0F1720),
-          brightness: Brightness.dark,
+          seedColor: const Color(0xFF0D9488),
+          primary: const Color(0xFF0D9488),
+          secondary: const Color(0xFFD97706),
+          surface: Colors.white,
+          brightness: Brightness.light,
         ),
-        scaffoldBackgroundColor: const Color(0xFF0A1119),
+        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
         useMaterial3: true,
         fontFamily: 'Space Grotesk',
-        textTheme: const TextTheme(
-          headlineMedium: TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
-          titleLarge: TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
-          titleMedium: TextStyle(fontWeight: FontWeight.w700, color: Colors.white),
-          bodyMedium: TextStyle(color: Color(0xFFE0E6ED)),
+        cardTheme: CardTheme(
+          color: Colors.white,
+          elevation: 1,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
         ),
-        inputDecorationTheme: const InputDecorationTheme(
-          border: OutlineInputBorder(),
+        textTheme: const TextTheme(
+          headlineMedium: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+          titleLarge: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+          titleMedium: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+          bodyMedium: TextStyle(color: Color(0xFF334155)),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           filled: true,
-          fillColor: Color(0xFF161F29),
+          fillColor: Colors.white,
         ),
       ),
       home: FutureBuilder<MobileServices>(
@@ -72,9 +80,9 @@ class _FingerSpeakMobileAppState extends State<FingerSpeakMobileApp> {
           final services = snapshot.data;
           if (services == null) {
             return const Scaffold(
-              backgroundColor: Color(0xFF0A1119),
+              backgroundColor: Color(0xFFF8FAFC),
               body: Center(
-                child: CircularProgressIndicator(color: Color(0xFF4FD1C5)),
+                child: CircularProgressIndicator(color: Color(0xFF0D9488)),
               ),
             );
           }
@@ -148,21 +156,21 @@ class _StartupError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1119),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 52, color: Color(0xFFE86A6A)),
+              const Icon(Icons.error_outline, size: 52, color: Color(0xFFEF4444)),
               const SizedBox(height: 16),
               Text(
                 'NeuroBridge Asha could not start',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.white),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: const Color(0xFF0F172A), fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-              Text('$error', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF8CA0A8))),
+              Text('$error', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF64748B))),
             ],
           ),
         ),
@@ -202,7 +210,7 @@ class _MobileHomeState extends State<MobileHome> {
     final currentRole = _index == 1 ? UserRole.caregiver : UserRole.patient;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1119),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         bottom: false,
         child: IndexedStack(
@@ -234,33 +242,40 @@ class _MobileHomeState extends State<MobileHome> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFF101923),
-        indicatorColor: const Color(0xFF1E3836),
-        selectedIndex: _index,
-        onDestinationSelected: (index) => setState(() => _index = index),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.favorite_outline, color: Color(0xFF8CA0A8)),
-            selectedIcon: Icon(Icons.favorite, color: Color(0xFF4FD1C5)),
-            label: 'Patient',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.people_outline, color: Color(0xFF8CA0A8)),
-            selectedIcon: Icon(Icons.people, color: Color(0xFFE992A4)),
-            label: 'Caregiver',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.tv_outlined, color: Color(0xFF8CA0A8)),
-            selectedIcon: Icon(Icons.tv, color: Color(0xFFFFD166)),
-            label: 'Wheelchair Display',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined, color: Color(0xFF8CA0A8)),
-            selectedIcon: Icon(Icons.settings, color: Color(0xFF4FD1C5)),
-            label: 'Setup',
-          ),
-        ],
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+        ),
+        child: NavigationBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          indicatorColor: const Color(0xFFCCFBF1),
+          selectedIndex: _index,
+          onDestinationSelected: (index) => setState(() => _index = index),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.favorite_outline, color: Color(0xFF64748B)),
+              selectedIcon: Icon(Icons.favorite, color: Color(0xFF0D9488)),
+              label: 'Patient',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.people_outline, color: Color(0xFF64748B)),
+              selectedIcon: Icon(Icons.people, color: Color(0xFFDB2777)),
+              label: 'Caregiver',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.tv_outlined, color: Color(0xFF64748B)),
+              selectedIcon: Icon(Icons.tv, color: Color(0xFFD97706)),
+              label: 'Wheelchair Display',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined, color: Color(0xFF64748B)),
+              selectedIcon: Icon(Icons.settings, color: Color(0xFF0D9488)),
+              label: 'Setup',
+            ),
+          ],
+        ),
       ),
     );
   }

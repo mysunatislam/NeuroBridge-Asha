@@ -118,25 +118,26 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F1720),
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF161F29),
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF0F172A),
+        elevation: 0,
         title: Row(
           children: [
             Container(
-              width: 26,
-              height: 26,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(8),
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF4FD1C5), Color(0xFF2E7D74)],
+                  colors: [Color(0xFF0D9488), Color(0xFF14B8A6)],
                 ),
               ),
               child:
-                  const Icon(Icons.pan_tool_alt, color: Colors.black, size: 15),
+                  const Icon(Icons.pan_tool_alt, color: Colors.white, size: 16),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 widget.mode == HandStudioMode.patientExecution
@@ -144,8 +145,9 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
                     : 'NeuroBridge Asha 3D Studio',
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
                 ),
               ),
             ),
@@ -160,11 +162,11 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: Color(0xFF4FD1C5)),
+                  CircularProgressIndicator(color: Color(0xFF0D9488)),
                   SizedBox(height: 14),
                   Text(
                     'Preparing camera for hand tracking…',
-                    style: TextStyle(color: Color(0xFF8CA0A8)),
+                    style: TextStyle(color: Color(0xFF64748B)),
                   ),
                 ],
               ),
