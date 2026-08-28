@@ -308,14 +308,28 @@ class _AngelicSparkleSplashState extends State<AngelicSparkleSplash>
         return Opacity(
           opacity: fadeOut,
           child: Scaffold(
-            backgroundColor: const Color(0xFF0A1119),
             body: Stack(
               fit: StackFit.expand,
               children: [
-                // 1. Dynamic Starlight Sparkle Field
-                const AngelicSparkleField(particleCount: 36, centerGlow: true),
+                // 1. Serene Celestial Dawn Background
+                Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFFF0FDF4), // Soft Morning Mint
+                        Color(0xFFF8FAFC), // Pure Serene Pearl
+                        Color(0xFFEFF6FF), // Soft Starlight Blue
+                      ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                ),
 
-                // 2. Central Angelic Avatar & Branding
+                // 2. Dynamic Starlight Sparkle Field
+                const AngelicSparkleField(particleCount: 32, centerGlow: true),
+
+                // 3. Central Angelic Avatar & Branding
                 Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -329,19 +343,19 @@ class _AngelicSparkleSplashState extends State<AngelicSparkleSplash>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: const LinearGradient(
-                              colors: [Color(0xFF4FD1C5), Color(0xFFFFD166)],
+                              colors: [Color(0xFF0D9488), Color(0xFFF59E0B)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF4FD1C5).withValues(alpha: 0.45 * _glow.value),
-                                blurRadius: 40 + 20 * _glow.value,
-                                spreadRadius: 8 + 12 * _glow.value,
+                                color: const Color(0xFF0D9488).withValues(alpha: 0.35 * _glow.value),
+                                blurRadius: 36 + 18 * _glow.value,
+                                spreadRadius: 6 + 8 * _glow.value,
                               ),
                               BoxShadow(
-                                color: const Color(0xFFFFD166).withValues(alpha: 0.35 * _glow.value),
-                                blurRadius: 60,
+                                color: const Color(0xFFF59E0B).withValues(alpha: 0.25 * _glow.value),
+                                blurRadius: 48,
                                 spreadRadius: 4,
                               ),
                             ],
@@ -350,7 +364,7 @@ class _AngelicSparkleSplashState extends State<AngelicSparkleSplash>
                           child: Container(
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Color(0xFF0F1720),
+                              color: Colors.white,
                             ),
                             clipBehavior: Clip.antiAlias,
                             child: Image.asset(
@@ -366,12 +380,11 @@ class _AngelicSparkleSplashState extends State<AngelicSparkleSplash>
                       ShaderMask(
                         shaderCallback: (bounds) => const LinearGradient(
                           colors: [
-                            Color(0xFFFFFFFF),
-                            Color(0xFFE0F7FA),
-                            Color(0xFF4FD1C5),
-                            Color(0xFFFFD166),
+                            Color(0xFF0F172A),
+                            Color(0xFF0D9488),
+                            Color(0xFFD97706),
                           ],
-                          stops: [0.0, 0.3, 0.75, 1.0],
+                          stops: [0.0, 0.65, 1.0],
                         ).createShader(bounds),
                         child: const Text(
                           'NEUROBRIDGE ASHA',
@@ -392,20 +405,20 @@ class _AngelicSparkleSplashState extends State<AngelicSparkleSplash>
                         style: TextStyle(
                           fontSize: 12.5,
                           letterSpacing: 0.3,
-                          color: const Color(0xFF8CA0A8).withValues(alpha: _glow.value),
-                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF475569).withValues(alpha: _glow.value),
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 36),
 
                       // Subtle Shimmering Indicator
                       SizedBox(
-                        width: 44,
-                        height: 44,
+                        width: 40,
+                        height: 40,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.5,
                           valueColor: AlwaysStoppedAnimation(
-                            const Color(0xFF4FD1C5).withValues(alpha: 0.8),
+                            const Color(0xFF0D9488).withValues(alpha: 0.8),
                           ),
                         ),
                       ),
