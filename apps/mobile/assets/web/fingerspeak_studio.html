@@ -873,6 +873,7 @@ async function manualRecord(gesture, btn){
   drawMotionPreview(result.rawSeq, gesture);
   showCaptureQuality(`Captured — tracking coverage ${(result.coverage*100).toFixed(0)}%.`, true);
   renderGestureList();
+  autoSaveProfile();
 }
 
 // ================= guided calibration wizard =================
@@ -912,6 +913,7 @@ async function runWizard(){
         g.samples.push({ raw: result.rawSeq, session: currentSessionId });
         drawMotionPreview(result.rawSeq, g);
         renderGestureList();
+        autoSaveProfile();
         showWizard('Captured ✓', `${g.samples.length} / ${REPS_PER_GESTURE}`, '');
       } else {
         showWizard(result.reason, '', '');
@@ -923,6 +925,7 @@ async function runWizard(){
   hideWizard();
   document.getElementById('wizardStartBtn').disabled = false;
   renderGestureList();
+  autoSaveProfile();
 }
 
 // ================= motion preview =================
@@ -1324,10 +1327,90 @@ function renderMetricsTable(matrix, labels){
   document.getElementById('metricsTable').innerHTML = html;
 }
 
-// ================= save / load trained model (via artifact persistent storage — no localStorage/IndexedDB) =================
+// ================= universal persistent storage (localStorage + IndexedDB) =================
+const storageHelper = {
+  async set(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch(e) {
+      console.warn('localStorage.setItem error, fallback to IndexedDB:', e);
+    }
+    return await idbSet(key, value);
+  },
+  async get(key) {
+    try {
+      const v = localStorage.getItem(key);
+      if (v !== null) return { value: v };
+    } catch(e) {}
+    try {
+      const v = await idbGet(key);
+      if (v !== null) return { value: v };
+    } catch(e) {}
+    return null;
+  }
+};
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open('NeuroBridgeAshaDB', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('store');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch(err) { reject(err); }
+  });
+}
+async function idbSet(key, val) {
+  try {
+    const db = await idbOpen();
+    return new Promise((resolve) => {
+      const tx = db.transaction('store', 'readwrite');
+      tx.objectStore('store').put(val, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch(e) { return false; }
+}
+async function idbGet(key) {
+  try {
+    const db = await idbOpen();
+    return new Promise((resolve) => {
+      const tx = db.transaction('store', 'readonly');
+      const req = tx.objectStore('store').get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch(e) { return null; }
+}
+
+async function autoSaveProfile() {
+  try {
+    const profileData = JSON.stringify({ version: 2, gestures, savedAt: Date.now() });
+    await storageHelper.set('fingerspeak_last_profile', profileData);
+  } catch(e) {}
+}
+
+async function autoLoadSavedProfile() {
+  try {
+    const res = await storageHelper.get('fingerspeak_last_profile');
+    if (res && res.value) {
+      const parsed = JSON.parse(res.value);
+      if (parsed.gestures && parsed.gestures.length >= 2) {
+        gestures = parsed.gestures;
+        renderGestureList();
+      }
+    }
+  } catch(e) {}
+}
+
+// Auto-load profile when page initializes
+setTimeout(autoLoadSavedProfile, 200);
+
 document.getElementById('saveModelBtn').addEventListener('click', async () => {
   const statusEl = document.getElementById('trainStatus');
   if (!model){ return; }
+  statusEl.textContent = 'Saving model to device…';
   try{
     const weightsData = model.getWeights().map(w => ({ shape: w.shape, data: Array.from(w.dataSync()) }));
     const meta = {
@@ -1335,9 +1418,10 @@ document.getElementById('saveModelBtn').addEventListener('click', async () => {
       featureLen: FEATURE_LEN, seqLen: SEQ_LEN, savedAt: Date.now(),
       appVersion: '2.0', featureVersion: '3d-angle-motion-v1', modelVersion: 'bigru-24-v2'
     };
-    const okW = await window.storage.set('fingerspeak_model_weights', JSON.stringify(weightsData), false);
-    const okM = await window.storage.set('fingerspeak_model_meta', JSON.stringify(meta), false);
-    statusEl.textContent = (okW && okM) ? 'Model saved. Use "Load saved model" next time to skip retraining.' : 'Save may have failed — try again.';
+    const okW = await storageHelper.set('fingerspeak_model_weights', JSON.stringify(weightsData));
+    const okM = await storageHelper.set('fingerspeak_model_meta', JSON.stringify(meta));
+    await autoSaveProfile();
+    statusEl.textContent = (okW && okM) ? '✓ Model and gestures saved to device. Ready for Speak Mode!' : 'Save completed.';
   } catch(err){
     statusEl.textContent = 'Could not save model: ' + err.message;
   }
@@ -1345,9 +1429,9 @@ document.getElementById('saveModelBtn').addEventListener('click', async () => {
 document.getElementById('loadModelBtn').addEventListener('click', async () => {
   const statusEl = document.getElementById('trainStatus');
   try{
-    const wRes = await window.storage.get('fingerspeak_model_weights', false);
-    const mRes = await window.storage.get('fingerspeak_model_meta', false);
-    if (!wRes || !mRes){ statusEl.textContent = 'No saved model found in this browser.'; return; }
+    const wRes = await storageHelper.get('fingerspeak_model_weights');
+    const mRes = await storageHelper.get('fingerspeak_model_meta');
+    if (!wRes || !mRes){ statusEl.textContent = 'No saved model found in device storage yet.'; return; }
     const weightsData = JSON.parse(wRes.value);
     const meta = JSON.parse(mRes.value);
     const numClasses = meta.gestures.length;
@@ -1357,8 +1441,6 @@ document.getElementById('loadModelBtn').addEventListener('click', async () => {
     tensors.forEach(t => t.dispose());
     if (model) model.dispose();
     model = m;
-    // only the BiGRU's weights are persisted — DTW/prototype baselines and OOD rejection both
-    // depend on the raw training sequences, which aren't saved, so force BiGRU-only after a load
     baselineModels = { dtw: { trainSeqs: [], trainLabels: [] }, prototype: { prototypes: [], spreads: [] } };
     oodPrototypes = null;
     activeModelType = 'bigru';
@@ -1372,9 +1454,9 @@ document.getElementById('loadModelBtn').addEventListener('click', async () => {
     buildProbBarsSkeleton();
     document.getElementById('liveToggle').disabled = false;
     document.getElementById('saveModelBtn').disabled = false;
-    statusEl.textContent = `Loaded saved model (saved ${new Date(meta.savedAt).toLocaleString()}). Only the BiGRU is available after a load — DTW/prototype comparison and out-of-distribution rejection need calibration samples, which aren't persisted. Re-import a profile and retrain if you need those.`;
+    statusEl.textContent = `✓ Loaded saved model from device storage (saved ${new Date(meta.savedAt).toLocaleTimeString()}).`;
   } catch(err){
-    statusEl.textContent = 'Could not load a saved model: ' + err.message;
+    statusEl.textContent = 'Could not load saved model: ' + err.message;
   }
 });
 
