@@ -20,6 +20,7 @@ from fingerspeak_edge.adapters import (
     TelemetryAdapter,
 )
 from fingerspeak_edge.credential_store import CredentialDigestStore, CredentialStoreError
+from fingerspeak_edge.intent_monitor import PatientIntentDetection, PatientIntentMonitor
 from fingerspeak_edge.protocol import (
     CaptionSet,
     CommandAck,
@@ -31,6 +32,8 @@ from fingerspeak_edge.protocol import (
     PairingAuthenticate,
     PairingAuthenticated,
     PairingAuthenticatedPayload,
+    PatientIntent as PatientIntentMessage,
+    PatientIntentPayload,
     ProtocolError,
     ProtocolErrorPayload,
     ServerEnvelope,
@@ -133,6 +136,7 @@ class EdgeSettings:
     status_interval_seconds: float = 5.0
     max_clock_skew_seconds: float = 300.0
     idempotency_cache_size: int = 256
+    intent_event_queue_size: int = 16
 
     def __post_init__(self) -> None:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", self.device_id):
@@ -147,6 +151,8 @@ class EdgeSettings:
             raise ValueError("status_interval_seconds must be positive")
         if self.idempotency_cache_size < 1:
             raise ValueError("idempotency_cache_size must be positive")
+        if not 1 <= self.intent_event_queue_size <= 256:
+            raise ValueError("intent_event_queue_size must be between 1 and 256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +170,7 @@ class EdgeRuntime:
         camera: CameraAdapter,
         display: DisplayAdapter,
         telemetry: TelemetryAdapter,
+        intent_monitor: PatientIntentMonitor | None = None,
         wall_clock: Callable[[], datetime] | None = None,
         monotonic_clock: Callable[[], float] | None = None,
     ) -> None:
@@ -172,9 +179,11 @@ class EdgeRuntime:
         self.camera = camera
         self.display = display
         self.telemetry = telemetry
+        self.intent_monitor = intent_monitor
         self._wall_clock = wall_clock or (lambda: datetime.now(UTC))
         self._monotonic = monotonic_clock or time.monotonic
         self._connections: dict[UUID, float] = {}
+        self._intent_queues: dict[UUID, asyncio.Queue[PatientIntentMessage]] = {}
         self._connections_lock = asyncio.Lock()
         self._sequence = 0
         self._sequence_lock = asyncio.Lock()
@@ -192,12 +201,26 @@ class EdgeRuntime:
             await self.display.stop()
             raise
         self._started = True
+        if self.intent_monitor is not None:
+            try:
+                await self.intent_monitor.start(self.publish_patient_intent)
+            except Exception:
+                self._started = False
+                await self.camera.stop()
+                await self.telemetry.stop()
+                await self.display.stop()
+                raise
 
     async def stop(self) -> None:
         self._started = False
+        if self.intent_monitor is not None:
+            await self.intent_monitor.stop()
         await self.camera.stop()
         await self.telemetry.stop()
         await self.display.stop()
+        async with self._connections_lock:
+            self._connections.clear()
+            self._intent_queues.clear()
 
     @property
     def started(self) -> bool:
@@ -245,6 +268,9 @@ class EdgeRuntime:
         connection_id = uuid4()
         async with self._connections_lock:
             self._connections[connection_id] = self._monotonic()
+            self._intent_queues[connection_id] = asyncio.Queue(
+                maxsize=self.settings.intent_event_queue_size
+            )
         response = PairingAuthenticated(
             **await self._envelope_fields(),
             payload=PairingAuthenticatedPayload(
@@ -265,6 +291,37 @@ class EdgeRuntime:
     async def disconnect(self, connection_id: UUID) -> None:
         async with self._connections_lock:
             self._connections.pop(connection_id, None)
+            self._intent_queues.pop(connection_id, None)
+
+    async def next_patient_intent(self, connection_id: UUID) -> PatientIntentMessage:
+        async with self._connections_lock:
+            queue = self._intent_queues.get(connection_id)
+        if queue is None:
+            raise RuntimeError("connection is not authenticated")
+        return await queue.get()
+
+    async def publish_patient_intent(
+        self, detection: PatientIntentDetection
+    ) -> PatientIntentMessage | None:
+        """Broadcast one semantic event; no frame, landmarks, or detector state is serialized."""
+
+        async with self._connections_lock:
+            queues = tuple(self._intent_queues.values())
+        if not queues:
+            return None
+        message = PatientIntentMessage(
+            **await self._envelope_fields(),
+            payload=PatientIntentPayload(
+                intent=detection.intent.value,
+                confidence=detection.confidence,
+                detected_at=detection.detected_at,
+            ),
+        )
+        for queue in queues:
+            if queue.full():
+                queue.get_nowait()
+            queue.put_nowait(message)
+        return message
 
     async def _phone_connected(self) -> bool:
         threshold = self._monotonic() - self.settings.heartbeat_timeout_seconds
@@ -278,11 +335,16 @@ class EdgeRuntime:
         now = self.now()
         current = await self.display.current(now)
         telemetry = await self.telemetry.sample()
+        tracking_status = (
+            self.intent_monitor.tracking_status
+            if self.intent_monitor is not None
+            else telemetry.tracking_status
+        )
         payload = DeviceStatusPayload(
             phone_connected=await self._phone_connected(),
             display_connected=await self.display.is_connected(),
             camera_status=await self.camera.status(),
-            tracking_status=telemetry.tracking_status,
+            tracking_status=tracking_status,
             pi_battery_percent=telemetry.pi_battery_percent,
             wheelchair_battery_percent=telemetry.wheelchair_battery_percent,
             active_display=current.mode if current else None,

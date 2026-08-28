@@ -98,3 +98,27 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)
 - [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+
+## Raspberry Pi semantic intent events
+
+After `pairing.authenticated`, the PWA accepts the edge protocol's strict v1 `patient.intent` server envelope:
+
+```json
+{
+  "version": 1,
+  "message_id": "11111111-1111-4111-8111-111111111111",
+  "device_id": "fingerspeak-pi",
+  "type": "patient.intent",
+  "sent_at": "2026-08-22T06:00:01Z",
+  "sequence": 44,
+  "payload": {
+    "intent": "look_right",
+    "confidence": 0.91,
+    "detected_at": "2026-08-22T06:00:00.900Z"
+  }
+}
+```
+
+Only `blink`, `look_left`, `look_right`, `eyebrows_up`, and `mouth_open` are allowed. The parser rejects extra envelope or payload fields, malformed timestamps, stale/replayed/out-of-order events, unknown devices, and event floods. No frame, landmark, video, audio, phrase, or profile data crosses this WebSocket.
+
+The phone maps the semantic intent through the current local patient profile and face-control binding. It never trusts phrase text from the Pi. Routine and clinical phrases use the existing local patient-speech service, which plays a caregiver microphone recording only when its profile, phrase ID, phrase text, and caregiver name all match the current local settings; otherwise it uses the selected system voice. Any current mapping to an emergency-risk phrase requires two distinct authenticated edge events within ten seconds before speech or alert handling occurs.

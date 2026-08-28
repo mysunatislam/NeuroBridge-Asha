@@ -170,46 +170,83 @@ def create_app(
             await websocket.send_text(server_json(authenticated))
             await websocket.send_text(server_json(await runtime.status_message()))
 
-            while True:
-                try:
-                    raw = await _receive_bounded_text(
-                        websocket,
-                        timeout_seconds=runtime.settings.status_interval_seconds,
-                        max_message_bytes=runtime.settings.max_message_bytes,
+            receive_task: asyncio.Task[str] | None = asyncio.create_task(
+                _receive_bounded_text(
+                    websocket,
+                    timeout_seconds=runtime.settings.status_interval_seconds,
+                    max_message_bytes=runtime.settings.max_message_bytes,
+                )
+            )
+            intent_task = asyncio.create_task(runtime.next_patient_intent(connection_id))
+            try:
+                while True:
+                    done, _ = await asyncio.wait(
+                        {receive_task, intent_task},
+                        return_when=asyncio.FIRST_COMPLETED,
                     )
-                except ReceiveTimeout:
+                    if intent_task in done:
+                        await websocket.send_text(server_json(intent_task.result()))
+                        intent_task = asyncio.create_task(
+                            runtime.next_patient_intent(connection_id)
+                        )
+                    if receive_task not in done:
+                        continue
+
+                    try:
+                        raw = receive_task.result()
+                    except ReceiveTimeout:
+                        await websocket.send_text(server_json(await runtime.status_message()))
+                        receive_task = asyncio.create_task(
+                            _receive_bounded_text(
+                                websocket,
+                                timeout_seconds=runtime.settings.status_interval_seconds,
+                                max_message_bytes=runtime.settings.max_message_bytes,
+                            )
+                        )
+                        continue
+                    except BinaryFrame:
+                        await websocket.close(code=1003, reason="Text JSON frames are required")
+                        return
+                    except OversizedFrame:
+                        await websocket.close(code=1009, reason="Message is too large")
+                        return
+
+                    receive_task = asyncio.create_task(
+                        _receive_bounded_text(
+                            websocket,
+                            timeout_seconds=runtime.settings.status_interval_seconds,
+                            max_message_bytes=runtime.settings.max_message_bytes,
+                        )
+                    )
+                    try:
+                        message = parse_client_message(raw)
+                    except ValidationError:
+                        error = await runtime.validation_error_message(
+                            "Message does not match the FingerSpeak device protocol."
+                        )
+                        await websocket.send_text(server_json(error))
+                        continue
+                    if isinstance(message, PairingAuthenticate):
+                        error = await runtime.validation_error_message(
+                            "pairing.authenticate is accepted only as the first frame.",
+                            ref_message_id=message.message_id,
+                        )
+                        await websocket.send_text(server_json(error))
+                        continue
+
+                    try:
+                        ack = await runtime.command_ack(connection_id, message)
+                    except ProtocolViolation as violation:
+                        await websocket.send_text(
+                            server_json(await runtime.error_message(violation))
+                        )
+                        continue
+                    await websocket.send_text(server_json(ack))
                     await websocket.send_text(server_json(await runtime.status_message()))
-                    continue
-                except BinaryFrame:
-                    await websocket.close(code=1003, reason="Text JSON frames are required")
-                    return
-                except OversizedFrame:
-                    await websocket.close(code=1009, reason="Message is too large")
-                    return
-
-                try:
-                    message = parse_client_message(raw)
-                except ValidationError:
-                    error = await runtime.validation_error_message(
-                        "Message does not match the FingerSpeak device protocol."
-                    )
-                    await websocket.send_text(server_json(error))
-                    continue
-                if isinstance(message, PairingAuthenticate):
-                    error = await runtime.validation_error_message(
-                        "pairing.authenticate is accepted only as the first frame.",
-                        ref_message_id=message.message_id,
-                    )
-                    await websocket.send_text(server_json(error))
-                    continue
-
-                try:
-                    ack = await runtime.command_ack(connection_id, message)
-                except ProtocolViolation as violation:
-                    await websocket.send_text(server_json(await runtime.error_message(violation)))
-                    continue
-                await websocket.send_text(server_json(ack))
-                await websocket.send_text(server_json(await runtime.status_message()))
+            finally:
+                receive_task.cancel()
+                intent_task.cancel()
+                await asyncio.gather(receive_task, intent_task, return_exceptions=True)
         except WebSocketDisconnect:
             pass
         finally:

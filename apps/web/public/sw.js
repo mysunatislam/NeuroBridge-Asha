@@ -1,4 +1,4 @@
-const CACHE = "fingerspeak-edge-v5";
+const CACHE = "fingerspeak-edge-v6";
 const EDGE_ASSETS = [
   "/",
   "/favicon.svg",
@@ -6,6 +6,7 @@ const EDGE_ASSETS = [
   "/og.png",
   "/manifest.webmanifest",
   "/models/hand_landmarker.task",
+  "/models/face_landmarker.task",
   "/mediapipe/wasm/vision_wasm_internal.js",
   "/mediapipe/wasm/vision_wasm_internal.wasm",
   "/mediapipe/wasm/vision_wasm_nosimd_internal.js",

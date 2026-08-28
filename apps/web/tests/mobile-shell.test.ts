@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-test("phone shell keeps Asha first and respects device safe areas", () => {
+test("phone shell keeps Asha in a corner popup and respects device safe areas", () => {
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-  assert.match(css, /grid-template-areas:\s*"intro"\s*"asha"\s*"camera"\s*"tools"/);
+  const app = readFileSync(new URL("../app/components/FingerSpeakApp.tsx", import.meta.url), "utf8");
+  assert.match(css, /\.asha-fab\s*\{[^}]*position:\s*fixed/);
+  assert.match(css, /\.asha-popup\s*\{[^}]*position:\s*fixed/);
+  assert.match(app, /className="asha-popup" hidden=\{!ashaOpen\}/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
   assert.match(css, /\.mode-switch\s*\{[^}]*position:\s*fixed/);
   assert.match(css, /\.asha-composer textarea[\s\S]*?font-size:\s*16px/);

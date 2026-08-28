@@ -1,0 +1,41 @@
+name: Build iOS IPA for Sideloadly
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          cd apps/mobile
+          flutter pub get
+
+      - name: Build iOS App without codesign
+        run: |
+          cd apps/mobile
+          flutter build ios --release --no-codesign
+
+      - name: Package into IPA Payload
+        run: |
+          mkdir -p build_output/Payload
+          cp -r apps/mobile/build/ios/iphoneos/Runner.app build_output/Payload/
+          cd build_output
+          zip -r NeuroBridge_Asha.ipa Payload
+          cd ..
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeuroBridge_Asha_iOS
+          path: build_output/NeuroBridge_Asha.ipa

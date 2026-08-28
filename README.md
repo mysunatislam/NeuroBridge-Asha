@@ -33,24 +33,30 @@ until a real Pi power monitor or wheelchair/BMS integration reports them.
 
 ## Phone application
 
-`apps/web` is an installable mobile PWA, so the same tested patient and caregiver application can
-run in a phone browser or from the home screen. Its phone layout puts Asha and the primary call,
-display, and confirmed-help actions first, uses safe-area-aware bottom navigation, and keeps camera
-and setup controls secondary. Asha's optimized portrait is precached with the offline shell.
+FingerSpeak now ships both an installable PWA in `apps/web` and a native Flutter client in
+`apps/mobile`. Both include patient and caregiver views, a corner Asha avatar that opens the
+conversation, large phone controls, online-first backend chat with local fallback, immediate local
+speech, continuous movement monitoring, water/check-in routines, Pi captions, and phone calls.
+Asha's portrait is bundled for offline use in both clients.
 
-The direct phone-to-Pi WebSocket waits for a matching `command.ack` before reporting a display
-message as delivered. Confirmed help uses `emergency.display`, which receives priority over routine
-captions on the Pi. Flutter is intentionally deferred until native-only needs justify a second
-client—particularly protected credential storage, background reconnect, local-network discovery,
-and production alternatives to an HTTPS page opening a plain local `ws://` connection.
+The direct phone-to-Pi WebSocket waits for a matching command acknowledgement before reporting a
+display message as delivered. Confirmed help receives priority over routine captions on the Pi.
+The Flutter client adds protected credential storage, native front-camera processing, direct
+caregiver phrase recordings, local notifications, and Android phone handoffs. Neither client puts
+an OpenAI key in shipped code.
 
 ## What is included
 
 - **Primary React/Vinext PWA (`apps/web`):** patient, Pi Display, caregiver, and calibration views;
-  bundled MediaPipe hand recognition; personalized nearest-prototype classification;
+  bundled MediaPipe hand plus calibrated face/eye movement recognition; personalized
+  nearest-prototype classification;
   out-of-distribution rejection; `REST → CANDIDATE → WAIT_RELEASE`; local SpeechSynthesis; optional,
   user-initiated browser speech recognition with a typed fallback; IndexedDB; PWA caching; explicit
   emergency confirmation; and honest offline/demo device states.
+- **Native Flutter app (`apps/mobile`):** mobile-first patient/caregiver/setup shell; corner Asha
+  conversation sheet; on-device face, blink, wink, head, and facial-contour signals; immediate TTS
+  or exact caregiver-recorded phrase playback; water notifications; phone calls; protected Pi
+  credentials; and the same bounded WebSocket caption protocol.
 - **Asha companion boundary:** `POST /v1/asha/chat` accepts bounded text and optional patient-owned
   context. The API can use a server-only OpenAI Responses adapter and owner-scoped file search, or
   return a deterministic offline companion response when no provider is configured. No API key is
@@ -101,6 +107,10 @@ Set-Location .\apps\web
 npm.cmd run dev
 ```
 
+For the native Android client, install Flutter and an Android SDK, then follow
+[apps/mobile/README.md](apps/mobile/README.md). GitHub Actions runs analysis/tests and produces a
+downloadable evaluation APK artifact without storing an API key in the app.
+
 PostgreSQL is required for the full API, but the browser's local communication path works when the
 API is unavailable. Direct development may use the configured `local-user` identity. Staging and
 production must set a 32-byte-or-longer `FINGERSPEAK_GATEWAY_HMAC_SECRET` and use a trusted gateway
@@ -133,6 +143,7 @@ edge simulator/protocol, Python lint/compilation, and Compose configuration when
 
 ```text
 apps/web          Primary React/Vinext patient, Pi Display, caregiver, and setup PWA
+apps/mobile       Native Flutter patient, caregiver, Asha, camera, voice, reminder, and Pi client
 apps/web-vue      Legacy Vue presentation retained as a reference
 services/api      FastAPI/PostgreSQL control plane, Asha, alerts, cloud device channel
 services/edge     Authenticated Raspberry Pi bridge, adapters, simulator, and tests

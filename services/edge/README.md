@@ -10,6 +10,36 @@ The default simulator has no Raspberry Pi dependencies:
 python -m fingerspeak_edge --adapter simulated
 ```
 
+## Local patient-intent monitoring
+
+The edge service has a calibrated, one-shot face/eye intent pipeline and authenticated broadcast
+path. A detector returns only normalized movement scores to the monitor; the WebSocket emits only a
+strict `patient.intent` semantic event. Camera frames, crops, landmarks, calibration samples,
+identity, emotion, pain, and medical inferences are never protocol fields.
+
+The deterministic detector is intentionally opt-in and is suitable only for tests or a visible
+demo. This example calibrates on neutral samples and emits one `blink` event:
+
+```bash
+python -m fingerspeak_edge \
+  --adapter simulated \
+  --intent-detector simulated \
+  --simulate-intent blink
+```
+
+`--intent-detector off` is the default. The bundled Picamera2 adapter starts and locally captures
+the NoIR camera, but a production MediaPipe/OpenCV score adapter is **not bundled yet** because the
+required native wheels and delegate combinations have not been verified across supported
+Raspberry Pi Model B generations. Do not claim real face/eye recognition or enable the simulated
+detector on a deployed wheelchair. A real adapter must implement `FaceIntentDetector`, keep raw
+frames inside that adapter, and pass Raspberry Pi hardware validation before selection is added to
+the CLI.
+
+Available semantic IDs are `blink`, `look_left`, `look_right`, `eyebrows_up`, and `mouth_open`.
+Neutral calibration, debounce, mapped default safety dwell, cooldown, and release-before-rearm all
+run on the Pi. `mouth_open` retains a total 1.5-second dwell because it is the default emergency
+mapping; the phone additionally confirms emergency remappings because bindings are phone-local.
+
 For a LAN demo, bind explicitly and set a stable, high-entropy token through the environment:
 
 ```powershell

@@ -4,7 +4,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Self
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,11 +45,33 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OPENAI_API_KEY", "FINGERSPEAK_OPENAI_API_KEY"),
         repr=False,
     )
-    openai_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=100)
+    openai_model: str = Field(default="gpt-5.4-mini", min_length=1, max_length=100)
     openai_vector_store_id: str | None = Field(default=None, min_length=1, max_length=200)
     openai_timeout_seconds: float = Field(default=12.0, ge=1.0, le=30.0)
     openai_max_output_tokens: int = Field(default=500, ge=64, le=2_000)
+    gemini_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GEMINI_API_KEY", "FINGERSPEAK_GEMINI_API_KEY"),
+        repr=False,
+    )
+    gemini_model: str = Field(default="gemini-2.0-flash", min_length=1, max_length=100)
+    gemini_timeout_seconds: float = Field(default=12.0, ge=1.0, le=30.0)
+    gemini_max_output_tokens: int = Field(default=500, ge=64, le=2_000)
     log_level: str = "INFO"
+
+    @field_validator(
+        "gateway_hmac_secret",
+        "openai_api_key",
+        "openai_vector_store_id",
+        "gemini_api_key",
+        mode="before",
+    )
+    @classmethod
+    def normalize_blank_optional_settings(cls, value: object) -> object:
+        """Treat blank optional environment variables as if they were unset."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @property
     def docs_enabled(self) -> bool:

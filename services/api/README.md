@@ -137,7 +137,7 @@ every replica can wake or close its local sockets.
 
 `POST /v1/asha/chat` is an authenticated, text-only boundary with deterministic urgent handling and
 an offline fallback. A server-only `OPENAI_API_KEY` enables the optional Responses API adapter;
-`FINGERSPEAK_OPENAI_MODEL` defaults to `gpt-5.6-terra`. Setting
+`FINGERSPEAK_OPENAI_MODEL` defaults to the starter model `gpt-5.4-mini`. Setting
 `FINGERSPEAK_OPENAI_VECTOR_STORE_ID` enables file search only for an owner-authorized profile and
 filters files by that profile id. Requests use `store=false`, bounded time/output, and are not saved
 by this service.

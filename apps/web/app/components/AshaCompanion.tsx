@@ -40,7 +40,8 @@ type Props = {
   aiAvailable: boolean;
   patientContext: Record<string, unknown>;
   caregiverConfigured: boolean;
-  onSpeak(text: string): void;
+  onSpeak(text: string): boolean | Promise<boolean>;
+  onClose?(): void;
   onWriteDisplay(text: string): Promise<boolean>;
   onCallCaregiver(): string;
   onConfirmEmergency(): Promise<string>;
@@ -65,6 +66,7 @@ export function AshaCompanion({
   patientContext,
   caregiverConfigured,
   onSpeak,
+  onClose,
   onWriteDisplay,
   onCallCaregiver,
   onConfirmEmergency,
@@ -85,6 +87,7 @@ export function AshaCompanion({
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const playbackReportRef = useRef(0);
 
   const latestAshaMessage = useMemo(
     () => [...messages].reverse().find((message) => message.role === "asha")?.text ?? "Asha is ready.",
@@ -100,8 +103,18 @@ export function AshaCompanion({
       window.clearTimeout(detectionTimer);
       recognitionRef.current?.abort();
       requestRef.current?.abort();
+      playbackReportRef.current += 1;
     };
   }, []);
+
+  function speakAndReport(text: string, successMessage: string, unavailableMessage: string): void {
+    const reportId = ++playbackReportRef.current;
+    void Promise.resolve().then(() => onSpeak(text)).then((spoken) => {
+      if (playbackReportRef.current === reportId) setActionMessage(spoken ? successMessage : unavailableMessage);
+    }).catch(() => {
+      if (playbackReportRef.current === reportId) setActionMessage("Voice playback could not start; the message remains visible.");
+    });
+  }
 
   async function submitMessage(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -110,6 +123,7 @@ export function AshaCompanion({
     setMessages((current) => [...current, { id: messageId(), role: "patient", text: message }]);
     setDraft("");
     setBusy(true);
+    playbackReportRef.current += 1;
     setActionMessage("Asha is thinking…");
     const controller = new AbortController();
     requestRef.current?.abort();
@@ -132,7 +146,16 @@ export function AshaCompanion({
         mode: response.mode,
         citations: response.citations,
       }]);
-      setActionMessage(response.urgent ? "Asha noticed that this may be urgent. Please confirm before an alert is sent." : "Asha replied. You can play it aloud or write it on the Pi display.");
+      if (response.urgent) {
+        setActionMessage("Asha noticed that this may be urgent. Please confirm before an alert is sent.");
+      } else {
+        setActionMessage("Asha replied. Playing the response aloud…");
+        speakAndReport(response.reply, "Asha replied aloud. You can also write it on the Pi display.", "Asha replied on screen, but voice playback is unavailable on this device.");
+      }
+      if (response.urgent) {
+        playbackReportRef.current += 1;
+        void Promise.resolve().then(() => onSpeak(response.reply)).catch(() => undefined);
+      }
       if (response.urgent) setConfirmingHelp(true);
     } catch {
       if (controller.signal.aborted) return;
@@ -143,8 +166,15 @@ export function AshaCompanion({
         text: fallback.reply,
         mode: "offline companion",
       }]);
-      setActionMessage("Online Asha is unavailable. Local communication controls remain ready.");
-      if (fallback.urgent) setConfirmingHelp(true);
+      if (fallback.urgent) {
+        setActionMessage("Online Asha is unavailable and this may be urgent. Please confirm before an alert is sent.");
+        playbackReportRef.current += 1;
+        void Promise.resolve().then(() => onSpeak(fallback.reply)).catch(() => undefined);
+        setConfirmingHelp(true);
+      } else {
+        setActionMessage("Online Asha is unavailable. Playing the local companion response…");
+        speakAndReport(fallback.reply, "Online Asha is unavailable. The local companion replied aloud while communication controls remain ready.", "Online Asha is unavailable. The local reply remains on screen while communication controls stay ready.");
+      }
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
       setBusy(false);
@@ -221,14 +251,18 @@ export function AshaCompanion({
       <div className="asha-companion-head">
         <AshaAvatar decorative eager />
         <div><span className="eyebrow">ASHA COMPANION</span><h2 id="asha-companion-title">I’m here with you.</h2></div>
-        <span className={aiAvailable ? "asha-presence live" : "asha-presence"}><i />{aiAvailable ? "Service ready" : "Offline-ready"}</span>
+        <span className={aiAvailable ? "asha-presence live" : "asha-presence"}><i />{aiAvailable ? "Backend connected" : "Offline-ready"}</span>
+        {onClose && <button className="asha-close" type="button" onClick={onClose} aria-label="Close Asha companion">×</button>}
       </div>
 
       <ol className="conversation" aria-live="polite" aria-busy={busy} aria-label="Conversation with Asha">
         {messages.map((message) => (
           <li key={message.id} className={`conversation-message ${message.role}`}>
             <div><small>{message.role === "asha" ? `Asha · ${message.mode ?? "companion"}` : "You"}</small><p>{message.text}</p></div>
-            {message.role === "asha" && <button type="button" onClick={() => onSpeak(message.text)} aria-label={`Play Asha message aloud: ${message.text}`}>▶ Play</button>}
+            {message.role === "asha" && <button type="button" onClick={() => {
+              setActionMessage("Playing Asha’s message…");
+              speakAndReport(message.text, "Asha’s message played aloud.", "Voice playback is unavailable; the message remains visible.");
+            }} aria-label={`Play Asha message aloud: ${message.text}`}>▶ Play</button>}
             {message.citations?.length ? (
               <ul className="citation-list" aria-label="Sources">
                 {message.citations.map((citation, index) => {

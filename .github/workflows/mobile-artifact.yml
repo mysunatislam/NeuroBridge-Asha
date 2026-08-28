@@ -1,0 +1,64 @@
+name: Build FingerSpeak mobile artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: Public HTTPS URL ending in /v1 (never an API key)
+        required: false
+        default: https://replace-with-your-backend.example/v1
+        type: string
+      pi_websocket_url:
+        description: Private WSS Pi gateway URL
+        required: false
+        default: wss://replace-with-your-pi-gateway.example/v1/device/ws
+        type: string
+  push:
+    tags:
+      - "mobile-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-artifact-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+      - name: Build debug-signed evaluation APK
+        env:
+          BUILD_API_BASE_URL: ${{ inputs.api_base_url || 'https://replace-with-your-backend.example/v1' }}
+          BUILD_PI_WEBSOCKET_URL: ${{ inputs.pi_websocket_url || 'wss://replace-with-your-pi-gateway.example/v1/device/ws' }}
+        run: >-
+          flutter build apk --release --split-per-abi
+          --dart-define=FINGERSPEAK_API_BASE_URL=$BUILD_API_BASE_URL
+          --dart-define=FINGERSPEAK_PI_WS_URL=$BUILD_PI_WEBSOCKET_URL
+      - name: Write checksums
+        run: sha256sum build/app/outputs/flutter-apk/*.apk > build/app/outputs/flutter-apk/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fingerspeak-mobile-evaluation-apks
+          path: |
+            apps/mobile/build/app/outputs/flutter-apk/*.apk
+            apps/mobile/build/app/outputs/flutter-apk/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30

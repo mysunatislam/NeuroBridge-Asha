@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
+from pathlib import Path
 
 import uvicorn
 from pydantic import SecretStr
@@ -15,12 +16,26 @@ from fingerspeak_edge.credential_store import (
     CredentialStoreError,
     FileCredentialDigestStore,
 )
+from fingerspeak_edge.intent_monitor import (
+    IntentMonitorSettings,
+    PatientIntent,
+    PatientIntentMonitor,
+    SimulatedFaceIntentDetector,
+    simulated_intent_script,
+)
 from fingerspeak_edge.state import EdgeRuntime, EdgeSettings, PairingAuthority
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the FingerSpeak Raspberry Pi edge bridge.")
-    parser.add_argument("--adapter", choices=("simulated", "picamera2"), default="simulated")
+    parser.add_argument(
+        "--adapter",
+        "--camera",
+        dest="adapter",
+        choices=("simulated", "picamera2"),
+        default="simulated",
+        help="Camera adapter. --camera is an equivalent, more explicit alias.",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--device-id", default="fingerspeak-pi")
@@ -56,6 +71,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--max-message-bytes", type=int, default=4_096)
     parser.add_argument(
+        "--intent-detector",
+        choices=("off", "simulated", "mediapipe"),
+        default=os.getenv("FINGERSPEAK_EDGE_INTENT_DETECTOR", "off"),
+        help=(
+            "Local semantic face/eye detector. 'off' is the hardware-safe default; "
+            "'simulated' is deterministic test/demo input; 'mediapipe' processes Picamera2 "
+            "frames locally and emits only bounded intent events."
+        ),
+    )
+    parser.add_argument(
+        "--face-model-path",
+        default=os.getenv("FINGERSPEAK_EDGE_FACE_MODEL_PATH"),
+        help=(
+            "Path to the pinned official face_landmarker.task model. When running from the "
+            "repository, the bundled web model is reused automatically."
+        ),
+    )
+    parser.add_argument(
+        "--simulate-intent",
+        choices=tuple(intent.value for intent in PatientIntent),
+        help=(
+            "Emit one deliberate simulated intent after neutral calibration. Requires "
+            "--intent-detector simulated."
+        ),
+    )
+    parser.add_argument("--intent-calibration-samples", type=int, default=30)
+    parser.add_argument("--intent-sample-interval", type=float, default=0.1)
+    parser.add_argument(
         "--cloud-device-ws-url",
         default=os.getenv("FINGERSPEAK_EDGE_CLOUD_DEVICE_WS_URL"),
         help="Optional server-provisioned /v1/devices/{id}/ws URL. Omit to disable the relay.",
@@ -86,6 +129,37 @@ def build_runtime(
         camera = Picamera2Camera()
     else:
         camera = SimulatedCamera()
+    monitor: PatientIntentMonitor | None = None
+    if args.simulate_intent and args.intent_detector != "simulated":
+        raise ValueError("--simulate-intent requires --intent-detector simulated")
+    if args.intent_detector == "mediapipe" and args.adapter != "picamera2":
+        raise ValueError("--intent-detector mediapipe requires --adapter picamera2")
+    if args.intent_detector != "off":
+        monitor_settings = IntentMonitorSettings(
+            calibration_samples=args.intent_calibration_samples,
+            sample_interval_seconds=args.intent_sample_interval,
+        )
+    if args.intent_detector == "simulated":
+        intent = PatientIntent(args.simulate_intent) if args.simulate_intent else None
+        detector = SimulatedFaceIntentDetector(
+            simulated_intent_script(
+                intent,
+                calibration_samples=monitor_settings.calibration_samples,
+                sample_interval_seconds=monitor_settings.sample_interval_seconds,
+            )
+        )
+        monitor = PatientIntentMonitor(detector, settings=monitor_settings)
+    elif args.intent_detector == "mediapipe":
+        from fingerspeak_edge.adapters.mediapipe_face_intent import (
+            MediaPipePicamera2FaceIntentDetector,
+        )
+
+        model_path = resolve_face_model_path(args.face_model_path)
+        detector = MediaPipePicamera2FaceIntentDetector(
+            camera,
+            model_path=model_path,
+        )
+        monitor = PatientIntentMonitor(detector, settings=monitor_settings)
     return EdgeRuntime(
         settings=EdgeSettings(
             device_id=args.device_id,
@@ -95,7 +169,29 @@ def build_runtime(
         camera=camera,
         display=SimulatedDisplay(),
         telemetry=SimulatedTelemetry(),
+        intent_monitor=monitor,
     )
+
+
+def resolve_face_model_path(configured: str | None) -> Path:
+    if configured:
+        path = Path(configured).expanduser().resolve()
+    else:
+        # Reuse the exact model already pinned for the PWA; do not ship a duplicate binary.
+        path = (
+            Path(__file__).resolve().parents[4]
+            / "apps"
+            / "web"
+            / "public"
+            / "models"
+            / "face_landmarker.task"
+        )
+    if not path.is_file():
+        raise ValueError(
+            "Face Landmarker model not found. Pass --face-model-path (or set "
+            "FINGERSPEAK_EDGE_FACE_MODEL_PATH) to face_landmarker.task."
+        )
+    return path
 
 
 def build_cloud_relay(
@@ -152,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("Pairing code must contain at least 16 characters.")
     try:
         runtime = build_runtime(args, pairing_code, credential_store)
-    except CredentialStoreError as exc:
+    except (CredentialStoreError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
     if runtime.pairing.pairing_available:
         if args.pairing_code is None:

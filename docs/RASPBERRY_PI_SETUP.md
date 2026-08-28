@@ -32,6 +32,14 @@ export FINGERSPEAK_EDGE_CREDENTIAL_STORE='/var/lib/fingerspeak/device-credential
 .venv/bin/python -m fingerspeak_edge --adapter picamera2
 ```
 
+This verifies the local camera bridge only. The current repository does not bundle a production
+MediaPipe/OpenCV face-score adapter for Raspberry Pi, so `--adapter picamera2` must not be described
+as real face/eye intent recognition yet. The semantic monitor and authenticated phone broadcast are
+fully testable with `--intent-detector simulated`, but that option is a test/demo source and must not
+run on a deployed wheelchair. Real support remains gated on validating native dependencies,
+latency, thermal behavior, NoIR lighting, and patient-specific false activations on the exact Pi
+model.
+
 The absolute credential-store path is optional for a disposable simulator but required for a
 restarting wheelchair unit. It stores only the SHA-256 digest of the rotated credential and keeps
 the one-time code consumed across restarts. Run the service as a restricted account; its parent
