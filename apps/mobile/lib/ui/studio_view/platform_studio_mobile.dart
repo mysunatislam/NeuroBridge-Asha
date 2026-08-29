@@ -292,17 +292,6 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
               },
             );
             controller.addJavaScriptHandler(
-              handlerName: 'speakPhrase',
-              callback: (args) {
-                if (args.isNotEmpty) {
-                  final text = args.first.toString();
-                  if (text.isNotEmpty) {
-                    widget.onGestureFired('Micro-Gesture', text, 0.95);
-                  }
-                }
-              },
-            );
-            controller.addJavaScriptHandler(
               handlerName: 'FingerSpeakStorage',
               callback: _handleStorageRequest,
             );
