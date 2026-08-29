@@ -168,10 +168,18 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
     super.dispose();
   }
 
-  void _handleMessage(String raw) {
+  void _handleMessage(dynamic raw) {
     try {
-      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final Map<String, dynamic> data;
+      if (raw is Map) {
+        data = Map<String, dynamic>.from(raw);
+      } else if (raw is String) {
+        data = jsonDecode(raw) as Map<String, dynamic>;
+      } else {
+        return;
+      }
       final type = data['type'] as String?;
+      debugPrint('[PlatformStudio Mobile]: message received: type=$type');
       if (type == 'research_event') {
         final line = formatResearchTelemetryLog(data['payload']);
         if (line != null) {
@@ -183,6 +191,7 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
         final g = data['gesture'] as String? ?? '';
         final p = data['phrase'] as String? ?? '';
         final c = (data['confidence'] as num?)?.toDouble() ?? 0.85;
+        debugPrint('[PlatformStudio Mobile]: onGestureFired gesture=$g phrase="$p" conf=$c');
         widget.onGestureFired(g, p, c);
       } else if (type == 'hand_detected') {
         widget.onHandDetected();
@@ -190,7 +199,9 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
         final s = data['accSummary'] as String? ?? 'Training complete';
         widget.onTrainingCompleted(s);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[PlatformStudio Mobile]: Message parse error: $e');
+    }
   }
 
   Future<Map<String, Object?>> _handleStorageRequest(List<dynamic> args) async {
@@ -277,7 +288,18 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
             controller.addJavaScriptHandler(
               handlerName: 'FingerSpeakBridge',
               callback: (args) {
-                if (args.isNotEmpty) _handleMessage(args.first.toString());
+                if (args.isNotEmpty) _handleMessage(args.first);
+              },
+            );
+            controller.addJavaScriptHandler(
+              handlerName: 'speakPhrase',
+              callback: (args) {
+                if (args.isNotEmpty) {
+                  final text = args.first.toString();
+                  if (text.isNotEmpty) {
+                    widget.onGestureFired('Micro-Gesture', text, 0.95);
+                  }
+                }
               },
             );
             controller.addJavaScriptHandler(
