@@ -33,7 +33,7 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
   void initState() {
     super.initState();
     // Do not construct the WebView until the background CameraController has
-    // fully released the hardware. Android otherwise races two camera clients.
+    // fully released the hardware. Android & iOS otherwise race two camera clients.
     _cameraRelease = widget.services.monitor.stop();
   }
 

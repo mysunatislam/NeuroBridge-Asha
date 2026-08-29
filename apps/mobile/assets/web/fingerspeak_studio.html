@@ -649,9 +649,58 @@ setTimeout(() => {
 }, 100);
 
 let animFrameId = null;
+async function attachStream(stream) {
+  video.srcObject = stream;
+  video.muted = true;
+  video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
+  video.setAttribute('autoplay', '');
+  video.setAttribute('muted', '');
+  
+  await new Promise(res => {
+    if (video.readyState >= 1) {
+      res();
+    } else {
+      video.onloadedmetadata = () => res();
+      setTimeout(res, 400);
+    }
+  });
+  
+  try {
+    await video.play();
+  } catch(e) {
+    console.warn('video.play warning:', e);
+  }
+
+  overlay.width = video.videoWidth || 640;
+  overlay.height = video.videoHeight || 480;
+
+  const startOverlay = document.getElementById('startOverlay');
+  if (startOverlay) startOverlay.style.display = 'none';
+  const errorMsg = document.getElementById('cameraErrorMessage');
+  if (errorMsg) errorMsg.style.display = 'none';
+
+  setStatus(true, handLandmarker ? 'tracking' : 'camera active');
+  running = true;
+  lastVideoTime = -1;
+  lastLandmarkTimestamp = 0;
+
+  if (animFrameId) cancelAnimationFrame(animFrameId);
+  animFrameId = requestAnimationFrame(renderLoop);
+}
+
 async function startCamera(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    throw new Error('Camera access not supported on this device or webview');
+    const legacyGetUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+    if (legacyGetUserMedia) {
+      return new Promise((resolve, reject) => {
+        legacyGetUserMedia.call(navigator, { video: true, audio: false }, (stream) => {
+          attachStream(stream).then(resolve).catch(reject);
+        }, reject);
+      });
+    }
+    throw new Error('Camera access not supported or blocked by webview origin security policy.');
   }
 
   // Clean up any existing stream
@@ -695,44 +744,7 @@ async function startCamera(){
     throw new Error('Could not obtain video stream from device camera.');
   }
 
-  video.srcObject = stream;
-  video.muted = true;
-  video.playsInline = true;
-  video.setAttribute('playsinline', '');
-  video.setAttribute('webkit-playsinline', '');
-  video.setAttribute('autoplay', '');
-  video.setAttribute('muted', '');
-  
-  await new Promise(res => {
-    if (video.readyState >= 1) {
-      res();
-    } else {
-      video.onloadedmetadata = () => res();
-      setTimeout(res, 400);
-    }
-  });
-  
-  try {
-    await video.play();
-  } catch(e) {
-    console.warn('video.play warning:', e);
-  }
-
-  overlay.width = video.videoWidth || 640;
-  overlay.height = video.videoHeight || 480;
-
-  const startOverlay = document.getElementById('startOverlay');
-  if (startOverlay) startOverlay.style.display = 'none';
-  const errorMsg = document.getElementById('cameraErrorMessage');
-  if (errorMsg) errorMsg.style.display = 'none';
-
-  setStatus(true, handLandmarker ? 'tracking' : 'camera active');
-  running = true;
-  lastVideoTime = -1;
-  lastLandmarkTimestamp = 0;
-
-  if (animFrameId) cancelAnimationFrame(animFrameId);
-  animFrameId = requestAnimationFrame(renderLoop);
+  await attachStream(stream);
 }
 function setStatus(ok, text){
   document.getElementById('statusDot').className = 'dot ' + (ok ? 'live' : 'off');
@@ -1917,6 +1929,15 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   if (errorMsg) errorMsg.style.display = 'none';
 
   try {
+    // Request native camera permission via Flutter in-app webview bridge if available
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try {
+        await window.flutter_inappwebview.callHandler('requestCameraPermission');
+      } catch(bridgeErr) {
+        console.warn('Native camera permission bridge notice:', bridgeErr);
+      }
+    }
+
     // 1. Start camera IMMEDIATELY while user gesture token is active
     await startCamera();
     warmupVoices();
@@ -1928,7 +1949,7 @@ document.getElementById('startBtn').addEventListener('click', async () => {
     btn.disabled = false;
     setStatus(false, 'camera error: ' + (err.message || err));
     if (errorMsg) {
-      errorMsg.textContent = 'Camera access failed: ' + (err.message || err) + '. Please check camera permissions in iOS Settings.';
+      errorMsg.textContent = 'Camera access failed: ' + (err.message || err) + '. Please ensure camera permissions are enabled for NeuroBridge Asha in iOS Settings.';
       errorMsg.style.display = 'block';
     }
     return;

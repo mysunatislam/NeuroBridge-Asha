@@ -71,7 +71,7 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
     try {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       _server = server;
-      final url = 'http://127.0.0.1:${server.port}/';
+      final url = 'http://localhost:${server.port}/';
 
       server.listen((HttpRequest request) async {
         try {
@@ -211,7 +211,7 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
       );
     }
 
-    final baseUrl = serverUrl.isNotEmpty ? serverUrl : 'http://127.0.0.1/';
+    final baseUrl = serverUrl.isNotEmpty ? serverUrl : 'http://localhost/';
     final Map<String, String> queryParams = {};
     if (researchTelemetryEnabled) queryParams['research'] = '1';
     if (widget.patientExecutionMode) queryParams['mode'] = 'patient';
@@ -253,6 +253,13 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
             controller.addJavaScriptHandler(
               handlerName: 'FingerSpeakStorage',
               callback: _handleStorageRequest,
+            );
+            controller.addJavaScriptHandler(
+              handlerName: 'requestCameraPermission',
+              callback: (args) async {
+                final status = await Permission.camera.request();
+                return {'granted': status.isGranted};
+              },
             );
           },
           onLoadStop: (controller, url) {
