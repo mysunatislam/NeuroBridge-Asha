@@ -195,7 +195,7 @@
           via a bidirectional GRU trained live on your calibration samples.
         </div>
         <div id="cameraErrorMessage" style="display:none; color:#E86A6A; font-size:12.5px; max-width:340px; margin-bottom:10px; line-height:1.4;"></div>
-        <button class="btn primary" id="startBtn">Enable camera</button>
+        <button class="btn primary" id="startBtn" onclick="startCamera()">Enable camera</button>
       </div>
 
       <div class="overlay-msg" id="wizardOverlay">
@@ -377,8 +377,22 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
 
-<script type="module">
-import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+<script>
+let HandLandmarker = null;
+let FilesetResolver = null;
+
+async function ensureMediaPipeVision() {
+  if (HandLandmarker && FilesetResolver) return true;
+  try {
+    const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14");
+    HandLandmarker = vision.HandLandmarker;
+    FilesetResolver = vision.FilesetResolver;
+    return true;
+  } catch (e) {
+    console.warn("MediaPipe CDN dynamic import failed:", e);
+    return false;
+  }
+}
 
 // ================= config =================
 const SEQ_LEN = 20;
@@ -577,6 +591,18 @@ async function initHandLandmarker(){
   }
   modelLoading = true;
 
+  try {
+    await ensureMediaPipeVision();
+  } catch(e) {
+    console.warn("ensureMediaPipeVision error:", e);
+  }
+
+  if (!FilesetResolver || !HandLandmarker) {
+    modelLoading = false;
+    console.warn("MediaPipe FilesetResolver/HandLandmarker not ready yet.");
+    return;
+  }
+
   // 1. Try local bundled assets from app server (zero internet needed)
   try {
     console.log("Loading MediaPipe HandLandmarker from local assets (/wasm)...");
@@ -691,16 +717,45 @@ async function attachStream(stream) {
 }
 
 async function startCamera(){
+  const btn = document.getElementById('startBtn');
+  if (btn) {
+    btn.textContent = 'Starting camera…';
+    btn.disabled = true;
+  }
+  const errorMsg = document.getElementById('cameraErrorMessage');
+  if (errorMsg) errorMsg.style.display = 'none';
+
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     const legacyGetUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
     if (legacyGetUserMedia) {
       return new Promise((resolve, reject) => {
         legacyGetUserMedia.call(navigator, { video: true, audio: false }, (stream) => {
-          attachStream(stream).then(resolve).catch(reject);
-        }, reject);
+          attachStream(stream).then(() => {
+            warmupVoices();
+            const wizBtn = document.getElementById('wizardStartBtn');
+            if (wizBtn) wizBtn.disabled = false;
+            initHandLandmarker().catch(err => console.warn('Background handLandmarker init error:', err));
+            resolve();
+          }).catch(reject);
+        }, (err) => {
+          if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
+          setStatus(false, 'camera error: ' + (err.message || err));
+          if (errorMsg) {
+            errorMsg.textContent = 'Camera failed: ' + (err.message || err) + '. Please check camera permissions in iOS Settings.';
+            errorMsg.style.display = 'block';
+          }
+          reject(err);
+        });
       });
     }
-    throw new Error('Camera access not supported or blocked by webview origin security policy.');
+    if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
+    const err = new Error('Camera access (getUserMedia) not supported or blocked by webview origin security policy.');
+    setStatus(false, 'camera error: ' + err.message);
+    if (errorMsg) {
+      errorMsg.textContent = 'Camera access not supported. Please check camera permissions in iOS Settings.';
+      errorMsg.style.display = 'block';
+    }
+    throw err;
   }
 
   // Clean up any existing stream
@@ -735,17 +790,31 @@ async function startCamera(){
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       } catch(e3) {
         console.error('All getUserMedia attempts failed:', e3);
+        if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
+        setStatus(false, 'camera error: ' + (e3.message || e3));
+        if (errorMsg) {
+          errorMsg.textContent = 'Camera failed: ' + (e3.message || e3) + '. Please ensure camera permissions are enabled in iOS Settings > NeuroBridge Asha.';
+          errorMsg.style.display = 'block';
+        }
         throw e3;
       }
     }
   }
 
   if (!stream) {
+    if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
     throw new Error('Could not obtain video stream from device camera.');
   }
 
   await attachStream(stream);
+  warmupVoices();
+  const wizBtn = document.getElementById('wizardStartBtn');
+  if (wizBtn) wizBtn.disabled = false;
+
+  // Initialize MediaPipe model in background once camera stream is active
+  initHandLandmarker().catch(err => console.warn('Background handLandmarker init error:', err));
 }
+window.startCamera = startCamera;
 function setStatus(ok, text){
   document.getElementById('statusDot').className = 'dot ' + (ok ? 'live' : 'off');
   document.getElementById('statusText').textContent = text;
@@ -1921,51 +1990,21 @@ document.getElementById('threshSlider').addEventListener('input', (e) => {
   confidenceThreshold = parseFloat(e.target.value);
   document.getElementById('threshVal').textContent = confidenceThreshold.toFixed(2);
 });
-document.getElementById('startBtn').addEventListener('click', async () => {
-  const btn = document.getElementById('startBtn');
-  btn.textContent = 'Starting camera…';
-  btn.disabled = true;
-  const errorMsg = document.getElementById('cameraErrorMessage');
-  if (errorMsg) errorMsg.style.display = 'none';
+const startBtnEl = document.getElementById('startBtn');
+if (startBtnEl) {
+  startBtnEl.addEventListener('click', (e) => {
+    e.preventDefault();
+    startCamera().catch(err => console.warn('startBtn click error:', err));
+  });
+}
 
-  try {
-    // Request native camera permission via Flutter in-app webview bridge if available
-    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      try {
-        await window.flutter_inappwebview.callHandler('requestCameraPermission');
-      } catch(bridgeErr) {
-        console.warn('Native camera permission bridge notice:', bridgeErr);
-      }
-    }
-
-    // 1. Start camera IMMEDIATELY while user gesture token is active
-    await startCamera();
-    warmupVoices();
-    const wizBtn = document.getElementById('wizardStartBtn');
-    if (wizBtn) wizBtn.disabled = false;
-  } catch(err) {
-    console.error('startCamera error:', err);
-    btn.textContent = 'Enable camera';
-    btn.disabled = false;
-    setStatus(false, 'camera error: ' + (err.message || err));
-    if (errorMsg) {
-      errorMsg.textContent = 'Camera access failed: ' + (err.message || err) + '. Please ensure camera permissions are enabled for NeuroBridge Asha in iOS Settings.';
-      errorMsg.style.display = 'block';
-    }
-    return;
+window.FingerSpeakStudio = {
+  startCamera: startCamera,
+  startPatientMode: function() {
+    startCamera().catch(e => console.warn('startPatientMode camera error:', e));
   }
+};
 
-  // 2. Ensure MediaPipe HandLandmarker is initialized in background
-  if (!handLandmarker) {
-    try {
-      setStatus(true, 'loading 3D model…');
-      await initHandLandmarker();
-      setStatus(true, 'tracking');
-    } catch(modelErr) {
-      console.warn('initHandLandmarker background error:', modelErr);
-    }
-  }
-});
 document.getElementById('testVoiceBtn').addEventListener('click', () => {
   warmupVoices();
   speak('This is a test of FingerSpeak voice output.');
