@@ -324,6 +324,18 @@ class PatientVoiceService {
   Future<void> initialize({String locale = 'en-US'}) async {
     _locale = locale;
     try {
+      try {
+        await _tts.setIosAudioCategory(
+          IosTextToSpeechAudioCategory.playback,
+          [
+            IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+            IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+            IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+            IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+          ],
+          IosTextToSpeechAudioMode.defaultMode,
+        );
+      } catch (_) {}
       await _tts.setLanguage(locale);
       await _tts.setSpeechRate(preferences.speechRate);
       await _tts.setPitch(1.20); // Reassuring, clear female pitch
