@@ -228,6 +228,9 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
           initialSettings: InAppWebViewSettings(
             mediaPlaybackRequiresUserGesture: false,
             allowsInlineMediaPlayback: true,
+            allowsAirPlayForMediaPlayback: true,
+            allowsPictureInPictureMediaPlayback: true,
+            isInspectable: true,
             javaScriptEnabled: true,
             javaScriptCanOpenWindowsAutomatically: true,
             useHybridComposition: true,

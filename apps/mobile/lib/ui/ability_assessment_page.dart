@@ -113,7 +113,7 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
               const Text('Assisted', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
               Switch(
                 value: _caregiverAssisted,
-                activeColor: const Color(0xFF14B8A6),
+                activeTrackColor: const Color(0xFF14B8A6),
                 onChanged: (v) => setState(() => _caregiverAssisted = v),
               ),
               const SizedBox(width: 8),
@@ -278,7 +278,7 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
               Text(rec.reasoning, style: const TextStyle(color: Color(0xFFCCFBF1), fontSize: 13, height: 1.4)),
               if (rec.backupModality != null) ...[
                 const SizedBox(height: 10),
-                Text('Backup Input: ' + rec.backupModality!.title, style: const TextStyle(color: Color(0xFF99F6E4), fontSize: 13, fontWeight: FontWeight.w600)),
+                Text('Backup Input: ${rec.backupModality!.title}', style: const TextStyle(color: Color(0xFF99F6E4), fontSize: 13, fontWeight: FontWeight.w600)),
               ],
             ],
           ),
@@ -367,7 +367,7 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
             ),
           ),
           const SizedBox(width: 12),
-          Text(score.toString() + '%', style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
+          Text('$score%', style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
         ],
       ),
     );
