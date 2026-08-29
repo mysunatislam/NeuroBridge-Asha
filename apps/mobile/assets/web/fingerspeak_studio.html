@@ -1365,22 +1365,47 @@ function renderMetricsTable(matrix, labels){
   document.getElementById('metricsTable').innerHTML = html;
 }
 
-// ================= universal persistent storage (localStorage + IndexedDB) =================
+// ================= universal persistent storage (Flutter Native + localStorage + IndexedDB) =================
 const storageHelper = {
   async set(key, value) {
+    // 1. Flutter InAppWebView native persistent storage (UserDefaults on iOS / SharedPreferences on Android)
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try {
+        const res = await window.flutter_inappwebview.callHandler('FingerSpeakStorage', { action: 'set', key: key, value: value });
+        if (res && res.ok) console.log('[Storage] Saved to native app storage:', key);
+      } catch(e) {
+        console.warn('Flutter storage set error:', e);
+      }
+    }
+    // 2. Mirror to browser localStorage
     try {
       localStorage.setItem(key, value);
-      return true;
-    } catch(e) {
-      console.warn('localStorage.setItem error, fallback to IndexedDB:', e);
-    }
-    return await idbSet(key, value);
+    } catch(e) {}
+    // 3. Mirror to IndexedDB
+    try {
+      await idbSet(key, value);
+    } catch(e) {}
+    return true;
   },
   async get(key) {
+    // 1. Query Flutter InAppWebView native persistent storage first
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try {
+        const res = await window.flutter_inappwebview.callHandler('FingerSpeakStorage', { action: 'get', key: key });
+        if (res && res.ok && res.value) {
+          console.log('[Storage] Retrieved from native app storage:', key);
+          return { value: res.value };
+        }
+      } catch(e) {
+        console.warn('Flutter storage get error:', e);
+      }
+    }
+    // 2. Fallback to localStorage
     try {
       const v = localStorage.getItem(key);
       if (v !== null) return { value: v };
     } catch(e) {}
+    // 3. Fallback to IndexedDB
     try {
       const v = await idbGet(key);
       if (v !== null) return { value: v };
@@ -1437,18 +1462,104 @@ async function autoLoadSavedProfile() {
       if (parsed.gestures && parsed.gestures.length >= 2) {
         gestures = parsed.gestures;
         renderGestureList();
+        console.log('[Profile] Restored gestures with calibration samples from storage.');
       }
     }
   } catch(e) {}
 }
 
-// Auto-load profile when page initializes
-setTimeout(autoLoadSavedProfile, 200);
+async function autoLoadSavedModel(silent = false) {
+  const statusEl = document.getElementById('trainStatus');
+  try {
+    const wRes = await storageHelper.get('fingerspeak_model_weights');
+    const mRes = await storageHelper.get('fingerspeak_model_meta');
+    if (wRes && mRes && wRes.value && mRes.value) {
+      const weightsData = JSON.parse(wRes.value);
+      const meta = JSON.parse(mRes.value);
+      const numClasses = meta.gestures.length;
+      const m = buildModelArchitecture(meta.seqLen, meta.featureLen, numClasses);
+      const tensors = weightsData.map(w => tf.tensor(w.data, w.shape));
+      m.setWeights(tensors);
+      tensors.forEach(t => t.dispose());
+      if (model) model.dispose();
+      model = m;
+      baselineModels = { dtw: { trainSeqs: [], trainLabels: [] }, prototype: { prototypes: [], spreads: [] } };
+      oodPrototypes = null;
+      activeModelType = 'bigru';
+      const modelSelectEl = document.getElementById('modelSelect');
+      if (modelSelectEl) {
+        modelSelectEl.value = 'bigru';
+        modelSelectEl.disabled = false;
+      }
+      if (meta.gestures && meta.gestures.length >= 2) {
+        gestures = meta.gestures.map(g => ({
+          id: cid(), name: g.name, phrase: g.phrase, samples: [], icon: g.icon || guessIcon(g.name), protected: g.name === 'Rest'
+        }));
+        renderGestureList();
+      }
+      buildProbBarsSkeleton();
+      document.getElementById('liveToggle').disabled = false;
+      document.getElementById('saveModelBtn').disabled = false;
+      if (statusEl) {
+        statusEl.textContent = `✓ Active: Loaded saved neural model (${numClasses} gestures). Speak Mode ready!`;
+      }
+      console.log('[Model] Successfully restored neural model from device storage.');
+      return true;
+    }
+  } catch(err) {
+    console.warn('[Model] Could not load saved neural model:', err);
+    if (!silent && statusEl) statusEl.textContent = 'Could not load saved model: ' + err.message;
+  }
+
+  // Fallback: If gestures have samples from calibration profile, build instant prototype model
+  if (gestures && gestures.length >= 2 && gestures.some(g => g.samples && g.samples.length > 0)) {
+    try {
+      const trainSeqsByClass = gestures.map(g => g.samples.map(s => buildModelInput(s.raw)));
+      trainDTW(trainSeqsByClass);
+      trainPrototype(trainSeqsByClass);
+      buildOODPrototypes(trainSeqsByClass);
+      activeModelType = 'prototype';
+      document.getElementById('liveToggle').disabled = false;
+      buildProbBarsSkeleton();
+      if (statusEl) {
+        statusEl.textContent = '✓ Ready: Calibrated gestures active (Fast Prototype). Speak Mode ready!';
+      }
+      return true;
+    } catch(e) {}
+  }
+  return false;
+}
+
+// Automatic boot sequence: load profile, load saved model, and handle patient mode
+async function initSavedStorage() {
+  await autoLoadSavedProfile();
+  await autoLoadSavedModel(true);
+
+  // Check URL parameters for patient execution mode
+  const urlParams = new URLSearchParams(window.location.search);
+  const isPatientMode = urlParams.has('patientMode') || urlParams.get('mode') === 'patient';
+  if (isPatientMode) {
+    console.log('[Mode] Initializing in Patient Execution Mode...');
+    setTimeout(async () => {
+      if (!model) await autoLoadSavedModel(true);
+      if (!running) {
+        try { await startCamera(); } catch(e) {}
+      }
+      if (!liveMode) {
+        const toggleBtn = document.getElementById('liveToggle');
+        if (toggleBtn && !toggleBtn.disabled) toggleBtn.click();
+      }
+    }, 450);
+  }
+}
+
+// Auto-load profile & model when page initializes
+setTimeout(initSavedStorage, 200);
 
 document.getElementById('saveModelBtn').addEventListener('click', async () => {
   const statusEl = document.getElementById('trainStatus');
   if (!model){ return; }
-  statusEl.textContent = 'Saving model to device…';
+  statusEl.textContent = 'Saving model to device storage…';
   try{
     const weightsData = model.getWeights().map(w => ({ shape: w.shape, data: Array.from(w.dataSync()) }));
     const meta = {
@@ -1459,42 +1570,17 @@ document.getElementById('saveModelBtn').addEventListener('click', async () => {
     const okW = await storageHelper.set('fingerspeak_model_weights', JSON.stringify(weightsData));
     const okM = await storageHelper.set('fingerspeak_model_meta', JSON.stringify(meta));
     await autoSaveProfile();
-    statusEl.textContent = (okW && okM) ? '✓ Model and gestures saved to device. Ready for Speak Mode!' : 'Save completed.';
+    statusEl.textContent = (okW && okM) ? '✓ Model and gestures saved to device storage. Speak Mode ready!' : 'Save completed.';
   } catch(err){
     statusEl.textContent = 'Could not save model: ' + err.message;
   }
 });
 document.getElementById('loadModelBtn').addEventListener('click', async () => {
   const statusEl = document.getElementById('trainStatus');
-  try{
-    const wRes = await storageHelper.get('fingerspeak_model_weights');
-    const mRes = await storageHelper.get('fingerspeak_model_meta');
-    if (!wRes || !mRes){ statusEl.textContent = 'No saved model found in device storage yet.'; return; }
-    const weightsData = JSON.parse(wRes.value);
-    const meta = JSON.parse(mRes.value);
-    const numClasses = meta.gestures.length;
-    const m = buildModelArchitecture(meta.seqLen, meta.featureLen, numClasses);
-    const tensors = weightsData.map(w => tf.tensor(w.data, w.shape));
-    m.setWeights(tensors);
-    tensors.forEach(t => t.dispose());
-    if (model) model.dispose();
-    model = m;
-    baselineModels = { dtw: { trainSeqs: [], trainLabels: [] }, prototype: { prototypes: [], spreads: [] } };
-    oodPrototypes = null;
-    activeModelType = 'bigru';
-    const modelSelectEl = document.getElementById('modelSelect');
-    modelSelectEl.value = 'bigru';
-    modelSelectEl.disabled = false;
-    gestures = meta.gestures.map(g => ({
-      id: cid(), name: g.name, phrase: g.phrase, samples: [], icon: g.icon || guessIcon(g.name), protected: g.name === 'Rest'
-    }));
-    renderGestureList();
-    buildProbBarsSkeleton();
-    document.getElementById('liveToggle').disabled = false;
-    document.getElementById('saveModelBtn').disabled = false;
-    statusEl.textContent = `✓ Loaded saved model from device storage (saved ${new Date(meta.savedAt).toLocaleTimeString()}).`;
-  } catch(err){
-    statusEl.textContent = 'Could not load saved model: ' + err.message;
+  statusEl.textContent = 'Loading saved model…';
+  const success = await autoLoadSavedModel(false);
+  if (!success) {
+    statusEl.textContent = 'No saved model found in device storage yet. Please calibrate and train first.';
   }
 });
 
@@ -1577,12 +1663,22 @@ function runInference(rawSeq){
     const elapsed = performance.now() - candidateStart;
     const need = dwellMsFor(gestures[candidateIdx]);
     updateConfidenceRing(Math.min(1, elapsed/need));
-    if (elapsed >= need){
-      const gesture = gestures[candidateIdx];
       if (gesture.phrase){
         speak(gesture.phrase); playChime(); flashCaption(gesture.phrase, gesture); logSpoken(gesture.phrase, gesture.name);
         reliability.latencies.push(elapsed);
         renderReliabilityTable();
+
+        // Send gesture event to Flutter native bridge for Asha voice integration
+        if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+          try {
+            window.flutter_inappwebview.callHandler('FingerSpeakBridge', JSON.stringify({
+              type: 'gesture_fired',
+              gesture: gesture.name,
+              phrase: gesture.phrase,
+              confidence: 0.95
+            }));
+          } catch(e) {}
+        }
       }
       intentState = 'WAIT_RELEASE'; restStreak = 0; candidateIdx = null; updateConfidenceRing(0);
     }
@@ -1597,7 +1693,14 @@ function handleNoHandFrame(){
   }
 }
 
-document.getElementById('liveToggle').addEventListener('click', (e) => {
+document.getElementById('liveToggle').addEventListener('click', async (e) => {
+  if (!model && (!baselineModels || !baselineModels.prototype || !baselineModels.prototype.prototypes || !baselineModels.prototype.prototypes.length)) {
+    const loaded = await autoLoadSavedModel(false);
+    if (!loaded) {
+      alert('No calibrated model or gestures found on this device yet. Please record gesture samples and train first.');
+      return;
+    }
+  }
   liveMode = !liveMode;
   e.target.textContent = liveMode ? 'Disable speak mode' : 'Enable speak mode';
   e.target.classList.toggle('primary', liveMode);
