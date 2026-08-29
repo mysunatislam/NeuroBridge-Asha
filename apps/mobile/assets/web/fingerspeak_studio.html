@@ -649,106 +649,90 @@ setTimeout(() => {
 }, 100);
 
 let animFrameId = null;
-let startingCamera = false;
-let lastLandmarkTimestamp = 0;
-
 async function startCamera(){
-  if (startingCamera) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    throw new Error('Camera access not supported on this device or webview');
+    throw new Error('Camera access not supported on this device/webview');
   }
 
-  startingCamera = true;
-  try {
-    // 1. Clean up any existing stream before opening a new one
-    if (video.srcObject) {
-      try {
-        video.srcObject.getTracks().forEach(t => t.stop());
-      } catch(e) {}
-      video.srcObject = null;
-    }
-    if (animFrameId) {
-      cancelAnimationFrame(animFrameId);
-      animFrameId = null;
-    }
+  // 1. Clean up any existing stream before opening a new one
+  if (video.srcObject) {
+    try {
+      video.srcObject.getTracks().forEach(t => t.stop());
+    } catch(e) {}
+    video.srcObject = null;
+  }
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
 
-    let stream = null;
-    // 2. Try mobile front camera with ideal resolution constraints
+  let stream = null;
+  // 2. Try mobile front camera with ideal resolution constraints
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false
+    });
+  } catch(e1) {
+    console.warn('User facingMode ideal getUserMedia failed, retrying simple user facingMode:', e1);
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'user' },
-          width: { ideal: 640 },
-          height: { ideal: 480 }
-        },
+        video: { facingMode: 'user' },
         audio: false
       });
-    } catch(e1) {
-      console.warn('User facingMode ideal getUserMedia failed, retrying simple user facingMode:', e1);
+    } catch(e2) {
+      console.warn('Simple facingMode getUserMedia failed, retrying generic video:', e2);
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' },
-          audio: false
-        });
-      } catch(e2) {
-        console.warn('Simple facingMode getUserMedia failed, retrying generic video:', e2);
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        } catch(e3) {
-          console.error('All getUserMedia attempts failed:', e3);
-          throw e3;
-        }
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      } catch(e3) {
+        console.error('All getUserMedia attempts failed:', e3);
+        throw e3;
       }
     }
-
-    if (!stream) {
-      throw new Error('Could not obtain video stream from device camera.');
-    }
-
-    video.srcObject = stream;
-    video.muted = true;
-    video.playsInline = true;
-    video.setAttribute('playsinline', '');
-    video.setAttribute('webkit-playsinline', '');
-    video.setAttribute('autoplay', '');
-    video.setAttribute('muted', '');
-    
-    await new Promise(res => {
-      if (video.readyState >= 1) {
-        res();
-      } else {
-        video.onloadedmetadata = () => res();
-        setTimeout(res, 500);
-      }
-    });
-    
-    try {
-      await video.play();
-    } catch(e) {
-      console.warn('video.play catch:', e);
-    }
-
-    if (!video.videoWidth) {
-      await sleep(150);
-    }
-    overlay.width = video.videoWidth || 640;
-    overlay.height = video.videoHeight || 480;
-
-    const startOverlay = document.getElementById('startOverlay');
-    if (startOverlay) startOverlay.style.display = 'none';
-    const errorMsg = document.getElementById('cameraErrorMessage');
-    if (errorMsg) errorMsg.style.display = 'none';
-
-    setStatus(true, 'camera active');
-    running = true;
-    lastVideoTime = -1;
-    lastLandmarkTimestamp = 0;
-
-    if (animFrameId) cancelAnimationFrame(animFrameId);
-    animFrameId = requestAnimationFrame(renderLoop);
-  } finally {
-    startingCamera = false;
   }
+
+  if (!stream) {
+    throw new Error('Could not obtain video stream from device camera.');
+  }
+
+  video.srcObject = stream;
+  video.muted = true;
+  video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
+  video.setAttribute('autoplay', '');
+  video.setAttribute('muted', '');
+  
+  await new Promise(res => {
+    if (video.readyState >= 1) {
+      res();
+    } else {
+      video.onloadedmetadata = () => res();
+      setTimeout(res, 600);
+    }
+  });
+  
+  try {
+    await video.play();
+  } catch(e) {
+    console.warn('video.play catch:', e);
+  }
+
+  overlay.width = video.videoWidth || 640;
+  overlay.height = video.videoHeight || 480;
+
+  const startOverlay = document.getElementById('startOverlay');
+  if (startOverlay) startOverlay.style.display = 'none';
+  const errorMsg = document.getElementById('cameraErrorMessage');
+  if (errorMsg) errorMsg.style.display = 'none';
+
+  setStatus(true, 'camera active');
+  running = true;
+  lastVideoTime = -1;
+  lastLandmarkTimestamp = 0;
+
+  if (animFrameId) cancelAnimationFrame(animFrameId);
+  animFrameId = requestAnimationFrame(renderLoop);
 }
 function setStatus(ok, text){
   document.getElementById('statusDot').className = 'dot ' + (ok ? 'live' : 'off');
@@ -1615,21 +1599,11 @@ async function initSavedStorage() {
   const isPatientMode = urlParams.has('patientMode') || urlParams.get('mode') === 'patient';
   if (isPatientMode) {
     console.log('[Mode] Initializing in Patient Execution Mode...');
-    setTimeout(async () => {
-      if (!model) await autoLoadSavedModel(true);
-      if (!running) {
-        try {
-          await startCamera();
-          await initHandLandmarker();
-        } catch(e) {
-          console.warn('[PatientMode AutoStart Camera Warning]:', e);
-        }
-      }
-      if (!liveMode) {
-        const toggleBtn = document.getElementById('liveToggle');
-        if (toggleBtn && !toggleBtn.disabled) toggleBtn.click();
-      }
-    }, 450);
+    if (!model) await autoLoadSavedModel(true);
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+      startBtn.textContent = 'Enable camera';
+    }
   }
 }
 
@@ -1937,35 +1911,29 @@ document.getElementById('threshSlider').addEventListener('input', (e) => {
 });
 document.getElementById('startBtn').addEventListener('click', async () => {
   const btn = document.getElementById('startBtn');
-  btn.textContent = 'Starting camera…';
+  btn.textContent = 'Loading 3D model & camera…';
   btn.disabled = true;
-  
-  try {
-    await startCamera();
-  } catch(err) {
-    console.error('startCamera error:', err);
-    btn.textContent = 'Enable camera';
-    btn.disabled = false;
-    setStatus(false, 'camera error: ' + (err.message || err));
-    const errorMsg = document.getElementById('cameraErrorMessage');
-    if (errorMsg) {
-      errorMsg.textContent = 'Camera error: ' + (err.message || err) + '. Please check camera permissions in device Settings.';
-      errorMsg.style.display = 'block';
-    }
-    return;
-  }
+  const errorMsg = document.getElementById('cameraErrorMessage');
+  if (errorMsg) errorMsg.style.display = 'none';
 
-  // Camera is streaming! Now load MediaPipe HandLandmarker
   try {
     setStatus(true, 'loading 3D model…');
     await initHandLandmarker();
+    setStatus(true, 'starting camera…');
+    await startCamera();
     setStatus(true, 'tracking');
     const wizBtn = document.getElementById('wizardStartBtn');
     if (wizBtn) wizBtn.disabled = false;
     warmupVoices();
   } catch(err) {
-    console.error('HandLandmarker init error:', err);
-    setStatus(false, 'model load error: ' + (err.message || err));
+    console.error('Camera/Model init error:', err);
+    btn.textContent = 'Enable camera';
+    btn.disabled = false;
+    setStatus(false, 'camera error: ' + (err.message || err));
+    if (errorMsg) {
+      errorMsg.textContent = 'Camera error: ' + (err.message || err) + '. Please check camera permissions in iOS Settings.';
+      errorMsg.style.display = 'block';
+    }
   }
 });
 document.getElementById('testVoiceBtn').addEventListener('click', () => {
