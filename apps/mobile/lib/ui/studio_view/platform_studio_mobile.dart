@@ -212,8 +212,11 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
     }
 
     final baseUrl = serverUrl.isNotEmpty ? serverUrl : 'http://127.0.0.1/';
-    final studioUrl = researchTelemetryEnabled
-        ? Uri.parse(baseUrl).replace(queryParameters: const {'research': '1'})
+    final Map<String, String> queryParams = {};
+    if (researchTelemetryEnabled) queryParams['research'] = '1';
+    if (widget.patientExecutionMode) queryParams['mode'] = 'patient';
+    final studioUrl = queryParams.isNotEmpty
+        ? Uri.parse(baseUrl).replace(queryParameters: queryParams)
         : Uri.parse(baseUrl);
 
     return Stack(
