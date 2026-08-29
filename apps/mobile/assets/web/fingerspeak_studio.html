@@ -4,6 +4,22 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>NeuroBridge Asha — 3D Assistive Hand Studio</title>
+<script>
+window.addEventListener('error', function(e) {
+  var box = document.getElementById('cameraErrorMessage');
+  if (box) {
+    box.textContent = 'Page JS Error: ' + (e.message || e);
+    box.style.display = 'block';
+  }
+});
+window.addEventListener('unhandledrejection', function(e) {
+  var box = document.getElementById('cameraErrorMessage');
+  if (box) {
+    box.textContent = 'Unhandled Error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason || e);
+    box.style.display = 'block';
+  }
+});
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>

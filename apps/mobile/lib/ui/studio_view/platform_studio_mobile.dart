@@ -54,22 +54,52 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
   void initState() {
     super.initState();
     _startServer();
-    _requestPermissions();
   }
 
-  void _requestPermissions() {
-    // Non-blocking OS permission check in background
-    Permission.camera.request().then((cam) {
-      debugPrint('[OS Camera Permission]: $cam');
-    }).catchError((e) {
-      debugPrint('[OS Camera Permission Error]: $e');
-    });
-    Permission.microphone.request().catchError((_) => PermissionStatus.denied);
+  Future<PermissionStatus> _ensurePermission(Permission permission) async {
+    final current = await permission.status;
+    if (current.isGranted ||
+        current.isPermanentlyDenied ||
+        current.isRestricted) {
+      return current;
+    }
+    return permission.request();
+  }
+
+  Future<Map<String, Object?>> _requestCameraPermission() async {
+    try {
+      final status = await _ensurePermission(Permission.camera);
+      debugPrint('[OS Camera Permission]: $status');
+      return <String, Object?>{
+        'granted': status.isGranted,
+        'permanentlyDenied': status.isPermanentlyDenied,
+        'restricted': status.isRestricted,
+        'status': status.toString().split('.').last,
+      };
+    } catch (error) {
+      debugPrint('[OS Camera Permission Error]: $error');
+      return <String, Object?>{
+        'granted': false,
+        'error': error.toString(),
+      };
+    }
+  }
+
+  Future<PermissionResponse> _handleMediaPermissionRequest(
+    PermissionRequest request,
+  ) async {
+    debugPrint(
+      '[WebView Permission] origin=${request.origin} resources=${request.resources} action=GRANT',
+    );
+    return PermissionResponse(
+      resources: request.resources,
+      action: PermissionResponseAction.GRANT,
+    );
   }
 
   Future<void> _startServer() async {
     try {
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
       _server = server;
       final url = 'http://localhost:${server.port}/';
 
@@ -256,9 +286,12 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
             );
             controller.addJavaScriptHandler(
               handlerName: 'requestCameraPermission',
-              callback: (args) async {
-                final status = await Permission.camera.request();
-                return {'granted': status.isGranted};
+              callback: (_) => _requestCameraPermission(),
+            );
+            controller.addJavaScriptHandler(
+              handlerName: 'openAppSettings',
+              callback: (_) async => <String, Object?>{
+                'opened': await openAppSettings(),
               },
             );
           },
@@ -281,12 +314,7 @@ class _MobileStudioViewState extends State<_MobileStudioView> {
             debugPrint('[Studio JS]: ${message.message}');
           },
           onPermissionRequest: (controller, request) async {
-            debugPrint(
-                '[WebView PermRequest] Auto-granting: ${request.resources}');
-            return PermissionResponse(
-              resources: request.resources,
-              action: PermissionResponseAction.GRANT,
-            );
+            return _handleMediaPermissionRequest(request);
           },
         ),
         if (_loading)
