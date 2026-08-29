@@ -90,16 +90,10 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
       );
     }
 
-    // Trigger Asha voice output
+    // Trigger Asha voice output exactly once
     if (phrase.isNotEmpty) {
       widget.services.voice.speakPhrase('gesture_$gesture', phrase);
     }
-
-    // Simulate signal into patient signal stream
-    widget.services.monitor.simulateSignal(
-      PatientSignalKind.handGesture,
-      confidence: confidence,
-    );
   }
 
   void _onHandDetected() {}

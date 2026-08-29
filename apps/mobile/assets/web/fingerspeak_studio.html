@@ -1922,10 +1922,9 @@ function warmupVoices(){
 }
 function speak(text){
   if (!text) return;
-  if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-    try {
-      window.flutter_inappwebview.callHandler('speakPhrase', text);
-    } catch(e) {}
+  // When inside Flutter app, Flutter's native TTS bridge handles speech exclusively
+  if (window.flutter_inappwebview || window.FingerSpeakBridge || window.__fingerSpeakPatientMode) {
+    return;
   }
   if (!('speechSynthesis' in window)){ return; }
   try{
