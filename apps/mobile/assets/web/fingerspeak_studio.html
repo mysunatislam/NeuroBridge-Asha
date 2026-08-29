@@ -1828,6 +1828,8 @@ function runInference(rawSeq){
     const elapsed = performance.now() - candidateStart;
     const need = dwellMsFor(gestures[candidateIdx]);
     updateConfidenceRing(Math.min(1, elapsed/need));
+    if (elapsed >= need){
+      const gesture = gestures[candidateIdx];
       if (gesture.phrase){
         speak(gesture.phrase); playChime(); flashCaption(gesture.phrase, gesture); logSpoken(gesture.phrase, gesture.name);
         reliability.latencies.push(elapsed);
