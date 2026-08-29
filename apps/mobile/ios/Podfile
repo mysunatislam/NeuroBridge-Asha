@@ -42,6 +42,18 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
+
+      # permission_handler_apple compiles camera/microphone support out unless
+      # these macros are explicitly enabled for CocoaPods builds. Without the
+      # camera strategy, Permission.camera.request() always returns denied and
+      # WKWebView never receives a usable native camera grant.
+      definitions = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
+      definitions = [definitions] unless definitions.is_a?(Array)
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = definitions | [
+        'PERMISSION_CAMERA=1',
+        'PERMISSION_MICROPHONE=1',
+        'PERMISSION_SPEECH_RECOGNIZER=1',
+      ]
     end
   end
 end

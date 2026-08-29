@@ -690,6 +690,13 @@ setTimeout(() => {
   initHandLandmarker().catch(err => console.warn('Preload warning:', err));
 }, 100);
 
+function openSettings() {
+  if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+    window.flutter_inappwebview.callHandler('openAppSettings');
+  }
+}
+window.openSettings = openSettings;
+
 let animFrameId = null;
 async function attachStream(stream) {
   video.srcObject = stream;
@@ -701,11 +708,18 @@ async function attachStream(stream) {
   video.setAttribute('muted', '');
   
   await new Promise(res => {
-    if (video.readyState >= 1) {
+    if (video.readyState >= 2 && video.videoWidth > 0) {
       res();
     } else {
-      video.onloadedmetadata = () => res();
-      setTimeout(res, 400);
+      const onPlaying = () => {
+        video.removeEventListener('playing', onPlaying);
+        res();
+      };
+      video.addEventListener('playing', onPlaying);
+      video.onloadedmetadata = () => {
+        video.play().catch(() => {});
+      };
+      setTimeout(res, 800);
     }
   });
   
@@ -757,7 +771,7 @@ async function startCamera(){
           if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
           setStatus(false, 'camera error: ' + (err.message || err));
           if (errorMsg) {
-            errorMsg.textContent = 'Camera failed: ' + (err.message || err) + '. Please check camera permissions in iOS Settings.';
+            errorMsg.innerHTML = '<div style="margin-bottom:8px;">Camera access failed: ' + (err.message || err) + '</div><button class="btn small" style="background:#4FD1C5; color:#08201D;" onclick="openSettings()">Open iOS Settings</button>';
             errorMsg.style.display = 'block';
           }
           reject(err);
@@ -768,7 +782,7 @@ async function startCamera(){
     const err = new Error('Camera access (getUserMedia) not supported or blocked by webview origin security policy.');
     setStatus(false, 'camera error: ' + err.message);
     if (errorMsg) {
-      errorMsg.textContent = 'Camera access not supported. Please check camera permissions in iOS Settings.';
+      errorMsg.innerHTML = '<div style="margin-bottom:8px;">Camera access not supported. Please ensure Camera permission is enabled:</div><button class="btn small" style="background:#4FD1C5; color:#08201D;" onclick="openSettings()">Open iOS Settings</button>';
       errorMsg.style.display = 'block';
     }
     throw err;
@@ -809,7 +823,7 @@ async function startCamera(){
         if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
         setStatus(false, 'camera error: ' + (e3.message || e3));
         if (errorMsg) {
-          errorMsg.textContent = 'Camera failed: ' + (e3.message || e3) + '. Please ensure camera permissions are enabled in iOS Settings > NeuroBridge Asha.';
+          errorMsg.innerHTML = '<div style="margin-bottom:8px;">Camera permission was denied: ' + (e3.name || '') + ' ' + (e3.message || e3) + '</div><button class="btn small" style="background:#4FD1C5; color:#08201D;" onclick="openSettings()">Open iOS Settings</button>';
           errorMsg.style.display = 'block';
         }
         throw e3;
