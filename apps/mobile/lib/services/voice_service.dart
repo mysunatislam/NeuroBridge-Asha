@@ -413,6 +413,8 @@ class PatientVoiceService {
     }
   }
 
+  Future<void> speakSystemPrompt(String text) => speakAsha(text, force: true);
+
   Future<bool> startCaregiverRecording(
     String phraseKey,
     String phrase,

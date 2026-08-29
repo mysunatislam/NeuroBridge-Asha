@@ -5,6 +5,7 @@ import 'package:fingerspeak_mobile/data/asha_api_client.dart';
 import 'package:fingerspeak_mobile/data/cloud_api_client.dart';
 import 'package:fingerspeak_mobile/data/pi_device_client.dart';
 import 'package:fingerspeak_mobile/models/patient_signal.dart';
+import 'package:fingerspeak_mobile/models/personal_access_profile_repository.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/models/patient_access_method.dart';
 import 'package:fingerspeak_mobile/services/calibration_service.dart';
@@ -12,6 +13,7 @@ import 'package:fingerspeak_mobile/services/caregiver_notification_service.dart'
 import 'package:fingerspeak_mobile/services/cloud_alert_repository.dart';
 import 'package:fingerspeak_mobile/services/cloud_sync_service.dart';
 import 'package:fingerspeak_mobile/services/companion_controller.dart';
+import 'package:fingerspeak_mobile/services/multimodal_fusion_engine.dart';
 import 'package:fingerspeak_mobile/services/patient_signal_monitor.dart';
 import 'package:fingerspeak_mobile/services/reminder_service.dart';
 import 'package:fingerspeak_mobile/services/session_metrics_service.dart';
@@ -23,6 +25,7 @@ class MobileServices {
     required this.config,
     required this.roleRepository,
     required this.patientAccessMethodRepository,
+    required this.accessProfileRepository,
     required this.voice,
     required this.reminders,
     required this.caregiverNotifications,
@@ -35,11 +38,13 @@ class MobileServices {
     required this.cloudApi,
     required this.cloudSync,
     required this.cloudAlerts,
+    required this.fusionEngine,
   });
 
   final AppConfig config;
   final UserRoleRepository roleRepository;
   final PatientAccessMethodRepository patientAccessMethodRepository;
+  final PersonalAccessProfileRepository accessProfileRepository;
   final PatientVoiceService voice;
   final LocalReminderService reminders;
   final CaregiverNotificationService caregiverNotifications;
@@ -52,6 +57,7 @@ class MobileServices {
   final CloudApiClient cloudApi;
   final CloudSyncService cloudSync;
   final CloudAlertRepository cloudAlerts;
+  final MultimodalFusionEngine fusionEngine;
   StreamSubscription<Object?>? _signalSubscription;
   StreamSubscription<PiConnectionState>? _piStateSubscription;
   StreamSubscription<PatientSignal>? _piSignalSubscription;
@@ -120,11 +126,22 @@ class MobileServices {
       apiClient: cloudApi,
     );
     final cloudAlerts = CloudAlertRepository(apiClient: cloudApi);
+    final accessProfileRepository =
+        PersonalAccessProfileRepository(preferences);
+    final fusionEngine = MultimodalFusionEngine(
+      onIntentExecuted: (event) {
+        voice.speakPhrase('fused_intent', event.intent);
+      },
+      onConfirmationPromptRequested: (intent, conf) {
+        voice.speakSystemPrompt('Confirm $intent? Blink or tilt head.');
+      },
+    );
 
     final result = MobileServices._(
       config: config,
       roleRepository: roleRepository,
       patientAccessMethodRepository: patientAccessMethodRepository,
+      accessProfileRepository: accessProfileRepository,
       voice: voice,
       reminders: reminders,
       caregiverNotifications: caregiverNotifications,
@@ -137,6 +154,7 @@ class MobileServices {
       cloudApi: cloudApi,
       cloudSync: cloudSync,
       cloudAlerts: cloudAlerts,
+      fusionEngine: fusionEngine,
     );
     result._signalSubscription = monitor.signals.listen((signal) {
       unawaited(recognition.ingest(signal));
@@ -157,6 +175,7 @@ class MobileServices {
     await prefs.setBool('voice.auto_speak', false);
     final roleRepo = UserRoleRepository(prefs);
     final patientAccessMethodRepository = PatientAccessMethodRepository(prefs);
+    final accessProfileRepository = PersonalAccessProfileRepository(prefs);
     final voice = PatientVoiceService(
       preferenceRepository: VoicePreferenceRepository(prefs),
       recordings: RecordedPhraseRepository(prefs),
@@ -185,10 +204,15 @@ class MobileServices {
       locale: cfg.locale,
     );
     final cloudApi = CloudApiClient(baseUri: cfg.apiUri);
+    final fusionEngine = MultimodalFusionEngine(
+      onIntentExecuted: (_) {},
+      onConfirmationPromptRequested: (_, __) {},
+    );
     return MobileServices._(
       config: cfg,
       roleRepository: roleRepo,
       patientAccessMethodRepository: patientAccessMethodRepository,
+      accessProfileRepository: accessProfileRepository,
       voice: voice,
       reminders: LocalReminderService(prefs),
       caregiverNotifications: notifications,
@@ -201,6 +225,7 @@ class MobileServices {
       cloudApi: cloudApi,
       cloudSync: CloudSyncService(preferences: prefs, apiClient: cloudApi),
       cloudAlerts: CloudAlertRepository(apiClient: cloudApi),
+      fusionEngine: fusionEngine,
     );
   }
 

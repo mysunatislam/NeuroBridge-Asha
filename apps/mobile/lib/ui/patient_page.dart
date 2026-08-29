@@ -5,10 +5,13 @@ import 'package:fingerspeak_mobile/core/mobile_services.dart';
 import 'package:fingerspeak_mobile/data/pi_device_client.dart';
 import 'package:fingerspeak_mobile/models/patient_access_method.dart';
 import 'package:fingerspeak_mobile/models/patient_signal.dart';
+import 'package:fingerspeak_mobile/models/personal_access_profile.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/services/caregiver_notification_service.dart';
+import 'package:fingerspeak_mobile/ui/ability_assessment_page.dart';
 import 'package:fingerspeak_mobile/ui/asha_chat_sheet.dart';
 import 'package:fingerspeak_mobile/ui/hand_calibration_page.dart';
+import 'package:fingerspeak_mobile/ui/single_switch_scanning_view.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -122,22 +125,46 @@ class _PatientPageState extends State<PatientPage> {
     }
   }
 
+  Future<void> _openAssessmentWizard() async {
+    final currentProfile = widget.services.accessProfileRepository.load();
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AbilityAssessmentPage(
+          services: widget.services,
+          initialProfile: currentProfile,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<PatientAccessMethod?> _askFingerCapability() {
     return showDialog<PatientAccessMethod>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        icon: const Icon(Icons.accessibility_new, color: Color(0xFF0B756A)),
+        backgroundColor: const Color(0xFF1E293B),
+        icon: const Icon(Icons.accessibility_new, color: Color(0xFF2DD4BF), size: 32),
         title: const Text('Can the patient intentionally move their fingers?'),
         content: const Text(
           'Choose the movement the patient can control reliably. You can change this later in Setup.',
         ),
         actions: [
           OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _openAssessmentWizard();
+            },
+            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF2DD4BF)),
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text('Ability Assessment'),
+          ),
+          OutlinedButton.icon(
             onPressed: () => Navigator.pop(
               context,
               PatientAccessMethod.faceEyesAndHead,
             ),
+            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF94A3B8)),
             icon: const Icon(Icons.face_retouching_natural),
             label: const Text('No — use face & eyes'),
           ),
@@ -146,6 +173,7 @@ class _PatientPageState extends State<PatientPage> {
               context,
               PatientAccessMethod.handGestures,
             ),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2DD4BF), foregroundColor: Colors.black),
             icon: const Icon(Icons.pan_tool_alt),
             label: const Text('Yes — use fingers'),
           ),
@@ -381,6 +409,14 @@ class _PatientPageState extends State<PatientPage> {
                     foregroundColor: const Color(0xFFA6E3D9),
                   ),
                 ),
+                TextButton.icon(
+                  onPressed: _openAssessmentWizard,
+                  icon: const Icon(Icons.accessibility_new),
+                  label: const Text('Retest Ability Profile'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF4FD1C5),
+                  ),
+                ),
               ],
             ),
           ),
@@ -447,6 +483,25 @@ class _PatientPageState extends State<PatientPage> {
 
   @override
   Widget build(BuildContext context) {
+    final profile = widget.services.accessProfileRepository.load();
+    if (profile?.primaryModality == AccessModality.singleSwitchScanning) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF1E293B),
+          foregroundColor: Colors.white,
+          title: const Text('Single-Switch Scanning', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.accessibility_new, color: Color(0xFF2DD4BF)),
+              tooltip: 'Ability Assessment',
+              onPressed: _openAssessmentWizard,
+            ),
+          ],
+        ),
+        body: SingleSwitchScanningView(services: widget.services),
+      );
+    }
     if (_accessMethod == null) return _buildCapabilityPending(context);
     if (_accessMethod == PatientAccessMethod.handGestures) {
       return _buildHandDashboard(context);
