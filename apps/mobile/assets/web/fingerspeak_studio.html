@@ -184,7 +184,7 @@
 <main>
   <div class="panel">
     <div class="video-wrap" id="videoWrap">
-      <video id="video" autoplay playsinline muted></video>
+      <video id="video" autoplay playsinline webkit-playsinline muted></video>
       <canvas class="overlay" id="overlay"></canvas>
 
       <div class="overlay-msg" id="startOverlay">
@@ -194,6 +194,7 @@
           gestures are classified from rotation-normalized 3D landmarks, joint angles, and motion,
           via a bidirectional GRU trained live on your calibration samples.
         </div>
+        <div id="cameraErrorMessage" style="display:none; color:#E86A6A; font-size:12.5px; max-width:340px; margin-bottom:10px; line-height:1.4;"></div>
         <button class="btn primary" id="startBtn">Enable camera</button>
       </div>
 
@@ -647,143 +648,217 @@ setTimeout(() => {
   initHandLandmarker().catch(err => console.warn('Preload warning:', err));
 }, 100);
 
+let animFrameId = null;
+let startingCamera = false;
+let lastLandmarkTimestamp = 0;
+
 async function startCamera(){
+  if (startingCamera) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    throw new Error('Camera access not supported on this device/webview');
-  }
-  let stream = null;
-  // 1. Try mobile front camera with ideal resolution
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-      audio: false
-    });
-  } catch(e1) {
-    console.warn('User facingMode getUserMedia failed, retrying generic video:', e1);
-    // 2. Try generic video
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    } catch(e2) {
-      // 3. Fallback standard resolution
-      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-    }
+    throw new Error('Camera access not supported on this device or webview');
   }
 
-  video.srcObject = stream;
-  video.muted = true;
-  video.playsInline = true;
-  video.setAttribute('playsinline', '');
-  video.setAttribute('webkit-playsinline', '');
-  video.setAttribute('autoplay', '');
-  
-  await new Promise(res => {
-    video.onloadedmetadata = res;
-    setTimeout(res, 600);
-  });
-  
-  await video.play().catch(e => console.warn('video.play catch:', e));
-  if (!video.videoWidth) await sleep(150);
-  overlay.width = video.videoWidth || 640;
-  overlay.height = video.videoHeight || 480;
-  document.getElementById('startOverlay').style.display = 'none';
-  setStatus(true, 'camera active');
-  running = true;
-  requestAnimationFrame(renderLoop);
+  startingCamera = true;
+  try {
+    // 1. Clean up any existing stream before opening a new one
+    if (video.srcObject) {
+      try {
+        video.srcObject.getTracks().forEach(t => t.stop());
+      } catch(e) {}
+      video.srcObject = null;
+    }
+    if (animFrameId) {
+      cancelAnimationFrame(animFrameId);
+      animFrameId = null;
+    }
+
+    let stream = null;
+    // 2. Try mobile front camera with ideal resolution constraints
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'user' },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      });
+    } catch(e1) {
+      console.warn('User facingMode ideal getUserMedia failed, retrying simple user facingMode:', e1);
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' },
+          audio: false
+        });
+      } catch(e2) {
+        console.warn('Simple facingMode getUserMedia failed, retrying generic video:', e2);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } catch(e3) {
+          console.error('All getUserMedia attempts failed:', e3);
+          throw e3;
+        }
+      }
+    }
+
+    if (!stream) {
+      throw new Error('Could not obtain video stream from device camera.');
+    }
+
+    video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    video.setAttribute('autoplay', '');
+    video.setAttribute('muted', '');
+    
+    await new Promise(res => {
+      if (video.readyState >= 1) {
+        res();
+      } else {
+        video.onloadedmetadata = () => res();
+        setTimeout(res, 500);
+      }
+    });
+    
+    try {
+      await video.play();
+    } catch(e) {
+      console.warn('video.play catch:', e);
+    }
+
+    if (!video.videoWidth) {
+      await sleep(150);
+    }
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 480;
+
+    const startOverlay = document.getElementById('startOverlay');
+    if (startOverlay) startOverlay.style.display = 'none';
+    const errorMsg = document.getElementById('cameraErrorMessage');
+    if (errorMsg) errorMsg.style.display = 'none';
+
+    setStatus(true, 'camera active');
+    running = true;
+    lastVideoTime = -1;
+    lastLandmarkTimestamp = 0;
+
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+    animFrameId = requestAnimationFrame(renderLoop);
+  } finally {
+    startingCamera = false;
+  }
 }
 function setStatus(ok, text){
   document.getElementById('statusDot').className = 'dot ' + (ok ? 'live' : 'off');
   document.getElementById('statusText').textContent = text;
 }
 
-// ================= render loop (throttled to 18 FPS & 2nd-frame inference) =================
+// ================= render loop (throttled to ~22 FPS & 2nd-frame inference) =================
 let frameCount = 0, lastFpsTime = performance.now();
 let lastHandSeenTime = 0;
 let lastProcessTime = 0;
 let renderFrameCounter = 0;
-const TARGET_FRAME_INTERVAL_MS = 55; // Throttle to ~18 FPS for battery and thermal efficiency
+const TARGET_FRAME_INTERVAL_MS = 45; // Throttle to ~22 FPS for battery and thermal efficiency
 
 function renderLoop(){
   if (!running) return;
   const now = performance.now();
 
-  // 1. Process MediaPipe at ~18 FPS instead of consuming full 60 FPS
-  if (now - lastProcessTime >= TARGET_FRAME_INTERVAL_MS && video.currentTime !== lastVideoTime && handLandmarker){
-    lastProcessTime = now;
-    lastVideoTime = video.currentTime;
-    renderFrameCounter++;
+  try {
+    if (now - lastProcessTime >= TARGET_FRAME_INTERVAL_MS && 
+        handLandmarker && 
+        video && 
+        video.readyState >= 2 && 
+        video.videoWidth > 0 && 
+        !video.paused && 
+        !video.ended) {
 
-    const result = handLandmarker.detectForVideo(video, now);
-    octx.clearRect(0, 0, overlay.width, overlay.height);
+      // Guarantee strictly increasing timestamps required by MediaPipe Tasks Vision
+      const frameTimestamp = (now > lastLandmarkTimestamp) ? now : (lastLandmarkTimestamp + 1);
+      lastLandmarkTimestamp = frameTimestamp;
+      lastProcessTime = now;
+      lastVideoTime = video.currentTime;
+      renderFrameCounter++;
 
-    if (result.landmarks && result.landmarks.length > 0){
-      lastHandSeenTime = now;
-      const lm = result.landmarks[0];
-      drawLandmarks(lm);
-      currentRawFrame = flattenLandmarks(lm);
-      const stamped = { t: now, feat: currentRawFrame };
+      const result = handLandmarker.detectForVideo(video, frameTimestamp);
+      octx.clearRect(0, 0, overlay.width, overlay.height);
 
-      if (recording) recording.frames.push(stamped);
+      if (result && result.landmarks && result.landmarks.length > 0){
+        lastHandSeenTime = now;
+        const lm = result.landmarks[0];
+        drawLandmarks(lm);
+        currentRawFrame = flattenLandmarks(lm);
+        const stamped = { t: now, feat: currentRawFrame };
 
-      liveBuffer.push(stamped);
-      const cutoff = now - LIVE_BUFFER_MAX_MS;
-      while (liveBuffer.length && liveBuffer[0].t < cutoff) liveBuffer.shift();
+        if (recording) recording.frames.push(stamped);
 
-      if (!model && !liveMode){
-        document.getElementById('currentGesture').textContent = 'Hand tracked (21 3D points) · Ready';
-        pushVitals(0.9);
-      }
+        liveBuffer.push(stamped);
+        const cutoff = now - LIVE_BUFFER_MAX_MS;
+        while (liveBuffer.length && liveBuffer[0].t < cutoff) liveBuffer.shift();
 
-      // 2. Process gesture recognition every 2nd frame with minimum interval
-      if (model && renderFrameCounter % 2 === 0 && now - lastInferenceAt > INFERENCE_INTERVAL_MS){
-        const rawSeq = resampleSequence(liveBuffer, SEQ_LEN, CAPTURE_WINDOW_MS);
-        if (rawSeq){
-          lastInferenceAt = now;
-          if (liveMode) runInference(rawSeq); else previewInference(rawSeq);
+        if (!model && !liveMode){
+          document.getElementById('currentGesture').textContent = 'Hand tracked (21 3D points) · Ready';
+          pushVitals(0.9);
+        }
+
+        // 2. Process gesture recognition every 2nd frame with minimum interval
+        if (model && renderFrameCounter % 2 === 0 && now - lastInferenceAt > INFERENCE_INTERVAL_MS){
+          const rawSeq = resampleSequence(liveBuffer, SEQ_LEN, CAPTURE_WINDOW_MS);
+          if (rawSeq){
+            lastInferenceAt = now;
+            if (liveMode) runInference(rawSeq); else previewInference(rawSeq);
+          }
+        }
+      } else {
+        currentRawFrame = null;
+        if (now - lastHandSeenTime > 350){
+          liveBuffer = [];
+          document.getElementById('currentGesture').textContent = '— no hand detected —';
+          pushVitals(0);
+          if (liveMode) handleNoHandFrame();
         }
       }
-    } else {
-      currentRawFrame = null;
-      if (now - lastHandSeenTime > 350){
-        liveBuffer = [];
-        document.getElementById('currentGesture').textContent = '— no hand detected —';
-        pushVitals(0);
-        if (liveMode) handleNoHandFrame();
-      }
     }
+  } catch(loopErr) {
+    console.warn('[renderLoop tick warning]:', loopErr);
   }
 
   frameCount++;
   if (now - lastFpsTime > 1000){
-    document.getElementById('fpsReadout').textContent = frameCount + ' fps';
+    const fpsEl = document.getElementById('fpsReadout');
+    if (fpsEl) fpsEl.textContent = frameCount + ' fps';
     frameCount = 0; lastFpsTime = now;
   }
   if (running) {
-    requestAnimationFrame(renderLoop);
+    animFrameId = requestAnimationFrame(renderLoop);
   }
 }
 
-// 3. Stop camera and MediaPipe when screen/app is inactive or hidden
+// 3. Keep camera active on mobile without breaking iOS WebRTC tracks
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    if (running && video.srcObject) {
-      video.pause();
-    }
-  } else {
-    if (running && video.srcObject) {
-      video.play().catch(() => {});
-    }
+  if (!document.hidden && running && video && video.srcObject) {
+    video.play().catch(() => {});
   }
 });
 
 function stopCamera(){
   running = false;
-  if (video.srcObject) {
-    video.srcObject.getTracks().forEach(t => t.stop());
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
+  if (video && video.srcObject) {
+    try {
+      video.srcObject.getTracks().forEach(t => t.stop());
+    } catch(e) {}
     video.srcObject = null;
   }
   octx.clearRect(0, 0, overlay.width, overlay.height);
   setStatus(false, 'camera stopped');
-  document.getElementById('startOverlay').style.display = 'flex';
+  const startOverlay = document.getElementById('startOverlay');
+  if (startOverlay) startOverlay.style.display = 'flex';
 }
 window.stopStudioTracking = stopCamera;
 
@@ -1543,7 +1618,12 @@ async function initSavedStorage() {
     setTimeout(async () => {
       if (!model) await autoLoadSavedModel(true);
       if (!running) {
-        try { await startCamera(); } catch(e) {}
+        try {
+          await startCamera();
+          await initHandLandmarker();
+        } catch(e) {
+          console.warn('[PatientMode AutoStart Camera Warning]:', e);
+        }
       }
       if (!liveMode) {
         const toggleBtn = document.getElementById('liveToggle');
@@ -1863,17 +1943,15 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   try {
     await startCamera();
   } catch(err) {
+    console.error('startCamera error:', err);
     btn.textContent = 'Enable camera';
     btn.disabled = false;
-    setStatus(false, 'camera error');
-    document.getElementById('startOverlay').innerHTML = `
-      <div style="font-weight:600; color:#E86A6A; font-size:16px;">Camera Access Failed</div>
-      <div style="font-size:12.5px; color:var(--text-dim); margin:8px 0 14px; line-height:1.4;">
-        ${err.message || err}<br><br>
-        Please check camera permissions in settings.
-      </div>
-      <button class="btn primary" onclick="location.reload()">Retry</button>
-    `;
+    setStatus(false, 'camera error: ' + (err.message || err));
+    const errorMsg = document.getElementById('cameraErrorMessage');
+    if (errorMsg) {
+      errorMsg.textContent = 'Camera error: ' + (err.message || err) + '. Please check camera permissions in device Settings.';
+      errorMsg.style.display = 'block';
+    }
     return;
   }
 
@@ -1882,7 +1960,8 @@ document.getElementById('startBtn').addEventListener('click', async () => {
     setStatus(true, 'loading 3D model…');
     await initHandLandmarker();
     setStatus(true, 'tracking');
-    document.getElementById('wizardStartBtn').disabled = false;
+    const wizBtn = document.getElementById('wizardStartBtn');
+    if (wizBtn) wizBtn.disabled = false;
     warmupVoices();
   } catch(err) {
     console.error('HandLandmarker init error:', err);
