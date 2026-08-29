@@ -651,10 +651,10 @@ setTimeout(() => {
 let animFrameId = null;
 async function startCamera(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    throw new Error('Camera access not supported on this device/webview');
+    throw new Error('Camera access not supported on this device or webview');
   }
 
-  // 1. Clean up any existing stream before opening a new one
+  // Clean up any existing stream
   if (video.srcObject) {
     try {
       video.srcObject.getTracks().forEach(t => t.stop());
@@ -667,21 +667,21 @@ async function startCamera(){
   }
 
   let stream = null;
-  // 2. Try mobile front camera with ideal resolution constraints
+  // 1. Try mobile front camera with ideal constraints
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       audio: false
     });
   } catch(e1) {
-    console.warn('User facingMode ideal getUserMedia failed, retrying simple user facingMode:', e1);
+    console.warn('User facingMode ideal getUserMedia failed, retrying simple user:', e1);
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user' },
         audio: false
       });
     } catch(e2) {
-      console.warn('Simple facingMode getUserMedia failed, retrying generic video:', e2);
+      console.warn('Simple user facingMode failed, retrying generic video:', e2);
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       } catch(e3) {
@@ -708,14 +708,14 @@ async function startCamera(){
       res();
     } else {
       video.onloadedmetadata = () => res();
-      setTimeout(res, 600);
+      setTimeout(res, 400);
     }
   });
   
   try {
     await video.play();
   } catch(e) {
-    console.warn('video.play catch:', e);
+    console.warn('video.play warning:', e);
   }
 
   overlay.width = video.videoWidth || 640;
@@ -726,7 +726,7 @@ async function startCamera(){
   const errorMsg = document.getElementById('cameraErrorMessage');
   if (errorMsg) errorMsg.style.display = 'none';
 
-  setStatus(true, 'camera active');
+  setStatus(true, handLandmarker ? 'tracking' : 'camera active');
   running = true;
   lastVideoTime = -1;
   lastLandmarkTimestamp = 0;
@@ -1911,28 +1911,37 @@ document.getElementById('threshSlider').addEventListener('input', (e) => {
 });
 document.getElementById('startBtn').addEventListener('click', async () => {
   const btn = document.getElementById('startBtn');
-  btn.textContent = 'Loading 3D model & camera…';
+  btn.textContent = 'Starting camera…';
   btn.disabled = true;
   const errorMsg = document.getElementById('cameraErrorMessage');
   if (errorMsg) errorMsg.style.display = 'none';
 
   try {
-    setStatus(true, 'loading 3D model…');
-    await initHandLandmarker();
-    setStatus(true, 'starting camera…');
+    // 1. Start camera IMMEDIATELY while user gesture token is active
     await startCamera();
-    setStatus(true, 'tracking');
+    warmupVoices();
     const wizBtn = document.getElementById('wizardStartBtn');
     if (wizBtn) wizBtn.disabled = false;
-    warmupVoices();
   } catch(err) {
-    console.error('Camera/Model init error:', err);
+    console.error('startCamera error:', err);
     btn.textContent = 'Enable camera';
     btn.disabled = false;
     setStatus(false, 'camera error: ' + (err.message || err));
     if (errorMsg) {
-      errorMsg.textContent = 'Camera error: ' + (err.message || err) + '. Please check camera permissions in iOS Settings.';
+      errorMsg.textContent = 'Camera access failed: ' + (err.message || err) + '. Please check camera permissions in iOS Settings.';
       errorMsg.style.display = 'block';
+    }
+    return;
+  }
+
+  // 2. Ensure MediaPipe HandLandmarker is initialized in background
+  if (!handLandmarker) {
+    try {
+      setStatus(true, 'loading 3D model…');
+      await initHandLandmarker();
+      setStatus(true, 'tracking');
+    } catch(modelErr) {
+      console.warn('initHandLandmarker background error:', modelErr);
     }
   }
 });
