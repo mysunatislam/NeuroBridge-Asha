@@ -1,5 +1,7 @@
 import 'package:fingerspeak_mobile/core/mobile_services.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
+import 'package:fingerspeak_mobile/services/asha_guide_service.dart';
+import 'package:fingerspeak_mobile/ui/guide/asha_guide_host.dart';
 import 'package:flutter/material.dart';
 
 class RoleSelectionPage extends StatefulWidget {
@@ -57,7 +59,8 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white,
-                        border: Border.all(color: const Color(0xFF0B756A), width: 3),
+                        border: Border.all(
+                            color: const Color(0xFF0B756A), width: 3),
                         boxShadow: const [
                           BoxShadow(
                             blurRadius: 16,
@@ -104,47 +107,62 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                     style: TextStyle(color: Color(0xFF5A706A), fontSize: 15),
                   ),
                   const SizedBox(height: 32),
-                  _RoleOptionCard(
-                    role: UserRole.patient,
-                    isSelected: _selectedRole == UserRole.patient,
-                    icon: Icons.accessible_forward,
-                    title: 'I am a Patient',
-                    subtitle:
-                        'Speak with eye gaze, facial expressions, or hand gestures. Asha companion stays with you and reassures you.',
-                    accentColor: const Color(0xFF0B756A),
-                    onTap: () => setState(() => _selectedRole = UserRole.patient),
-                  ),
-                  const SizedBox(height: 16),
-                  _RoleOptionCard(
-                    role: UserRole.caregiver,
-                    isSelected: _selectedRole == UserRole.caregiver,
-                    icon: Icons.volunteer_activism,
-                    title: 'I am a Caregiver',
-                    subtitle:
-                        'Step-by-step patient signal calibration, live speech & distress alerts, wheelchair display writing, and emergency guides.',
-                    accentColor: const Color(0xFFC04B67),
-                    onTap: () => setState(() => _selectedRole = UserRole.caregiver),
+                  AshaGuideTarget(
+                    step: AshaGuideStep.role,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _RoleOptionCard(
+                          role: UserRole.patient,
+                          isSelected: _selectedRole == UserRole.patient,
+                          icon: Icons.accessible_forward,
+                          title: 'I am a Patient',
+                          subtitle:
+                              'Speak with eye gaze, facial expressions, or hand gestures. Asha companion stays with you and reassures you.',
+                          accentColor: const Color(0xFF0B756A),
+                          onTap: () =>
+                              setState(() => _selectedRole = UserRole.patient),
+                        ),
+                        const SizedBox(height: 16),
+                        _RoleOptionCard(
+                          role: UserRole.caregiver,
+                          isSelected: _selectedRole == UserRole.caregiver,
+                          icon: Icons.volunteer_activism,
+                          title: 'I am a Caregiver',
+                          subtitle:
+                              'Step-by-step patient signal calibration, live speech & distress alerts, wheelchair display writing, and emergency guides.',
+                          accentColor: const Color(0xFFC04B67),
+                          onTap: () =>
+                              setState(() => _selectedRole = UserRole.caregiver),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 32),
-                  SizedBox(
-                    height: 56,
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF0B756A),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                  AshaGuideTarget(
+                    step: AshaGuideStep.profile,
+                    child: SizedBox(
+                      height: 56,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF0B756A),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                         ),
-                      ),
-                      onPressed: _selectedRole == null || _saving ? null : _proceed,
-                      icon: const Icon(Icons.arrow_forward),
-                      label: Text(
-                        _selectedRole == UserRole.patient
-                            ? 'Open Patient Dashboard'
-                            : _selectedRole == UserRole.caregiver
-                                ? 'Open Caregiver Dashboard'
-                                : 'Select a Mode to Continue',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        onPressed:
+                            _selectedRole == null || _saving ? null : _proceed,
+                        icon: const Icon(Icons.arrow_forward),
+                        label: Text(
+                          _selectedRole == UserRole.patient
+                              ? 'Open Patient Dashboard'
+                              : _selectedRole == UserRole.caregiver
+                                  ? 'Open Caregiver Dashboard'
+                                  : 'Select a Mode to Continue',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
                   ),
@@ -213,7 +231,9 @@ class _RoleOptionCard extends StatelessWidget {
                   backgroundColor: isSelected
                       ? accentColor.withValues(alpha: 0.15)
                       : const Color(0xFFE2DCD1),
-                  child: Icon(icon, color: isSelected ? accentColor : Colors.black54, size: 30),
+                  child: Icon(icon,
+                      color: isSelected ? accentColor : Colors.black54,
+                      size: 30),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -228,12 +248,15 @@ class _RoleOptionCard extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w800,
-                                color: isSelected ? accentColor : const Color(0xFF102522),
+                                color: isSelected
+                                    ? accentColor
+                                    : const Color(0xFF102522),
                               ),
                             ),
                           ),
                           if (isSelected)
-                            Icon(Icons.check_circle, color: accentColor, size: 24),
+                            Icon(Icons.check_circle,
+                                color: accentColor, size: 24),
                         ],
                       ),
                       const SizedBox(height: 6),

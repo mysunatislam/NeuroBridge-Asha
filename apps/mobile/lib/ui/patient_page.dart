@@ -8,9 +8,11 @@ import 'package:fingerspeak_mobile/models/patient_signal.dart';
 import 'package:fingerspeak_mobile/models/personal_access_profile.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/services/caregiver_notification_service.dart';
+import 'package:fingerspeak_mobile/services/asha_guide_service.dart';
 import 'package:fingerspeak_mobile/ui/ability_assessment_page.dart';
 import 'package:fingerspeak_mobile/ui/asha_chat_sheet.dart';
 import 'package:fingerspeak_mobile/ui/hand_calibration_page.dart';
+import 'package:fingerspeak_mobile/ui/guide/asha_guide_host.dart';
 import 'package:fingerspeak_mobile/ui/single_switch_scanning_view.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -46,6 +48,7 @@ class _PatientPageState extends State<PatientPage> {
   @override
   void initState() {
     super.initState();
+    _monitorStatus = widget.services.monitor.currentStatus;
     _waterEnabled = widget.services.reminders.waterRemindersEnabled;
     _accessMethod = widget.services.patientAccessMethodRepository.load();
     widget.services.patientAccessMethodRepository
@@ -127,15 +130,23 @@ class _PatientPageState extends State<PatientPage> {
 
   Future<void> _openAssessmentWizard() async {
     final currentProfile = widget.services.accessProfileRepository.load();
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final completedProfile =
+        await Navigator.of(context).push<PersonalAccessProfile>(
+      MaterialPageRoute<PersonalAccessProfile>(
         builder: (_) => AbilityAssessmentPage(
           services: widget.services,
           initialProfile: currentProfile,
         ),
       ),
     );
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    final guide = widget.services.ashaGuide;
+    if (completedProfile != null &&
+        guide.isActive &&
+        guide.step == AshaGuideStep.profile) {
+      await guide.next();
+    }
   }
 
   Future<PatientAccessMethod?> _askFingerCapability() {
@@ -144,7 +155,8 @@ class _PatientPageState extends State<PatientPage> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E293B),
-        icon: const Icon(Icons.accessibility_new, color: Color(0xFF2DD4BF), size: 32),
+        icon: const Icon(Icons.accessibility_new,
+            color: Color(0xFF2DD4BF), size: 32),
         title: const Text('Can the patient intentionally move their fingers?'),
         content: const Text(
           'Choose the movement the patient can control reliably. You can change this later in Setup.',
@@ -155,7 +167,8 @@ class _PatientPageState extends State<PatientPage> {
               Navigator.pop(context);
               _openAssessmentWizard();
             },
-            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF2DD4BF)),
+            style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF2DD4BF)),
             icon: const Icon(Icons.auto_awesome),
             label: const Text('Ability Assessment'),
           ),
@@ -164,7 +177,8 @@ class _PatientPageState extends State<PatientPage> {
               context,
               PatientAccessMethod.faceEyesAndHead,
             ),
-            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF94A3B8)),
+            style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF94A3B8)),
             icon: const Icon(Icons.face_retouching_natural),
             label: const Text('No — use face & eyes'),
           ),
@@ -173,7 +187,9 @@ class _PatientPageState extends State<PatientPage> {
               context,
               PatientAccessMethod.handGestures,
             ),
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2DD4BF), foregroundColor: Colors.black),
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF2DD4BF),
+                foregroundColor: Colors.black),
             icon: const Icon(Icons.pan_tool_alt),
             label: const Text('Yes — use fingers'),
           ),
@@ -335,9 +351,12 @@ class _PatientPageState extends State<PatientPage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _configureAccessMethod,
-                  child: const Text('Choose Input Method'),
+                AshaGuideTarget(
+                  step: AshaGuideStep.profile,
+                  child: FilledButton(
+                    onPressed: _configureAccessMethod,
+                    child: const Text('Choose Input Method'),
+                  ),
                 ),
               ],
             ),
@@ -395,10 +414,13 @@ class _PatientPageState extends State<PatientPage> {
                   style: TextStyle(color: Color(0xFFC9D9D5)),
                 ),
                 const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: _openHandCommunicator,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Open Hand Communicator'),
+                AshaGuideTarget(
+                  step: AshaGuideStep.firstSession,
+                  child: FilledButton.icon(
+                    onPressed: _openHandCommunicator,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Open Hand Communicator'),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextButton.icon(
@@ -409,12 +431,15 @@ class _PatientPageState extends State<PatientPage> {
                     foregroundColor: const Color(0xFFA6E3D9),
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: _openAssessmentWizard,
-                  icon: const Icon(Icons.accessibility_new),
-                  label: const Text('Retest Ability Profile'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF4FD1C5),
+                AshaGuideTarget(
+                  step: AshaGuideStep.profile,
+                  child: TextButton.icon(
+                    onPressed: _openAssessmentWizard,
+                    icon: const Icon(Icons.accessibility_new),
+                    label: const Text('Retest Ability Profile'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF4FD1C5),
+                    ),
                   ),
                 ),
               ],
@@ -490,12 +515,17 @@ class _PatientPageState extends State<PatientPage> {
         appBar: AppBar(
           backgroundColor: const Color(0xFF1E293B),
           foregroundColor: Colors.white,
-          title: const Text('Single-Switch Scanning', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          title: const Text('Single-Switch Scanning',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.accessibility_new, color: Color(0xFF2DD4BF)),
-              tooltip: 'Ability Assessment',
-              onPressed: _openAssessmentWizard,
+            AshaGuideTarget(
+              step: AshaGuideStep.profile,
+              child: IconButton(
+                icon: const Icon(Icons.accessibility_new,
+                    color: Color(0xFF2DD4BF)),
+                tooltip: 'Ability Assessment',
+                onPressed: _openAssessmentWizard,
+              ),
             ),
           ],
         ),
@@ -529,6 +559,18 @@ class _PatientPageState extends State<PatientPage> {
                 ),
               ),
               const SizedBox(height: 16),
+              AshaGuideTarget(
+                step: AshaGuideStep.profile,
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _openAssessmentWizard,
+                    icon: const Icon(Icons.accessibility_new),
+                    label: const Text('Open Patient Ability Profile'),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               Card(
                 color: const Color(0xFF102522),
                 clipBehavior: Clip.antiAlias,
@@ -629,9 +671,47 @@ class _PatientPageState extends State<PatientPage> {
                                       ?.copyWith(color: Colors.white),
                                 ),
                               ),
-                              Switch(
-                                value: monitoring,
-                                onChanged: _busy ? null : _toggleMonitoring,
+                              ListenableBuilder(
+                                listenable: widget.services.ashaGuide,
+                                builder: (context, _) {
+                                  final guide = widget.services.ashaGuide;
+                                  if (guide.isActive &&
+                                      guide.step == AshaGuideStep.firstSession) {
+                                    return AshaGuideTarget(
+                                      step: AshaGuideStep.firstSession,
+                                      child: FilledButton.icon(
+                                        key: const ValueKey(
+                                            'asha-guide-start-face-session'),
+                                        onPressed: _busy
+                                            ? null
+                                            : () async {
+                                                if (!monitoring) {
+                                                  await _toggleMonitoring(true);
+                                                }
+                                                if (!mounted) return;
+                                                if (widget.services.monitor
+                                                            .currentStatus.lifecycle ==
+                                                        MonitorLifecycle.active &&
+                                                    guide.isActive &&
+                                                    guide.step ==
+                                                        AshaGuideStep.firstSession) {
+                                                  await guide.next();
+                                                }
+                                              },
+                                        icon: Icon(monitoring
+                                            ? Icons.check
+                                            : Icons.play_arrow),
+                                        label: Text(
+                                            monitoring ? 'Continue' : 'Start'),
+                                      ),
+                                    );
+                                  }
+                                  return Switch(
+                                    value: monitoring,
+                                    onChanged:
+                                        _busy ? null : _toggleMonitoring,
+                                  );
+                                },
                               ),
                             ],
                           ),
@@ -655,15 +735,10 @@ class _PatientPageState extends State<PatientPage> {
                                 icon: Icons.remove_red_eye_outlined,
                                 text: _eyeLabel(_monitorStatus),
                               ),
-                              _StatusChip(
-                                icon: Icons.air,
-                                text:
-                                    'Breathing: ${_monitorStatus.breathingStatus}',
-                              ),
                               if (_monitorStatus.lipTremorDetected)
                                 const _StatusChip(
                                   icon: Icons.graphic_eq,
-                                  text: 'Lip tremor tracking',
+                                  text: 'Lip micro-movement tracking',
                                 ),
                               if (_lastSignal != null)
                                 _StatusChip(
@@ -671,6 +746,22 @@ class _PatientPageState extends State<PatientPage> {
                                   text: _lastSignal!.kind.displayName,
                                 ),
                             ],
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Camera breathing estimate (not a medical measurement)',
+                            style: TextStyle(
+                              color: Color(0xFFA6E3D9),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            _monitorStatus.breathingStatus,
+                            style: const TextStyle(
+                              color: Color(0xFFC9D9D5),
+                              fontSize: 12,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           const Text(
@@ -775,7 +866,7 @@ class _PatientPageState extends State<PatientPage> {
                                 ),
                                 const SizedBox(width: 6),
                                 _TestSignalButton(
-                                  label: 'Eye Tremor',
+                                  label: 'Periocular micro-movement',
                                   icon: Icons.remove_red_eye,
                                   onTap: () => widget.services.monitor
                                       .simulateSignal(
@@ -783,7 +874,7 @@ class _PatientPageState extends State<PatientPage> {
                                 ),
                                 const SizedBox(width: 6),
                                 _TestSignalButton(
-                                  label: 'Lip Tremor',
+                                  label: 'Lip micro-movement',
                                   icon: Icons.graphic_eq,
                                   onTap: () => widget.services.monitor
                                       .simulateSignal(

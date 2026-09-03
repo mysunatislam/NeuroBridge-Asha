@@ -8,6 +8,7 @@ import 'package:fingerspeak_mobile/models/patient_signal.dart';
 import 'package:fingerspeak_mobile/models/personal_access_profile_repository.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/models/patient_access_method.dart';
+import 'package:fingerspeak_mobile/services/asha_guide_service.dart';
 import 'package:fingerspeak_mobile/services/calibration_service.dart';
 import 'package:fingerspeak_mobile/services/caregiver_notification_service.dart';
 import 'package:fingerspeak_mobile/services/cloud_alert_repository.dart';
@@ -39,6 +40,7 @@ class MobileServices {
     required this.cloudSync,
     required this.cloudAlerts,
     required this.fusionEngine,
+    required this.ashaGuide,
   });
 
   final AppConfig config;
@@ -58,6 +60,7 @@ class MobileServices {
   final CloudSyncService cloudSync;
   final CloudAlertRepository cloudAlerts;
   final MultimodalFusionEngine fusionEngine;
+  final AshaGuideService ashaGuide;
   StreamSubscription<Object?>? _signalSubscription;
   StreamSubscription<PiConnectionState>? _piStateSubscription;
   StreamSubscription<PatientSignal>? _piSignalSubscription;
@@ -104,6 +107,7 @@ class MobileServices {
       locale: config.locale,
       caregiverNotifications: caregiverNotifications,
     );
+    _applySignalSensitivities(monitor, recognition.phrases);
     final companion = CompanionController(
       api: AshaApiClient(
         baseUri: config.apiUri,
@@ -136,6 +140,7 @@ class MobileServices {
         voice.speakSystemPrompt('Confirm $intent? Blink or tilt head.');
       },
     );
+    final ashaGuide = AshaGuideService(preferences);
 
     final result = MobileServices._(
       config: config,
@@ -155,6 +160,7 @@ class MobileServices {
       cloudSync: cloudSync,
       cloudAlerts: cloudAlerts,
       fusionEngine: fusionEngine,
+      ashaGuide: ashaGuide,
     );
     result._signalSubscription = monitor.signals.listen((signal) {
       unawaited(recognition.ingest(signal));
@@ -198,6 +204,7 @@ class MobileServices {
       locale: cfg.locale,
       caregiverNotifications: notifications,
     );
+    _applySignalSensitivities(mon, recognition.phrases);
     final companion = CompanionController(
       api: AshaApiClient(baseUri: cfg.apiUri),
       voice: voice,
@@ -208,6 +215,7 @@ class MobileServices {
       onIntentExecuted: (_) {},
       onConfirmationPromptRequested: (_, __) {},
     );
+    final ashaGuide = AshaGuideService(prefs);
     return MobileServices._(
       config: cfg,
       roleRepository: roleRepo,
@@ -226,6 +234,7 @@ class MobileServices {
       cloudSync: CloudSyncService(preferences: prefs, apiClient: cloudApi),
       cloudAlerts: CloudAlertRepository(apiClient: cloudApi),
       fusionEngine: fusionEngine,
+      ashaGuide: ashaGuide,
     );
   }
 
@@ -250,10 +259,47 @@ class MobileServices {
     await recognition.setCustomMode(true);
   }
 
+  Future<void> saveCalibratedPhrase(CalibratedPhrase phrase) async {
+    await recognition.save(phrase);
+    refreshFaceSignalSensitivities();
+  }
+
+  Future<int> importCalibrationProfile(String jsonText) async {
+    final count = await recognition.importProfileJson(jsonText);
+    refreshFaceSignalSensitivities();
+    return count;
+  }
+
+  void previewFaceSignalSensitivity(
+    PatientSignalKind signal,
+    double sensitivity,
+  ) {
+    final values = <PatientSignalKind, double>{
+      for (final phrase in recognition.phrases)
+        phrase.signal: phrase.sensitivity,
+      signal: sensitivity,
+    };
+    monitor.setSignalSensitivities(values);
+  }
+
+  void refreshFaceSignalSensitivities() {
+    _applySignalSensitivities(monitor, recognition.phrases);
+  }
+
   Future<void> useStandardCalibrationProfile() async {
     await neutralBaselineRepository.clear();
     _applyNeutralBaseline(monitor, NeutralFaceBaseline.standard);
     await recognition.resetToDefaults();
+    refreshFaceSignalSensitivities();
+  }
+
+  static void _applySignalSensitivities(
+    PatientSignalMonitor monitor,
+    List<CalibratedPhrase> phrases,
+  ) {
+    monitor.setSignalSensitivities({
+      for (final phrase in phrases) phrase.signal: phrase.sensitivity,
+    });
   }
 
   static void _applyNeutralBaseline(
@@ -283,5 +329,6 @@ class MobileServices {
     await voice.dispose();
     cloudAlerts.dispose();
     cloudApi.close();
+    ashaGuide.dispose();
   }
 }

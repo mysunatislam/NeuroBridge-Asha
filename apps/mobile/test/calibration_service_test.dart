@@ -139,4 +139,124 @@ void main() {
       isTrue,
     );
   });
+
+  test('one face movement burst executes only one mapped phrase', () async {
+    final preferences = await SharedPreferences.getInstance();
+    final repository = CalibratedPhraseRepository(preferences);
+    await repository.save(const CalibratedPhrase(
+      signal: PatientSignalKind.eyeLookLeft,
+      key: 'look-left',
+      phrase: 'No',
+      minimumConfidence: 0.7,
+    ));
+    await repository.save(const CalibratedPhrase(
+      signal: PatientSignalKind.headTurnSlow,
+      key: 'head-slow',
+      phrase: 'Please look here',
+      minimumConfidence: 0.7,
+    ));
+    final voice = PatientVoiceService(
+      preferenceRepository: VoicePreferenceRepository(preferences),
+      recordings: RecordedPhraseRepository(preferences),
+    );
+    final pi = PiDeviceClient(
+      endpoint: Uri.parse('ws://127.0.0.1:8765/v1/device/ws'),
+      deviceId: 'test-pi',
+    );
+    final controller = RecognitionTriggerController(
+      repository: repository,
+      voice: voice,
+      pi: pi,
+      locale: 'en-US',
+      faceBurstCooldown: const Duration(milliseconds: 650),
+    );
+    addTearDown(() async {
+      await controller.dispose();
+      await voice.dispose();
+      await pi.dispose();
+    });
+    final spoken = <CalibratedPhrase>[];
+    final subscription = controller.spokenPhrases.listen(spoken.add);
+    addTearDown(subscription.cancel);
+    final start = DateTime.utc(2026, 9, 2, 12);
+
+    await controller.ingest(PatientSignal(
+      kind: PatientSignalKind.eyeLookLeft,
+      confidence: 0.9,
+      observedAt: start,
+    ));
+    await controller.ingest(PatientSignal(
+      kind: PatientSignalKind.headTurnSlow,
+      confidence: 0.9,
+      observedAt: start.add(const Duration(milliseconds: 100)),
+    ));
+    await Future<void>.delayed(Duration.zero);
+    expect(spoken.map((phrase) => phrase.key), ['look-left']);
+
+    await controller.ingest(PatientSignal(
+      kind: PatientSignalKind.headTurnSlow,
+      confidence: 0.9,
+      observedAt: start.add(const Duration(milliseconds: 700)),
+    ));
+    await Future<void>.delayed(Duration.zero);
+    expect(spoken.map((phrase) => phrase.key), ['look-left', 'head-slow']);
+  });
+
+  test('face burst suppression never blocks an emergency phrase', () async {
+    final preferences = await SharedPreferences.getInstance();
+    final repository = CalibratedPhraseRepository(preferences);
+    await repository.save(const CalibratedPhrase(
+      signal: PatientSignalKind.eyeLookLeft,
+      key: 'look-left',
+      phrase: 'No',
+      minimumConfidence: 0.7,
+    ));
+    await repository.save(const CalibratedPhrase(
+      signal: PatientSignalKind.mouthOpen,
+      key: 'urgent-mouth',
+      phrase: 'Emergency help now',
+      minimumConfidence: 0.7,
+    ));
+    final voice = PatientVoiceService(
+      preferenceRepository: VoicePreferenceRepository(preferences),
+      recordings: RecordedPhraseRepository(preferences),
+    );
+    final pi = PiDeviceClient(
+      endpoint: Uri.parse('ws://127.0.0.1:8765/v1/device/ws'),
+      deviceId: 'test-pi',
+    );
+    final controller = RecognitionTriggerController(
+      repository: repository,
+      voice: voice,
+      pi: pi,
+      locale: 'en-US',
+      faceBurstCooldown: const Duration(milliseconds: 650),
+    );
+    addTearDown(() async {
+      await controller.dispose();
+      await voice.dispose();
+      await pi.dispose();
+    });
+    final spoken = <CalibratedPhrase>[];
+    final subscription = controller.spokenPhrases.listen(spoken.add);
+    addTearDown(subscription.cancel);
+    final start = DateTime.utc(2026, 9, 3, 12);
+
+    await controller.ingest(PatientSignal(
+      kind: PatientSignalKind.eyeLookLeft,
+      confidence: 0.9,
+      observedAt: start,
+    ));
+    await controller.ingest(PatientSignal(
+      kind: PatientSignalKind.mouthOpen,
+      confidence: 0.9,
+      observedAt: start.add(const Duration(milliseconds: 100)),
+    ));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(spoken.map((phrase) => phrase.key), [
+      'look-left',
+      'urgent-mouth',
+    ]);
+  });
 }

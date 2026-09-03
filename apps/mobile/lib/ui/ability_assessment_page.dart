@@ -28,6 +28,10 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
   int _currentStep = 0;
   bool _caregiverAssisted = false;
   String _patientName = 'Patient';
+  int? _patientAge;
+  String? _conditionNotes;
+  String? _caregiverName;
+  String? _caregiverContact;
 
   final Map<BodyPart, CapabilityGrade> _capabilities = {
     BodyPart.rightHand: CapabilityGrade.good,
@@ -49,6 +53,10 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
     super.initState();
     if (widget.initialProfile != null) {
       _patientName = widget.initialProfile!.patientName;
+      _patientAge = widget.initialProfile!.patientAge;
+      _conditionNotes = widget.initialProfile!.conditionNotes;
+      _caregiverName = widget.initialProfile!.caregiverName;
+      _caregiverContact = widget.initialProfile!.caregiverContact;
       _caregiverAssisted = widget.initialProfile!.caregiverAssistedSetup;
       _capabilities.addAll(widget.initialProfile!.capabilities);
     }
@@ -76,6 +84,10 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
     final profile = PersonalAccessProfile(
       id: widget.initialProfile?.id ?? 'profile_',
       patientName: _patientName,
+      patientAge: _patientAge,
+      conditionNotes: _conditionNotes,
+      caregiverName: _caregiverName,
+      caregiverContact: _caregiverContact,
       capabilities: _capabilities,
       primaryModality: rec.primaryModality,
       backupModality: rec.backupModality,
@@ -181,7 +193,8 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
         const SizedBox(height: 24),
         const Text('Patient Name / Identifier', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13)),
         const SizedBox(height: 6),
-        TextField(
+        TextFormField(
+          initialValue: _patientName == 'Patient' ? '' : _patientName,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
             hintText: 'e.g. Asha Patient',
@@ -191,6 +204,106 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
           ),
           onChanged: (v) => _patientName = v.trim().isEmpty ? 'Patient' : v.trim(),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Age (optional)', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13)),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    initialValue: _patientAge?.toString() ?? '',
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'e.g. 58',
+                      hintStyle: const TextStyle(color: Color(0xFF64748B)),
+                      filled: true,
+                      fillColor: const Color(0xFF1E293B),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                    onChanged: (v) => _patientAge = int.tryParse(v.trim()),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Condition / Support Notes', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13)),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    initialValue: _conditionNotes ?? '',
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'e.g. ALS, Stroke, Parkinson’s',
+                      hintStyle: const TextStyle(color: Color(0xFF64748B)),
+                      filled: true,
+                      fillColor: const Color(0xFF1E293B),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                    onChanged: (v) => _conditionNotes = v.trim().isEmpty ? null : v.trim(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Caregiver Name', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13)),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    initialValue: _caregiverName ?? '',
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Sarah',
+                      hintStyle: const TextStyle(color: Color(0xFF64748B)),
+                      filled: true,
+                      fillColor: const Color(0xFF1E293B),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                    onChanged: (v) => _caregiverName = v.trim().isEmpty ? null : v.trim(),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Caregiver Contact / Phone', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13)),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    initialValue: _caregiverContact ?? '',
+                    keyboardType: TextInputType.phone,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'e.g. +1 555-0199',
+                      hintStyle: const TextStyle(color: Color(0xFF64748B)),
+                      filled: true,
+                      fillColor: const Color(0xFF1E293B),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                    onChanged: (v) => _caregiverContact = v.trim().isEmpty ? null : v.trim(),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 20),
         const Text(

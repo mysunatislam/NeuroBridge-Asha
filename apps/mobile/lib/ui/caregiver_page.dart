@@ -4,9 +4,11 @@ import 'package:fingerspeak_mobile/core/mobile_services.dart';
 import 'package:fingerspeak_mobile/data/pi_device_client.dart';
 import 'package:fingerspeak_mobile/models/patient_signal.dart';
 import 'package:fingerspeak_mobile/services/caregiver_notification_service.dart';
+import 'package:fingerspeak_mobile/services/asha_guide_service.dart';
 import 'package:fingerspeak_mobile/ui/calibration_wizard_page.dart';
 import 'package:fingerspeak_mobile/ui/caregiver_emergency_sheet.dart';
 import 'package:fingerspeak_mobile/ui/caregiver_voice_setup_page.dart';
+import 'package:fingerspeak_mobile/ui/guide/asha_guide_host.dart';
 import 'package:fingerspeak_mobile/ui/hand_calibration_page.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -17,12 +19,15 @@ class CaregiverPage extends StatefulWidget {
   final MobileServices services;
 
   @override
-  State<CaregiverPage> createState() => _CaregiverPageState();
+  State<CaregiverPage> createState() => CaregiverPageState();
 }
 
-class _CaregiverPageState extends State<CaregiverPage> {
+class CaregiverPageState extends State<CaregiverPage> {
   final _captionController = TextEditingController();
   final _patientProfileIdController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _calibrationGuideKey = GlobalKey();
+  final GlobalKey _reportGuideKey = GlobalKey();
   PiConnectionState _piState = PiConnectionState.disconnected;
   PiDeviceStatus? _piStatus;
   StreamSubscription<PiConnectionState>? _piSubscription;
@@ -54,7 +59,50 @@ class _CaregiverPageState extends State<CaregiverPage> {
     unawaited(_alertSubscription?.cancel());
     _captionController.dispose();
     _patientProfileIdController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> revealGuideStep(AshaGuideStep step) async {
+    if (step != AshaGuideStep.calibration && step != AshaGuideStep.report) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    if (!mounted || !_scrollController.hasClients) return;
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final key = step == AshaGuideStep.calibration
+        ? _calibrationGuideKey
+        : _reportGuideKey;
+    var targetContext = key.currentContext;
+    if (targetContext == null) {
+      final position = _scrollController.position;
+      final fallback = step == AshaGuideStep.report
+          ? position.maxScrollExtent
+          : (position.maxScrollExtent * 0.38)
+              .clamp(position.minScrollExtent, position.maxScrollExtent);
+      if (reduceMotion) {
+        _scrollController.jumpTo(fallback);
+      } else {
+        await _scrollController.animateTo(
+          fallback,
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+        );
+      }
+      if (!mounted) return;
+      targetContext = key.currentContext;
+    }
+    if (targetContext != null && targetContext.mounted) {
+      await Scrollable.ensureVisible(
+        targetContext,
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+        alignment: 0.35,
+      );
+    }
   }
 
   void _onCloudAlertsChanged() {
@@ -85,7 +133,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
     if (phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Patient phone number not set. Configure in Setup tab.'),
+          content:
+              Text('Patient phone number not set. Configure in Setup tab.'),
         ),
       );
       return;
@@ -157,12 +206,19 @@ class _CaregiverPageState extends State<CaregiverPage> {
     }
   }
 
-  void _openCalibrationWizard() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
+  Future<void> _openCalibrationWizard() async {
+    final completed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
         builder: (_) => CalibrationWizardPage(services: widget.services),
       ),
     );
+    if (!mounted) return;
+    final guide = widget.services.ashaGuide;
+    if (completed == true &&
+        guide.isActive &&
+        guide.step == AshaGuideStep.calibration) {
+      await guide.next();
+    }
   }
 
   void _openHandCalibration() {
@@ -187,6 +243,7 @@ class _CaregiverPageState extends State<CaregiverPage> {
     final phrases = widget.services.recognition.phrases;
 
     return ListView(
+      controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
       children: [
         Row(
@@ -215,7 +272,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
               ),
               icon: const Icon(Icons.emergency),
               tooltip: 'Emergency Clinical Guide',
-              onPressed: () => showCaregiverEmergencySheet(context, widget.services),
+              onPressed: () =>
+                  showCaregiverEmergencySheet(context, widget.services),
             ),
           ],
         ),
@@ -234,7 +292,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
               children: [
                 const CircleAvatar(
                   backgroundColor: Color(0xFF2E7D74),
-                  child: Icon(Icons.pan_tool_alt, color: Color(0xFF4FD1C5), size: 22),
+                  child: Icon(Icons.pan_tool_alt,
+                      color: Color(0xFF4FD1C5), size: 22),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -251,7 +310,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
                       ),
                       Text(
                         '98-Feature 3D DTW & Prototype Calibrator',
-                        style: TextStyle(fontSize: 13, color: Color(0xFF8CA0A8)),
+                        style:
+                            TextStyle(fontSize: 13, color: Color(0xFF8CA0A8)),
                       ),
                     ],
                   ),
@@ -284,7 +344,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
               children: [
                 const CircleAvatar(
                   backgroundColor: Color(0xFFB42318),
-                  child: Icon(Icons.medical_services, color: Colors.white, size: 22),
+                  child: Icon(Icons.medical_services,
+                      color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -301,7 +362,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
                       ),
                       Text(
                         'Instant Seizure & Choking First-Aid + 1-Tap Ambulance',
-                        style: TextStyle(fontSize: 13, color: Color(0xFF555555)),
+                        style:
+                            TextStyle(fontSize: 13, color: Color(0xFF555555)),
                       ),
                     ],
                   ),
@@ -324,7 +386,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
         // Connect Patient Profile ID Card (Cloud Sync)
         Card(
           color: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -341,7 +404,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
                     const Spacer(),
                     if (widget.services.cloudAlerts.currentProfileId != null)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: const Color(0xFFE8F6F3),
                           borderRadius: BorderRadius.circular(12),
@@ -350,7 +414,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_circle, size: 12, color: Color(0xFF0B756A)),
+                            Icon(Icons.check_circle,
+                                size: 12, color: Color(0xFF0B756A)),
                             SizedBox(width: 4),
                             Text('LIVE CONNECTED',
                                 style: TextStyle(
@@ -373,10 +438,12 @@ class _CaregiverPageState extends State<CaregiverPage> {
                     Expanded(
                       child: TextField(
                         controller: _patientProfileIdController,
-                        style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+                        style: const TextStyle(
+                            fontSize: 13, fontFamily: 'monospace'),
                         decoration: const InputDecoration(
                           hintText: 'Enter patient profile UUID…',
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
                         ),
                       ),
                     ),
@@ -396,7 +463,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
         // Wheelchair Hardware Card
         Card(
           color: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -421,9 +489,10 @@ class _CaregiverPageState extends State<CaregiverPage> {
                     children: [
                       Text(
                         'Wheelchair Unit (Pi & NoIR Cam)',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
                       ),
                       Text(_piStatusLabel()),
                     ],
@@ -463,20 +532,25 @@ class _CaregiverPageState extends State<CaregiverPage> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Calibrate custom triggers for eyes, facial muscles, lip/eye tremor, breathing patterns, and hand gestures.',
+                  'Calibrate custom triggers for eyes, facial muscles, lip/eye micro-movements, head motion, and hand gestures.',
                   style: TextStyle(fontSize: 14, color: Color(0xFF3B5E57)),
                 ),
                 const SizedBox(height: 14),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF0B756A),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  onPressed: _openCalibrationWizard,
-                  icon: const Icon(Icons.app_registration),
-                  label: const Text(
-                    'Start Step-by-Step Calibration',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                AshaGuideTarget(
+                  key: _calibrationGuideKey,
+                  step: AshaGuideStep.calibration,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF0B756A),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onPressed: _openCalibrationWizard,
+                    icon: const Icon(Icons.app_registration),
+                    label: const Text(
+                      'Start Step-by-Step Calibration',
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
               ],
@@ -542,7 +616,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
         // Write on Wheelchair Display Card
         Card(
           color: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -590,14 +665,16 @@ class _CaregiverPageState extends State<CaregiverPage> {
                     _PresetCaptionChip(
                       label: '“Rest well”',
                       onTap: () {
-                        _captionController.text = 'Take your time and rest well';
+                        _captionController.text =
+                            'Take your time and rest well';
                         _sendCaption();
                       },
                     ),
                     _PresetCaptionChip(
                       label: '“Water is here”',
                       onTap: () {
-                        _captionController.text = 'I am bringing some fresh water';
+                        _captionController.text =
+                            'I am bringing some fresh water';
                         _sendCaption();
                       },
                     ),
@@ -630,7 +707,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
         // Real-Time Patient Activity & Alert Feed
         Card(
           color: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -643,10 +721,12 @@ class _CaregiverPageState extends State<CaregiverPage> {
                       'Live Patient Alert Feed',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    if (alerts.isNotEmpty || widget.services.cloudAlerts.alerts.isNotEmpty)
+                    if (alerts.isNotEmpty ||
+                        widget.services.cloudAlerts.alerts.isNotEmpty)
                       TextButton(
                         onPressed: () async {
-                          await widget.services.caregiverNotifications.clearAlerts();
+                          await widget.services.caregiverNotifications
+                              .clearAlerts();
                           if (mounted) setState(() {});
                         },
                         child: const Text('Clear Local'),
@@ -703,7 +783,9 @@ class _CaregiverPageState extends State<CaregiverPage> {
                                 Row(
                                   children: [
                                     Text(
-                                      isEmergency ? 'EMERGENCY ALERT' : 'PATIENT SPEECH',
+                                      isEmergency
+                                          ? 'EMERGENCY ALERT'
+                                          : 'PATIENT SPEECH',
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
@@ -714,7 +796,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
                                     ),
                                     const SizedBox(width: 6),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 1),
                                       decoration: BoxDecoration(
                                         color: isResolved
                                             ? Colors.grey.shade300
@@ -739,24 +822,28 @@ class _CaregiverPageState extends State<CaregiverPage> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(ca.message,
-                                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600)),
                               ],
                             ),
                           ),
                           if (!isResolved) ...[
                             if (!isAck)
                               TextButton(
-                                onPressed: () =>
-                                    widget.services.cloudAlerts.acknowledgeAlert(ca.id),
-                                child: const Text('Ack', style: TextStyle(fontSize: 12)),
+                                onPressed: () => widget.services.cloudAlerts
+                                    .acknowledgeAlert(ca.id),
+                                child: const Text('Ack',
+                                    style: TextStyle(fontSize: 12)),
                               ),
                             FilledButton.tonal(
                               style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
                               ),
-                              onPressed: () =>
-                                  widget.services.cloudAlerts.resolveAlert(ca.id),
-                              child: const Text('Resolve', style: TextStyle(fontSize: 12)),
+                              onPressed: () => widget.services.cloudAlerts
+                                  .resolveAlert(ca.id),
+                              child: const Text('Resolve',
+                                  style: TextStyle(fontSize: 12)),
                             ),
                           ],
                         ],
@@ -768,10 +855,12 @@ class _CaregiverPageState extends State<CaregiverPage> {
                   const SizedBox(height: 4),
                 ],
 
-                if (alerts.isEmpty && widget.services.cloudAlerts.alerts.isEmpty)
+                if (alerts.isEmpty &&
+                    widget.services.cloudAlerts.alerts.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('No patient alerts yet. New speech and signals will appear here instantly.'),
+                    child: Text(
+                        'No patient alerts yet. New speech and signals will appear here instantly.'),
                   )
                 else
                   ...alerts.take(10).map((a) {
@@ -793,7 +882,9 @@ class _CaregiverPageState extends State<CaregiverPage> {
                       child: Row(
                         children: [
                           Icon(
-                            isEmergency ? Icons.warning : Icons.record_voice_over,
+                            isEmergency
+                                ? Icons.warning
+                                : Icons.record_voice_over,
                             color: isEmergency
                                 ? const Color(0xFFB42318)
                                 : const Color(0xFF0B756A),
@@ -818,7 +909,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
                           ),
                           Text(
                             '${a.timestamp.hour.toString().padLeft(2, '0')}:${a.timestamp.minute.toString().padLeft(2, '0')}',
-                            style: const TextStyle(fontSize: 12, color: Colors.black54),
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.black54),
                           ),
                         ],
                       ),
@@ -833,7 +925,8 @@ class _CaregiverPageState extends State<CaregiverPage> {
         // Active Calibrated Signals Summary
         Card(
           color: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -849,9 +942,13 @@ class _CaregiverPageState extends State<CaregiverPage> {
                 else
                   ...phrases.map((p) => ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.check_circle_outline, color: Color(0xFF0B756A)),
-                        title: Text(p.phrase, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Text('${p.signal.displayName} • Sensitivity ${(p.sensitivity * 100).round()}%'),
+                        leading: const Icon(Icons.check_circle_outline,
+                            color: Color(0xFF0B756A)),
+                        title: Text(p.phrase,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                            '${p.signal.displayName} • Sensitivity ${(p.sensitivity * 100).round()}%'),
                       )),
               ],
             ),
@@ -860,71 +957,80 @@ class _CaregiverPageState extends State<CaregiverPage> {
         const SizedBox(height: 16),
 
         // Session Quality Metrics Card
-        ListenableBuilder(
-          listenable: widget.services.sessionMetrics,
-          builder: (context, _) {
-            final metrics = widget.services.sessionMetrics;
-            return Card(
-              color: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(children: [
-                      const Icon(Icons.bar_chart, color: Color(0xFF0B756A)),
-                      const SizedBox(width: 8),
-                      Text('Session Quality',
-                          style: Theme.of(context).textTheme.titleLarge),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: () {
-                          widget.services.sessionMetrics.reset();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Session metrics reset.')),
-                          );
-                        },
-                        icon: const Icon(Icons.refresh, size: 16),
-                        label: const Text('Reset'),
+        AshaGuideTarget(
+          key: _reportGuideKey,
+          step: AshaGuideStep.report,
+          child: ListenableBuilder(
+            listenable: widget.services.sessionMetrics,
+            builder: (context, _) {
+              final metrics = widget.services.sessionMetrics;
+              return Card(
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.bar_chart, color: Color(0xFF0B756A)),
+                        const SizedBox(width: 8),
+                        Text('Session Quality',
+                            style: Theme.of(context).textTheme.titleLarge),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () {
+                            widget.services.sessionMetrics.reset();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Session metrics reset.')),
+                            );
+                          },
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text('Reset'),
+                        ),
+                      ]),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Track communication effectiveness this session.',
+                        style:
+                            TextStyle(fontSize: 13, color: Color(0xFF556E68)),
                       ),
-                    ]),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Track communication effectiveness this session.',
-                      style: TextStyle(fontSize: 13, color: Color(0xFF556E68)),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _MetricTile(
-                          icon: Icons.record_voice_over,
-                          color: const Color(0xFF0B756A),
-                          label: 'Phrases\nSpoken',
-                          value: '${metrics.phrasesSpoken}',
-                        ),
-                        _MetricTile(
-                          icon: Icons.error_outline,
-                          color: Colors.orange,
-                          label: 'False\nActivations',
-                          value: '${metrics.falseActivations}',
-                          onMark: () => widget.services.sessionMetrics.markFalseActivation(),
-                        ),
-                        _MetricTile(
-                          icon: Icons.visibility_off,
-                          color: Colors.redAccent,
-                          label: 'Missed\nGestures',
-                          value: '${metrics.missedGestures}',
-                          onMark: () => widget.services.sessionMetrics.markMissedGesture(),
-                        ),
-                      ],
-                    ),
-                  ],
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _MetricTile(
+                            icon: Icons.record_voice_over,
+                            color: const Color(0xFF0B756A),
+                            label: 'Phrases\nSpoken',
+                            value: '${metrics.phrasesSpoken}',
+                          ),
+                          _MetricTile(
+                            icon: Icons.error_outline,
+                            color: Colors.orange,
+                            label: 'False\nActivations',
+                            value: '${metrics.falseActivations}',
+                            onMark: () => widget.services.sessionMetrics
+                                .markFalseActivation(),
+                          ),
+                          _MetricTile(
+                            icon: Icons.visibility_off,
+                            color: Colors.redAccent,
+                            label: 'Missed\nGestures',
+                            value: '${metrics.missedGestures}',
+                            onMark: () => widget.services.sessionMetrics
+                                .markMissedGesture(),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ],
     );
@@ -1018,7 +1124,8 @@ class _MetricTile extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 'Tap to mark',
-                style: TextStyle(fontSize: 9, color: color.withValues(alpha: 0.65)),
+                style: TextStyle(
+                    fontSize: 9, color: color.withValues(alpha: 0.65)),
               ),
             ],
           ],

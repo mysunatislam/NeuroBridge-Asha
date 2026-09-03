@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:fingerspeak_mobile/core/mobile_services.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
+import 'package:fingerspeak_mobile/services/asha_guide_service.dart';
 import 'package:fingerspeak_mobile/ui/asha_chat_sheet.dart';
 import 'package:fingerspeak_mobile/ui/caregiver_page.dart';
 import 'package:fingerspeak_mobile/ui/effects/angelic_sparkle.dart';
+import 'package:fingerspeak_mobile/ui/guide/asha_guide_host.dart';
 import 'package:fingerspeak_mobile/ui/patient_page.dart';
 import 'package:fingerspeak_mobile/ui/pi_display_page.dart';
 import 'package:fingerspeak_mobile/ui/role_selection_page.dart';
@@ -60,9 +62,12 @@ class _FingerSpeakMobileAppState extends State<FingerSpeakMobileApp> {
           ),
         ),
         textTheme: const TextTheme(
-          headlineMedium: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-          titleLarge: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-          titleMedium: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+          headlineMedium:
+              TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+          titleLarge:
+              TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+          titleMedium:
+              TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
           bodyMedium: TextStyle(color: Color(0xFF334155)),
         ),
         inputDecorationTheme: InputDecorationTheme(
@@ -113,11 +118,14 @@ class _AppRoot extends StatefulWidget {
 
 class _AppRootState extends State<_AppRoot> {
   UserRole? _activeRole;
+  final GlobalKey<_MobileHomeState> _mobileHomeKey =
+      GlobalKey<_MobileHomeState>();
 
   @override
   void initState() {
     super.initState();
     _activeRole = widget.services.roleRepository.load();
+    unawaited(widget.services.ashaGuide.setRoleSelected(_activeRole != null));
     widget.services.roleRepository.addListener(_onRoleChanged);
   }
 
@@ -130,20 +138,45 @@ class _AppRootState extends State<_AppRoot> {
   void _onRoleChanged() {
     if (mounted) {
       setState(() => _activeRole = widget.services.roleRepository.load());
+      _resumeGuideAfterRoleSelection();
     }
+  }
+
+  void _resumeGuideAfterRoleSelection() {
+    final guide = widget.services.ashaGuide;
+    unawaited(guide.setRoleSelected(_activeRole != null));
+    if (_activeRole == null || !guide.isActive) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !guide.isActive) return;
+      _mobileHomeKey.currentState?.revealGuideStep(guide.step);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final Widget content;
     if (_activeRole == null) {
-      return RoleSelectionPage(
+      content = RoleSelectionPage(
         services: widget.services,
-        onRoleSelected: (role) => setState(() => _activeRole = role),
+        onRoleSelected: (role) {
+          setState(() => _activeRole = role);
+          _resumeGuideAfterRoleSelection();
+        },
+      );
+    } else {
+      content = MobileHome(
+        key: _mobileHomeKey,
+        services: widget.services,
+        initialRole: _activeRole!,
       );
     }
-    return MobileHome(
-      services: widget.services,
-      initialRole: _activeRole!,
+    return AshaGuideHost(
+      service: widget.services.ashaGuide,
+      onNarrate: widget.services.voice.speakSystemPrompt,
+      onRevealStep: (step) {
+        _mobileHomeKey.currentState?.revealGuideStep(step);
+      },
+      child: content,
     );
   }
 }
@@ -163,14 +196,19 @@ class _StartupError extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 52, color: Color(0xFFEF4444)),
+              const Icon(Icons.error_outline,
+                  size: 52, color: Color(0xFFEF4444)),
               const SizedBox(height: 16),
               Text(
                 'NeuroBridge Asha could not start',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: const Color(0xFF0F172A), fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: const Color(0xFF0F172A),
+                    fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-              Text('$error', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF64748B))),
+              Text('$error',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFF64748B))),
             ],
           ),
         ),
@@ -195,6 +233,22 @@ class MobileHome extends StatefulWidget {
 
 class _MobileHomeState extends State<MobileHome> {
   late int _index = widget.initialRole == UserRole.caregiver ? 1 : 0;
+  final GlobalKey<CaregiverPageState> _caregiverKey =
+      GlobalKey<CaregiverPageState>();
+
+  void revealGuideStep(AshaGuideStep step) {
+    final nextIndex = switch (step) {
+      AshaGuideStep.calibration || AshaGuideStep.report => 1,
+      AshaGuideStep.profile || AshaGuideStep.firstSession => 0,
+      _ => _index,
+    };
+    if (nextIndex != _index && mounted) setState(() => _index = nextIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final reveal = _caregiverKey.currentState?.revealGuideStep(step);
+      if (reveal != null) unawaited(reveal);
+    });
+  }
 
   @override
   void didUpdateWidget(MobileHome oldWidget) {
@@ -217,7 +271,7 @@ class _MobileHomeState extends State<MobileHome> {
           index: _index,
           children: [
             PatientPage(services: services, isActive: _index == 0),
-            CaregiverPage(services: services),
+            CaregiverPage(key: _caregiverKey, services: services),
             PiDisplayPage(services: services),
             SettingsPage(
               services: services,

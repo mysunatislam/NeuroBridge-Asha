@@ -38,12 +38,12 @@ use.
 
 ## Required local tooling
 
-This workstation was audited on 22 August 2026. Flutter 3.47.1, Dart 3.13.1, and Java 17 are
-available. Flutter is installed at `C:\Users\Kotha\Development\flutter`, but its `bin` directory is
-not yet on `PATH`. The Android SDK/ADB are not installed, and no system software was installed
-automatically.
+Flutter is installed at `C:\Users\Kotha\Development\flutter`. The examples below use its full
+path so they work in PowerShell even when Flutter is not on `PATH`. Android SDK/ADB are available
+at `C:\Users\Kotha\AppData\Local\Android\Sdk`. A physical phone was not connected during the
+latest automated validation.
 
-Install:
+On another workstation:
 
 1. Add `C:\Users\Kotha\Development\flutter\bin` to `PATH`.
 2. Install Android Studio with Android SDK Platform 35 or newer, SDK build tools, platform tools, and an
@@ -80,13 +80,12 @@ the Setup tab. The rotated device credential is stored in secure storage and reu
 
 ## Checks and GitHub artifacts
 
-After installing Flutter:
+From `apps/mobile` in PowerShell:
 
 ```powershell
-dart format --output=none --set-exit-if-changed lib test
-flutter analyze --no-fatal-infos
-flutter test
-flutter build apk --debug
+& 'C:\Users\Kotha\Development\flutter\bin\flutter.bat' analyze
+& 'C:\Users\Kotha\Development\flutter\bin\flutter.bat' test
+& 'C:\Users\Kotha\Development\flutter\bin\flutter.bat' build apk --release
 ```
 
 `.github/workflows/ci.yml` repeats those checks and uploads a short-lived debug APK. The separate
@@ -96,8 +95,57 @@ GitHub Release, deploy a backend, or contain signing/API secrets. The evaluation
 signing and placeholder secure endpoints; real distribution requires organization-owned Android
 signing material in GitHub secrets and an approved release process.
 
-Local `flutter pub get` completed, `flutter analyze` reported no issues, and all ten Dart/Flutter
-tests passed with Flutter 3.47.1. An APK build was attempted and stopped before Gradle because no
-Android SDK is installed. Native plugin compilation and physical-device camera, microphone,
-notification, calling, and ML Kit behavior therefore remain to be verified. GitHub Actions provides
-the clean Android build and artifact check once these changes are pushed.
+The local release APK is written to `build/app/outputs/flutter-apk/app-release.apk`. This remains
+an evaluation build, not an app-store release. The unchanged hand calibration page has a
+pre-existing unused-import analyzer warning; it is intentionally outside the face-only changes.
+
+iOS uses the same Dart source. Windows cannot run the Xcode build. The existing
+`.github/workflows/ios_build.yml` runs on macOS and packages an **unsigned** IPA for sideloading;
+it must build the updated source and be signed appropriately before device installation.
+
+## Asha Guide and face calibration
+
+Asha Guide is a deterministic, local walkthrough rather than a medical AI agent. It leads through
+role selection, the patient ability profile, calibration, a first session, and session progress.
+It supports voice replay, Back, Skip, persisted resume, and replay from Setup. The spotlight does
+not block emergency controls. Completing an assessment or calibration advances the walkthrough;
+canceling one does not falsely mark it complete.
+
+Custom face calibration now requires distinct timestamped frames over a minimum capture period,
+stable neutral measurements, and a successful test of the selected movement. Sensitivity previews
+change the actual face detector thresholds; save, import, restart, and standard-profile reset all
+refresh those live settings. Unknown eye/smile measurements are unavailable rather than replaced
+with invented neutral values.
+
+The former fixed `16 bpm` display was a placeholder for breathing, not heart rate. The replacement
+is explicitly a **camera breathing estimate, not a medical measurement**. It uses periodic
+face-box movement, needs a sustained quality window, and becomes unavailable after unsuitable
+motion or tracking loss. It cannot distinguish every breathing movement from head/camera sway.
+It must not be used for apnea detection, diagnosis, or clinical decisions. Experimental periocular
+and lip micro-movement features describe contour motion, not measured iris tremor or muscle
+activity; they require explicit calibration/mapping.
+
+Android face frames are validated as packed NV21 or converted from Y/U/V planes using their real
+row/pixel strides. iOS BGRA buffers retain their row stride. Unsupported/malformed layouts produce
+an honest unavailable/error state. See the primary
+[Android YUV format specification](https://developer.android.com/reference/android/graphics/ImageFormat#YUV_420_888)
+and [ML Kit byte-array requirements](https://developers.google.com/ml-kit/vision/face-detection/android).
+The MediaPipe hand runtime and model assets are not changed by this work.
+
+Before a patient trial, check on each target phone:
+
+1. Deny camera permission, retry after granting it, background/resume the app, and switch between
+   face calibration and the hand communicator. Never accept a fake face-detected state.
+2. Capture a relaxed baseline, then deliberately move during capture and confirm rejection.
+3. Test each mapped movement separately, save it, restart the app, and repeat. Also record a long
+   neutral interval and count false activations.
+4. Confirm one deliberate movement produces one phrase and emergency controls remain reachable.
+5. Replay Asha Guide for both Patient and Caregiver roles, cancel and complete setup routes, and
+   test large text and reduced-motion settings.
+6. Verify caregiver recording playback and speech on the physical device; unit tests cannot prove
+   microphone, speaker, camera, or permission behavior.
+
+The laptop-side [research benchmark](../../tools/research_benchmark/README.md) remains available
+for the existing hand telemetry pipeline. Its results do not establish face recognition accuracy
+or validate the experimental breathing estimate. Face validation needs separately labelled,
+held-out patient/device trials and an independent reference for any physiological comparison.

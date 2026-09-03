@@ -1504,13 +1504,35 @@ export function FingerSpeakApp() {
             <h2 id="role-title">Who is using this device?</h2>
             <p>Select your mode to optimize the interface for direct AAC communication or caregiver calibration &amp; oversight.</p>
             <div className="role-cards-grid">
-              <div className="role-select-card" onClick={() => selectRole("patient")}>
+              <div
+                className="role-select-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => selectRole("patient")}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    selectRole("patient");
+                  }
+                }}
+              >
                 <div className="role-card-icon">♡</div>
                 <strong>I am a Patient</strong>
                 <span>Reassuring, accessible dashboard with live facial/eye monitoring, Asha companion, quick speech cards, and emergency SOS.</span>
                 <button className="select-btn" type="button">Enter Patient Mode</button>
               </div>
-              <div className="role-select-card" onClick={() => selectRole("caregiver")}>
+              <div
+                className="role-select-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => selectRole("caregiver")}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    selectRole("caregiver");
+                  }
+                }}
+              >
                 <div className="role-card-icon">⚙</div>
                 <strong>I am a Caregiver</strong>
                 <span>Step-by-step calibration wizard, wheelchair Pi telemetry, display captions, alert feed, and emergency first-aid protocols.</span>
