@@ -51,6 +51,19 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<!-- iOS 14+ gates connections to LAN addresses behind the local-network
+	     permission. The companion reaches the Raspberry Pi over ws://<lan-ip>,
+	     so without this key that prompt has no explanation and the Pi link
+	     cannot be established. Android needs no counterpart: INTERNET covers it. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>NeuroBridge Asha connects to the paired FingerSpeak wheelchair device on your local network to send confirmed captions to its display.</string>
+	<!-- Counterpart of the Android manifest's <queries> DIAL/tel entry. The
+	     patient, caregiver and emergency sheets all launch tel: URLs; declaring
+	     the scheme keeps canLaunchUrl() honest on iOS. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+	</array>
 	<key>io.flutter.embedded_views_preview</key>
 	<true/>
 </dict>
