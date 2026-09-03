@@ -219,6 +219,31 @@ class _SettingsPageState extends State<SettingsPage> {
           style: TextStyle(color: Color(0xFF556E68)),
         ),
         const SizedBox(height: 18),
+        Card(
+          color: const Color(0xFFFFFBEB),
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: Color(0xFFCCFBF1),
+              child: Icon(Icons.touch_app, color: Color(0xFF0F766E)),
+            ),
+            title: const Text('Asha Guide'),
+            subtitle: const Text(
+              'Replay the accessible step-by-step setup walkthrough.',
+            ),
+            trailing: FilledButton.tonalIcon(
+              onPressed: () async {
+                await widget.services.ashaGuide.restart();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Asha Guide restarted.')),
+                );
+              },
+              icon: const Icon(Icons.replay),
+              label: const Text('Replay'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
 
         // Role Switcher Card
         Card(
@@ -1182,7 +1207,7 @@ class _SettingsPageState extends State<SettingsPage> {
               if (text.isEmpty) return;
               try {
                 final count =
-                    await widget.services.recognition.importProfileJson(text);
+                    await widget.services.importCalibrationProfile(text);
                 if (context.mounted) {
                   Navigator.of(context).pop();
                   setState(() {});

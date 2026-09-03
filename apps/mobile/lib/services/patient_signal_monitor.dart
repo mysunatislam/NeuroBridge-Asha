@@ -3,13 +3,17 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:fingerspeak_mobile/models/patient_signal.dart';
+import 'package:fingerspeak_mobile/services/face_camera_frame.dart';
+import 'package:fingerspeak_mobile/services/respiration_rate_estimator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 abstract interface class PatientSignalMonitor {
   Stream<PatientSignal> get signals;
   Stream<MonitorStatus> get statuses;
+  MonitorStatus get currentStatus;
   CameraController? get cameraController;
   Future<void> start();
   Future<void> stop();
@@ -24,6 +28,9 @@ abstract interface class PatientSignalMonitor {
     double? headYaw,
     double? headPitch,
   });
+  void setSignalSensitivities(
+    Map<PatientSignalKind, double> sensitivities,
+  );
 }
 
 @visibleForTesting
@@ -141,11 +148,11 @@ class _SignalCandidate {
 
 class _BlinkObservation {
   const _BlinkObservation({
-    required this.confidence,
+    required this.closure,
     required this.duration,
   });
 
-  final double confidence;
+  final double closure;
   final Duration duration;
 }
 
@@ -211,6 +218,92 @@ OscillationMetrics analyzeOscillation(
 }
 
 @visibleForTesting
+double sensitivityAdjustedThreshold(
+  double baseThreshold,
+  double sensitivity,
+) {
+  final normalized = ((sensitivity.clamp(0.40, 0.95) - 0.40) / 0.55).toDouble();
+  final factor = 1.35 - normalized * 0.57;
+  return baseThreshold * factor;
+}
+
+@visibleForTesting
+double blinkClosureThreshold(double sensitivity) =>
+    sensitivityAdjustedThreshold(0.58, sensitivity)
+        .clamp(0.35, 0.78)
+        .toDouble();
+
+/// Conservative timing check for explicitly opted-in, experimental movement.
+/// This validates repeated contour motion, not a neurological tremor diagnosis.
+@visibleForTesting
+bool isConsistentMicroMovement(
+  List<double> values,
+  List<DateTime> observedAt, {
+  Duration minimumObservation = const Duration(milliseconds: 2500),
+}) {
+  if (values.length < 20 ||
+      values.length != observedAt.length ||
+      values.any((value) => !value.isFinite) ||
+      observedAt.last.difference(observedAt.first) < minimumObservation) {
+    return false;
+  }
+  final elapsed = <double>[];
+  for (var i = 0; i < observedAt.length; i++) {
+    if (i > 0) {
+      final gap = observedAt[i].difference(observedAt[i - 1]);
+      if (gap <= Duration.zero || gap > const Duration(milliseconds: 350)) {
+        return false;
+      }
+    }
+    elapsed.add(
+      observedAt[i].difference(observedAt.first).inMicroseconds / 1000000,
+    );
+  }
+  final meanTime = elapsed.reduce((a, b) => a + b) / elapsed.length;
+  final meanValue = values.reduce((a, b) => a + b) / values.length;
+  var covariance = 0.0;
+  var timeVariance = 0.0;
+  for (var i = 0; i < values.length; i++) {
+    covariance += (elapsed[i] - meanTime) * (values[i] - meanValue);
+    timeVariance += math.pow(elapsed[i] - meanTime, 2);
+  }
+  if (timeVariance <= 0) return false;
+  final slope = covariance / timeVariance;
+  final residuals = List<double>.generate(
+    values.length,
+    (i) => values[i] - meanValue - slope * (elapsed[i] - meanTime),
+  );
+  final rms = math.sqrt(
+    residuals.fold<double>(0, (sum, value) => sum + value * value) /
+        residuals.length,
+  );
+  if (rms < 0.000001) return false;
+  final hysteresis = rms * 0.4;
+  final rises = <double>[];
+  var wasBelow = false;
+  for (var i = 0; i < residuals.length; i++) {
+    if (residuals[i] <= -hysteresis) {
+      wasBelow = true;
+    } else if (wasBelow && residuals[i] >= hysteresis) {
+      rises.add(elapsed[i]);
+      wasBelow = false;
+    }
+  }
+  if (rises.length < 3) return false;
+  final periods = <double>[
+    for (var i = 1; i < rises.length; i++) rises[i] - rises[i - 1],
+  ];
+  final meanPeriod = periods.reduce((a, b) => a + b) / periods.length;
+  if (meanPeriod < 1 / 3 || meanPeriod > 1.25) return false;
+  final periodVariance = periods.fold<double>(
+        0,
+        (sum, period) => sum + math.pow(period - meanPeriod, 2),
+      ) /
+      periods.length;
+  return math.sqrt(periodVariance) / meanPeriod <= 0.25;
+}
+
+@visibleForTesting
 class HeadMotionMetrics {
   const HeadMotionMetrics({
     required this.velocityDegreesPerSecond,
@@ -231,6 +324,10 @@ class HeadMotionFilter {
   DateTime? _observedAt;
 
   HeadMotionMetrics? add(double yaw, double pitch, DateTime observedAt) {
+    if (!yaw.isFinite || !pitch.isFinite) {
+      clear();
+      return null;
+    }
     final previousAt = _observedAt;
     final previousYaw = _yaw;
     final previousPitch = _pitch;
@@ -272,31 +369,77 @@ class HeadMotionFilter {
   }
 }
 
-/// On-device face, eye, expression, muscle, head, hand, and tremor signal detector.
+@visibleForTesting
+class FaceMonitorLifecycleIntent {
+  FaceMonitorLifecycleIntent({
+    AppLifecycleState initialState = AppLifecycleState.resumed,
+  }) : _suspended = initialState != AppLifecycleState.resumed;
+
+  bool _requestedActive = false;
+  bool _suspended;
+  bool _disposed = false;
+
+  bool get shouldRun => _requestedActive && !_suspended && !_disposed;
+
+  void requestStart() {
+    if (!_disposed) _requestedActive = true;
+  }
+
+  void requestStop() => _requestedActive = false;
+
+  void update(AppLifecycleState state) {
+    _suspended = state != AppLifecycleState.resumed;
+  }
+
+  void dispose() {
+    _disposed = true;
+    _requestedActive = false;
+  }
+}
+
+/// On-device face expressions, assisted head/gaze, and optional contour motion.
 /// No camera frame leaves the device.
-class MlKitPatientSignalMonitor implements PatientSignalMonitor {
+class MlKitPatientSignalMonitor
+    with WidgetsBindingObserver
+    implements PatientSignalMonitor {
   MlKitPatientSignalMonitor({FaceDetector? detector})
       : _detector = detector ??
             FaceDetector(
               options: FaceDetectorOptions(
                 enableClassification: true,
                 enableContours: true,
-                enableTracking: true,
+                enableLandmarks: true,
+                enableTracking: false,
                 minFaceSize: 0.15,
-                performanceMode: FaceDetectorMode.fast,
+                performanceMode: FaceDetectorMode.accurate,
               ),
-            );
+            ) {
+    final binding = WidgetsBinding.instance;
+    _lifecycleIntent.update(binding.lifecycleState ?? AppLifecycleState.resumed);
+    binding.addObserver(this);
+  }
 
   final FaceDetector _detector;
   final _signals = StreamController<PatientSignal>.broadcast();
   final _statuses = StreamController<MonitorStatus>.broadcast();
+  MonitorStatus _currentStatus = const MonitorStatus.stopped();
+  final Map<PatientSignalKind, double> _signalSensitivities = {};
+  final RespirationRateEstimator _respirationEstimator =
+      RespirationRateEstimator();
+  int _unstableBreathingFrames = 0;
+  int? _primaryTrackingId;
+  Rect? _previousPrimaryBox;
 
   CameraController? _controller;
+  int _streamGeneration = 0;
+  final FaceMonitorLifecycleIntent _lifecycleIntent = FaceMonitorLifecycleIntent();
+  Future<void> _cameraTransition = Future<void>.value();
   DateTime _lastFrame = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastBlink = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _eyesClosedSince = DateTime.fromMillisecondsSinceEpoch(0);
   double _closedEyeConfidence = 0;
   final List<DateTime> _recentBlinks = [];
+  final List<DateTime> _recentRapidBlinks = [];
   Timer? _pendingBlinkTimer;
   _BlinkObservation? _pendingBlink;
 
@@ -318,6 +461,9 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
   Map<FaceContourType, Offset> _previousContourCenters = const {};
   final List<double> _lipDisplacements = [];
   final List<double> _eyeDisplacements = [];
+  final List<DateTime> _lipObservationTimes = [];
+  final List<DateTime> _eyeObservationTimes = [];
+  double _facialMovementEnergy = 0;
 
   bool _processing = false;
   bool _faceWasPresent = false;
@@ -327,10 +473,41 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
   CameraController? get cameraController => _controller;
 
   @override
+  MonitorStatus get currentStatus => _currentStatus;
+
+  @override
   Stream<PatientSignal> get signals => _signals.stream;
 
   @override
   Stream<MonitorStatus> get statuses => _statuses.stream;
+
+  @override
+  void setSignalSensitivities(
+    Map<PatientSignalKind, double> sensitivities,
+  ) {
+    _signalSensitivities
+      ..clear()
+      ..addEntries(
+        sensitivities.entries.where((entry) => entry.value.isFinite).map(
+              (entry) => MapEntry(
+                entry.key,
+                entry.value.clamp(0.40, 0.95).toDouble(),
+              ),
+            ),
+      );
+    _resetTemporalTracking();
+  }
+
+  double _sensitivity(PatientSignalKind kind) =>
+      _signalSensitivities[kind] ?? 0.75;
+
+  double _threshold(PatientSignalKind kind, double baseThreshold) =>
+      sensitivityAdjustedThreshold(baseThreshold, _sensitivity(kind));
+
+  void _publishStatus(MonitorStatus status) {
+    _currentStatus = status;
+    if (!_closed) _statuses.add(status);
+  }
 
   @override
   void setNeutralBaseline({
@@ -382,18 +559,61 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
   @override
   Future<void> start() async {
     if (_closed) throw StateError('Monitor has been disposed.');
-    if (_controller?.value.isStreamingImages ?? false) return;
-    _statuses.add(const MonitorStatus(
+    _lifecycleIntent.requestStart();
+    await _queueCameraTransition(_startCamera);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_closed) return;
+    _lifecycleIntent.update(state);
+    if (_lifecycleIntent.shouldRun) {
+      unawaited(_queueCameraTransition(_startCamera));
+    } else {
+      ++_streamGeneration;
+      _resetTemporalTracking();
+      _publishStatus(const MonitorStatus(
+        lifecycle: MonitorLifecycle.stopped,
+        message: 'Camera is paused while the app is in the background',
+      ));
+      unawaited(_queueCameraTransition(_stopCamera));
+    }
+  }
+
+  Future<void> _queueCameraTransition(Future<void> Function() operation) {
+    final transition = _cameraTransition.then((_) => operation());
+    // A failed platform call must not poison later explicit stop/start requests.
+    _cameraTransition = transition.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {},
+    );
+    return transition;
+  }
+
+  Future<void> _startCamera() async {
+    if (!_lifecycleIntent.shouldRun || _closed) return;
+    if (_controller?.value.isStreamingImages ?? false) {
+      _publishStatus(_currentStatus);
+      return;
+    }
+    final generation = ++_streamGeneration;
+    final previousController = _controller;
+    _controller = null;
+    CameraController? startingController;
+    _resetTemporalTracking();
+    _publishStatus(const MonitorStatus(
       lifecycle: MonitorLifecycle.starting,
       message: 'Starting private on-device camera…',
     ));
     try {
+      await _disposeController(previousController);
+      if (!_isCurrentSession(generation)) return;
       final cameras = await availableCameras();
+      if (!_isCurrentSession(generation)) return;
       if (cameras.isEmpty) {
-        _statuses.add(const MonitorStatus(
-          lifecycle: MonitorLifecycle.active,
-          message: 'Camera simulator active — no physical camera found',
-          faceDetected: true,
+        _publishStatus(const MonitorStatus(
+          lifecycle: MonitorLifecycle.unavailable,
+          message: 'No camera is available on this device',
         ));
         return;
       }
@@ -417,38 +637,89 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
         enableAudio: false,
         imageFormatGroup: formatGroup,
       );
+      startingController = controller;
       _controller = controller;
       await controller.initialize();
-      if (!kIsWeb) {
-        await controller.startImageStream(_processFrame);
+      if (!_isCurrentSession(generation, controller)) {
+        await _disposeController(controller);
+        return;
       }
-      _statuses.add(const MonitorStatus(
+      if (!kIsWeb) {
+        await controller.startImageStream(
+          (image) => _processFrame(image, generation, controller),
+        );
+      }
+      if (!_isCurrentSession(generation, controller)) {
+        await _disposeController(controller);
+        return;
+      }
+      _publishStatus(const MonitorStatus(
         lifecycle: MonitorLifecycle.active,
-        message: 'Live device webcam active & tracking',
-        faceDetected: true,
+        message: 'Camera active — looking for the patient’s face…',
       ));
     } on CameraException catch (error) {
-      _statuses.add(MonitorStatus(
-        lifecycle: MonitorLifecycle.active,
-        message:
-            'Camera active (simulated fallback): ${error.description ?? error.code}',
-        faceDetected: true,
-      ));
+      await _handleStartFailure(
+        generation,
+        startingController,
+        'Camera unavailable: ${error.description ?? error.code}',
+      );
     } on Object catch (error) {
-      _statuses.add(MonitorStatus(
-        lifecycle: MonitorLifecycle.active,
-        message: 'Vision monitor active (simulated): $error',
-        faceDetected: true,
+      await _handleStartFailure(
+        generation,
+        startingController,
+        'Vision monitor could not start: $error',
+      );
+    }
+  }
+
+  bool _isCurrentSession(int generation, [CameraController? controller]) =>
+      !_closed &&
+      _lifecycleIntent.shouldRun &&
+      generation == _streamGeneration &&
+      (controller == null || identical(controller, _controller));
+
+  Future<void> _handleStartFailure(
+    int generation,
+    CameraController? controller,
+    String message,
+  ) async {
+    if (_isCurrentSession(generation)) {
+      ++_streamGeneration;
+      _controller = null;
+      _resetTemporalTracking();
+      _publishStatus(MonitorStatus(
+        lifecycle: MonitorLifecycle.error,
+        message: message,
       ));
+    }
+    await _disposeController(controller);
+  }
+
+  Future<void> _disposeController(CameraController? controller) async {
+    if (controller == null) return;
+    try {
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+    } on Object {
+      // The platform may already have stopped this stream.
+    }
+    try {
+      await controller.dispose();
+    } on Object {
+      // A cancelled start and stop can both release the same controller.
     }
   }
 
   int _frameSkipCounter = 0;
 
-  Future<void> _processFrame(CameraImage image) async {
-    if (_closed ||
-        _controller == null ||
-        !(_controller?.value.isInitialized ?? false)) {
+  Future<void> _processFrame(
+    CameraImage image,
+    int generation,
+    CameraController controller,
+  ) async {
+    if (!_isCurrentSession(generation, controller) ||
+        !controller.value.isInitialized) {
       return;
     }
     // Process every 2nd frame to decimate stream and preserve battery
@@ -460,27 +731,38 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       return;
     }
     _lastFrame = now;
-    final input = _toInputImage(image);
-    if (input == null) return;
+    final input = _toInputImage(image, controller);
+    if (input == null) {
+      _faceWasPresent = false;
+      _resetTemporalTracking();
+      _publishStatus(const MonitorStatus(
+        lifecycle: MonitorLifecycle.error,
+        message: 'Camera frames could not be read. Restart the camera monitor.',
+      ));
+      return;
+    }
     _processing = true;
     try {
       final faces = await _detector.processImage(input);
+      if (!_isCurrentSession(generation, controller)) return;
       if (faces.isEmpty) {
         if (_faceWasPresent) {
           _emit(PatientSignalKind.faceLost, 1);
           _faceWasPresent = false;
         }
         _resetTemporalTracking();
-        _statuses.add(const MonitorStatus(
+        _primaryTrackingId = null;
+        _previousPrimaryBox = null;
+        _publishStatus(const MonitorStatus(
           lifecycle: MonitorLifecycle.active,
           message: 'Looking for the patient’s face…',
         ));
         return;
       }
-      final face = faces.first;
+      final face = _selectPrimaryFace(faces);
       if (face.boundingBox.width < 80 || face.boundingBox.height < 80) {
         _resetTemporalTracking();
-        _statuses.add(const MonitorStatus(
+        _publishStatus(const MonitorStatus(
           lifecycle: MonitorLifecycle.active,
           message: 'Move closer so facial movements can be measured reliably',
           faceDetected: true,
@@ -489,17 +771,58 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       }
       if (!_faceWasPresent) _emit(PatientSignalKind.facePresent, 1);
       _faceWasPresent = true;
-      final leftOpen = face.leftEyeOpenProbability ?? _restingLeftEyeOpenness;
-      final rightOpen =
-          face.rightEyeOpenProbability ?? _restingRightEyeOpenness;
-      final smileProbability =
-          face.smilingProbability ?? _restingSmileProbability;
+      final leftOpen = face.leftEyeOpenProbability;
+      final rightOpen = face.rightEyeOpenProbability;
+      final smileProbability = face.smilingProbability;
       final yaw = face.headEulerAngleY;
       final pitch = face.headEulerAngleX;
       final neutralMeasurements = _measureNeutralFace(face);
+      final headVelocity = _processHeadAndAssistedGaze(
+        yaw: yaw,
+        pitch: pitch,
+        smileProbability: smileProbability,
+        now: now,
+      );
+      final poseStableForBreathing = yaw != null &&
+          yaw.isFinite &&
+          pitch != null &&
+          pitch.isFinite &&
+          (yaw - _restingHeadYaw).abs() <= 16 &&
+          (pitch - _restingHeadPitch).abs() <= 14 &&
+          headVelocity.isFinite &&
+          headVelocity <= 16;
+      if (!poseStableForBreathing) {
+        _unstableBreathingFrames++;
+        if (_unstableBreathingFrames > 20) {
+          _respirationEstimator.clear();
+        }
+      } else {
+        _unstableBreathingFrames = 0;
+      }
+      final frameExtent = math.max(image.width, image.height).toDouble();
+      final respirationEstimate = poseStableForBreathing
+          ? _respirationEstimator.addSample(
+              observedAt: now,
+              verticalPosition: face.boundingBox.center.dy / frameExtent,
+            )
+          : _respirationEstimator.currentEstimate;
+      final breathingLabel = respirationEstimate != null
+          ? () {
+              final rate = respirationEstimate.breathsPerMinute.round();
+              final category = rate < 10
+                  ? 'Slow'
+                  : rate > 24
+                      ? 'Rapid'
+                      : 'Normal';
+              return 'Estimated $rate breaths/min ($category)';
+            }()
+          : !poseStableForBreathing
+              ? 'Unavailable — keep head and camera still'
+              : 'Measuring… keep head and camera still';
 
-      _statuses.add(MonitorStatus(
+      _publishStatus(MonitorStatus(
         lifecycle: MonitorLifecycle.active,
+        observedAt: now,
         message: 'Live face, gaze & gesture tracking active',
         faceDetected: true,
         leftEyeOpen: leftOpen,
@@ -509,20 +832,24 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
         smileProbability: smileProbability,
         headYaw: yaw,
         headPitch: pitch,
-        lipTremorDetected:
+        lipTremorDetected: poseStableForBreathing &&
+            _signalSensitivities.containsKey(PatientSignalKind.lipTremor) &&
             now.difference(_lastLipTremorTime) < const Duration(seconds: 1),
-        eyeTremorDetected:
+        eyeTremorDetected: poseStableForBreathing &&
+            _signalSensitivities.containsKey(PatientSignalKind.eyeTremor) &&
             now.difference(_lastEyeTremorTime) < const Duration(seconds: 1),
-        breathingStatus: _estimateBreathingStatus(),
+        breathingRatePerMin: respirationEstimate?.breathsPerMinute,
+        breathingStatus: breathingLabel,
       ));
 
-      _processEyes(leftOpen, rightOpen, now);
-      final headVelocity = _processHeadAndAssistedGaze(
-        yaw: yaw,
-        pitch: pitch,
-        smileProbability: smileProbability,
-        now: now,
-      );
+      if (leftOpen != null &&
+          leftOpen.isFinite &&
+          rightOpen != null &&
+          rightOpen.isFinite) {
+        _processEyes(leftOpen, rightOpen, now);
+      } else {
+        _resetEyeTracking();
+      }
       _processSmilesAndContours(
         face,
         now,
@@ -532,7 +859,9 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
         headVelocity: headVelocity,
       );
     } on Object catch (error) {
-      _statuses.add(MonitorStatus(
+      if (!_isCurrentSession(generation, controller)) return;
+      _resetTemporalTracking();
+      _publishStatus(MonitorStatus(
         lifecycle: MonitorLifecycle.active,
         message: 'Vision tracking active (resumed: $error)',
       ));
@@ -541,25 +870,86 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     }
   }
 
+  Face _selectPrimaryFace(List<Face> faces) {
+    Face? selected;
+    final trackedId = _primaryTrackingId;
+    if (trackedId != null) {
+      for (final candidate in faces) {
+        if (candidate.trackingId == trackedId) {
+          selected = candidate;
+          break;
+        }
+      }
+    }
+    selected ??= faces.reduce((first, second) {
+      final firstArea = first.boundingBox.width * first.boundingBox.height;
+      final secondArea = second.boundingBox.width * second.boundingBox.height;
+      return firstArea >= secondArea ? first : second;
+    });
+
+    final previousBox = _previousPrimaryBox;
+    final nextId = selected.trackingId;
+    final trackingChanged =
+        trackedId != null && nextId != null && trackedId != nextId;
+    final largeUntrackedJump = previousBox != null &&
+        (trackedId == null || nextId == null) &&
+        (selected.boundingBox.center - previousBox.center).distance >
+            math.max(previousBox.width, previousBox.height) * 0.75;
+    if (trackingChanged || largeUntrackedJump) {
+      _resetTemporalTracking();
+    }
+    _primaryTrackingId = nextId;
+    _previousPrimaryBox = selected.boundingBox;
+    return selected;
+  }
+
+  void _resetEyeTracking() {
+    for (final kind in const [
+      PatientSignalKind.leftWink,
+      PatientSignalKind.rightWink,
+    ]) {
+      _stabilityGate.reset(kind);
+    }
+    _eyesClosedSince = DateTime.fromMillisecondsSinceEpoch(0);
+    _closedEyeConfidence = 0;
+    _recentBlinks.clear();
+    _recentRapidBlinks.clear();
+    _pendingBlink = null;
+    _pendingBlinkTimer?.cancel();
+    _pendingBlinkTimer = null;
+  }
+
   void _processEyes(double leftOpen, double rightOpen, DateTime now) {
-    final leftClosedThreshold = math.max(0.12, _restingLeftEyeOpenness * 0.42);
-    final rightClosedThreshold =
-        math.max(0.12, _restingRightEyeOpenness * 0.42);
+    final requiredClosure = [
+      PatientSignalKind.blink,
+      PatientSignalKind.slowBlink,
+      PatientSignalKind.rapidBlink,
+    ].map((kind) => blinkClosureThreshold(_sensitivity(kind))).reduce(math.min);
+    final leftClosedThreshold = math.max(
+      0.10,
+      _restingLeftEyeOpenness * (1 - requiredClosure),
+    );
+    final rightClosedThreshold = math.max(
+      0.10,
+      _restingRightEyeOpenness * (1 - requiredClosure),
+    );
     final eyesClosed =
         leftOpen < leftClosedThreshold && rightOpen < rightClosedThreshold;
     if (eyesClosed) {
       final leftClosure = (1 - leftOpen / _restingLeftEyeOpenness).clamp(0, 1);
       final rightClosure =
           (1 - rightOpen / _restingRightEyeOpenness).clamp(0, 1);
-      final confidence =
-          ((leftClosure + rightClosure) / 2).clamp(0.78, 1.0).toDouble();
+      final confidence = math.min(leftClosure, rightClosure).toDouble();
       _closedEyeConfidence = math.max(_closedEyeConfidence, confidence);
       if (_eyesClosedSince.millisecondsSinceEpoch == 0) {
         _eyesClosedSince = now;
       } else {
         final closedDuration = now.difference(_eyesClosedSince);
         if (closedDuration >= const Duration(milliseconds: 700) &&
-            closedDuration <= const Duration(seconds: 2)) {
+            closedDuration <= const Duration(seconds: 2) &&
+            _closedEyeConfidence >=
+                blinkClosureThreshold(
+                    _sensitivity(PatientSignalKind.slowBlink))) {
           _emitThrottled(
             PatientSignalKind.slowBlink,
             math.max(0.90, _closedEyeConfidence),
@@ -578,7 +968,7 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
         _registerBlink(
           now,
           _BlinkObservation(
-            confidence: math.max(0.80, _closedEyeConfidence),
+            closure: _closedEyeConfidence,
             duration: closedDuration,
           ),
         );
@@ -596,13 +986,17 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
         (rightOpen / _restingRightEyeOpenness).clamp(0, 1).toDouble();
     final leftWinkScore = math.min(leftClosure, rightOpenRatio);
     final rightWinkScore = math.min(rightClosure, leftOpenRatio);
+    final leftWinkEnter =
+        _threshold(PatientSignalKind.leftWink, 0.65).clamp(0.45, 0.85);
+    final rightWinkEnter =
+        _threshold(PatientSignalKind.rightWink, 0.65).clamp(0.45, 0.85);
     _emitStableSignal(
       kind: PatientSignalKind.leftWink,
       score: leftWinkScore,
       confidence: (0.72 + leftWinkScore * 0.28).clamp(0, 1),
       now: now,
-      enterThreshold: 0.65,
-      exitThreshold: 0.45,
+      enterThreshold: leftWinkEnter,
+      exitThreshold: leftWinkEnter * 0.68,
       minimumHold: const Duration(milliseconds: 250),
     );
     _emitStableSignal(
@@ -610,8 +1004,8 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       score: rightWinkScore,
       confidence: (0.72 + rightWinkScore * 0.28).clamp(0, 1),
       now: now,
-      enterThreshold: 0.65,
-      exitThreshold: 0.45,
+      enterThreshold: rightWinkEnter,
+      exitThreshold: rightWinkEnter * 0.68,
       minimumHold: const Duration(milliseconds: 250),
     );
   }
@@ -623,12 +1017,20 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     _recentBlinks.removeWhere(
       (time) => now.difference(time) > const Duration(milliseconds: 1200),
     );
+    if (observation.closure >=
+        blinkClosureThreshold(_sensitivity(PatientSignalKind.rapidBlink))) {
+      _recentRapidBlinks.add(now);
+    }
+    _recentRapidBlinks.removeWhere(
+      (time) => now.difference(time) > const Duration(milliseconds: 1200),
+    );
     _pendingBlink = observation;
     _pendingBlinkTimer?.cancel();
-    if (_recentBlinks.length >= 3) {
+    if (_recentRapidBlinks.length >= 3) {
       final sequenceDuration =
-          now.difference(_recentBlinks.first).inMilliseconds;
+          now.difference(_recentRapidBlinks.first).inMilliseconds;
       _recentBlinks.clear();
+      _recentRapidBlinks.clear();
       _pendingBlink = null;
       _emitThrottled(
         PatientSignalKind.rapidBlink,
@@ -647,10 +1049,14 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       final pending = _pendingBlink;
       _recentBlinks.clear();
       _pendingBlink = null;
-      if (pending == null) return;
+      if (pending == null ||
+          pending.closure <
+              blinkClosureThreshold(_sensitivity(PatientSignalKind.blink))) {
+        return;
+      }
       _emitThrottled(
         PatientSignalKind.blink,
-        pending.confidence,
+        math.max(0.80, pending.closure),
         metadata: {'active_duration_ms': pending.duration.inMilliseconds},
       );
     });
@@ -659,11 +1065,12 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
   double _processHeadAndAssistedGaze({
     required double? yaw,
     required double? pitch,
-    required double smileProbability,
+    required double? smileProbability,
     required DateTime now,
   }) {
-    if (yaw == null || pitch == null) {
+    if (yaw == null || !yaw.isFinite || pitch == null || !pitch.isFinite) {
       _headMotionFilter.clear();
+      _gazeReturnArmed = false;
       for (final kind in const [
         PatientSignalKind.eyeLookLeft,
         PatientSignalKind.eyeLookRight,
@@ -682,13 +1089,17 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     final pitchOffset = pitch - _restingHeadPitch;
     final leftScore = -yawOffset;
     final rightScore = yawOffset;
+    final leftEnter = _threshold(PatientSignalKind.eyeLookLeft, 16);
+    final rightEnter = _threshold(PatientSignalKind.eyeLookRight, 16);
+    final upEnter = _threshold(PatientSignalKind.eyeLookUp, 14);
+    final downEnter = _threshold(PatientSignalKind.eyeLookDown, 14);
     _emitStableSignal(
       kind: PatientSignalKind.eyeLookLeft,
       score: leftScore,
       confidence: (yawOffset.abs() / 28).clamp(0.74, 1.0),
       now: now,
-      enterThreshold: 16,
-      exitThreshold: 10,
+      enterThreshold: leftEnter,
+      exitThreshold: leftEnter * 0.62,
       minimumHold: const Duration(milliseconds: 300),
       metadata: const {'detection_proxy': 'slight_head_and_gaze_pose'},
     );
@@ -697,8 +1108,8 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       score: rightScore,
       confidence: (yawOffset.abs() / 28).clamp(0.74, 1.0),
       now: now,
-      enterThreshold: 16,
-      exitThreshold: 10,
+      enterThreshold: rightEnter,
+      exitThreshold: rightEnter * 0.62,
       minimumHold: const Duration(milliseconds: 300),
       metadata: const {'detection_proxy': 'slight_head_and_gaze_pose'},
     );
@@ -707,8 +1118,8 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       score: pitchOffset,
       confidence: (pitchOffset.abs() / 25).clamp(0.74, 1.0),
       now: now,
-      enterThreshold: 14,
-      exitThreshold: 9,
+      enterThreshold: upEnter,
+      exitThreshold: upEnter * 0.64,
       minimumHold: const Duration(milliseconds: 300),
       metadata: const {'detection_proxy': 'slight_head_and_gaze_pose'},
     );
@@ -717,24 +1128,27 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       score: -pitchOffset,
       confidence: (pitchOffset.abs() / 25).clamp(0.74, 1.0),
       now: now,
-      enterThreshold: 14,
-      exitThreshold: 9,
+      enterThreshold: downEnter,
+      exitThreshold: downEnter * 0.64,
       minimumHold: const Duration(milliseconds: 300),
       metadata: const {'detection_proxy': 'slight_head_and_gaze_pose'},
     );
 
-    if (yawOffset.abs() > 14 || pitchOffset.abs() > 12) {
+    if (yawOffset.abs() > _threshold(PatientSignalKind.eyeLookCenter, 14) ||
+        pitchOffset.abs() > _threshold(PatientSignalKind.eyeLookCenter, 12)) {
       _gazeReturnArmed = true;
     }
     final alignmentScore =
         1 - math.max(yawOffset.abs(), pitchOffset.abs()) / 12;
+    final centerEnter =
+        _threshold(PatientSignalKind.eyeLookCenter, 0.65).clamp(0.50, 0.88);
     final centered = _stabilityGate.update(
       kind: PatientSignalKind.eyeLookCenter,
       score: alignmentScore,
       confidence: alignmentScore.clamp(0.75, 1.0),
       observedAt: now,
-      enterThreshold: 0.65,
-      exitThreshold: 0.35,
+      enterThreshold: centerEnter,
+      exitThreshold: centerEnter * 0.54,
       minimumHold: const Duration(milliseconds: 500),
     );
     if (_gazeReturnArmed && centered != null) {
@@ -755,9 +1169,11 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
 
     final motion = _headMotionFilter.add(yawOffset, pitchOffset, now);
     final velocity = motion?.velocityDegreesPerSecond ?? 0;
+    final rapidDisplacement = _threshold(PatientSignalKind.headTurnRapid, 5.5);
+    final rapidVelocity = _threshold(PatientSignalKind.headTurnRapid, 75);
     final rapidMotion = motion != null &&
-        motion.frameDisplacementDegrees >= 5.5 &&
-        velocity >= 75;
+        motion.frameDisplacementDegrees >= rapidDisplacement &&
+        velocity >= rapidVelocity;
     if (rapidMotion) {
       _stabilityGate.reset(PatientSignalKind.headTurnSlow);
       _emitThrottled(
@@ -766,6 +1182,7 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
         cooldownMs: 900,
       );
     } else {
+      final slowEnter = _threshold(PatientSignalKind.headTurnSlow, 14);
       final slowScore =
           velocity <= 50 && (motion?.frameDisplacementDegrees ?? 0) >= 0.7
               ? velocity
@@ -775,14 +1192,18 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
         score: slowScore,
         confidence: (velocity / 35).clamp(0.75, 0.95),
         now: now,
-        enterThreshold: 14,
-        exitThreshold: 7,
+        enterThreshold: slowEnter,
+        exitThreshold: slowEnter * 0.5,
         minimumHold: const Duration(milliseconds: 300),
       );
     }
 
-    final smileStrength = (smileProbability - _restingSmileProbability) / 0.25;
-    final poseStrength = math.max(yawOffset.abs(), pitchOffset.abs()) / 10;
+    final smileStrength = smileProbability == null
+        ? 0.0
+        : (smileProbability - _restingSmileProbability) /
+            _threshold(PatientSignalKind.headNodSmile, 0.25);
+    final poseStrength = math.max(yawOffset.abs(), pitchOffset.abs()) /
+        _threshold(PatientSignalKind.headNodSmile, 10);
     final combined = math.min(smileStrength, poseStrength);
     _emitStableSignal(
       kind: PatientSignalKind.headNodSmile,
@@ -793,7 +1214,7 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       exitThreshold: 0.55,
       minimumHold: const Duration(milliseconds: 350),
     );
-    return velocity;
+    return motion == null ? double.infinity : velocity;
   }
 
   void _emitStableSignal({
@@ -830,12 +1251,21 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
   ({double? eyebrowDistance, double? mouthDistance}) _measureNeutralFace(
     Face face,
   ) {
-    final leftEyebrow = face.contours[FaceContourType.leftEyebrowTop]?.points;
-    final rightEyebrow = face.contours[FaceContourType.rightEyebrowTop]?.points;
+    final leftEyebrowTop = face.contours[FaceContourType.leftEyebrowTop]?.points;
+    final leftEyebrowBottom =
+        face.contours[FaceContourType.leftEyebrowBottom]?.points;
+    final rightEyebrowTop =
+        face.contours[FaceContourType.rightEyebrowTop]?.points;
+    final rightEyebrowBottom =
+        face.contours[FaceContourType.rightEyebrowBottom]?.points;
     final leftEye = face.contours[FaceContourType.leftEye]?.points;
     final rightEye = face.contours[FaceContourType.rightEye]?.points;
-    final upperLip = face.contours[FaceContourType.upperLipTop]?.points;
-    final lowerLip = face.contours[FaceContourType.lowerLipBottom]?.points;
+    final upperLipTop = face.contours[FaceContourType.upperLipTop]?.points;
+    final upperLipBottom =
+        face.contours[FaceContourType.upperLipBottom]?.points;
+    final lowerLipBottom =
+        face.contours[FaceContourType.lowerLipBottom]?.points;
+    final lowerLipTop = face.contours[FaceContourType.lowerLipTop]?.points;
 
     final eyebrowDistances = <double>[];
     void addEyebrowDistance(
@@ -854,13 +1284,36 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       );
     }
 
-    addEyebrowDistance(leftEyebrow, leftEye);
-    addEyebrowDistance(rightEyebrow, rightEye);
+    addEyebrowDistance(leftEyebrowTop ?? leftEyebrowBottom, leftEye);
+    addEyebrowDistance(rightEyebrowTop ?? rightEyebrowBottom, rightEye);
+
+    // Landmark fallback for eyebrows if contours are not detected
+    if (eyebrowDistances.isEmpty) {
+      final landmarkLeftEye =
+          face.landmarks[FaceLandmarkType.leftEye]?.position;
+      final landmarkRightEye =
+          face.landmarks[FaceLandmarkType.rightEye]?.position;
+      if (landmarkLeftEye != null || landmarkRightEye != null) {
+        final eyeY = ((landmarkLeftEye?.y ?? landmarkRightEye!.y) +
+                (landmarkRightEye?.y ?? landmarkLeftEye!.y)) /
+            2.0;
+        final topY = face.boundingBox.top;
+        final estimatedBrowY = (eyeY + topY) / 2.0;
+        eyebrowDistances.add(
+          (eyeY - estimatedBrowY).abs() / math.max(face.boundingBox.height, 1),
+        );
+      } else {
+        eyebrowDistances.add(0.18);
+      }
+    }
+
     final eyebrowDistance = eyebrowDistances.isEmpty
-        ? null
+        ? 0.18
         : eyebrowDistances.reduce((a, b) => a + b) / eyebrowDistances.length;
 
     double? mouthDistance;
+    final upperLip = upperLipTop ?? upperLipBottom;
+    final lowerLip = lowerLipBottom ?? lowerLipTop;
     if (upperLip != null &&
         upperLip.isNotEmpty &&
         lowerLip != null &&
@@ -871,6 +1324,25 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
           lowerLip.length;
       mouthDistance =
           (lowerY - upperY).abs() / math.max(face.boundingBox.height, 1);
+    } else {
+      // Landmark fallback for mouth
+      final bottomMouth =
+          face.landmarks[FaceLandmarkType.bottomMouth]?.position;
+      final noseBase = face.landmarks[FaceLandmarkType.noseBase]?.position;
+      final leftMouth = face.landmarks[FaceLandmarkType.leftMouth]?.position;
+      final rightMouth = face.landmarks[FaceLandmarkType.rightMouth]?.position;
+      if (bottomMouth != null && (leftMouth != null || rightMouth != null)) {
+        final mouthCenterY = ((leftMouth?.y ?? rightMouth!.y) +
+                (rightMouth?.y ?? leftMouth!.y)) /
+            2.0;
+        mouthDistance = (bottomMouth.y - mouthCenterY).abs() /
+            math.max(face.boundingBox.height, 1);
+      } else if (bottomMouth != null && noseBase != null) {
+        mouthDistance = ((bottomMouth.y - noseBase.y).abs() * 0.35) /
+            math.max(face.boundingBox.height, 1);
+      } else {
+        mouthDistance = 0.08;
+      }
     }
 
     return (
@@ -890,34 +1362,59 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     required double? pitchOffset,
     required double headVelocity,
   }) {
-    final smile = face.smilingProbability ?? 0.0;
+    final smile = face.smilingProbability;
+    final smileValue = smile ?? 0.0;
 
     final upperLip = face.contours[FaceContourType.upperLipTop]?.points;
     final lowerLip = face.contours[FaceContourType.lowerLipBottom]?.points;
     final leftEye = face.contours[FaceContourType.leftEye]?.points;
     final rightEye = face.contours[FaceContourType.rightEye]?.points;
     final noseBridge = face.contours[FaceContourType.noseBridge]?.points;
-    final frontFacing = yawOffset != null &&
+    final hasValidPose = yawOffset != null &&
+        yawOffset.isFinite &&
         pitchOffset != null &&
-        yawOffset.abs() <= 18 &&
-        pitchOffset.abs() <= 15;
-    final poseStable = frontFacing && headVelocity <= 12;
+        pitchOffset.isFinite;
+    final frontFacing =
+        !hasValidPose || (yawOffset.abs() <= 18 && pitchOffset.abs() <= 15);
+    final poseStable = hasValidPose &&
+        frontFacing &&
+        headVelocity.isFinite &&
+        headVelocity <= 12;
 
     double cornerHeightDifference = 0;
     if (upperLip != null && upperLip.length >= 3) {
       cornerHeightDifference = (upperLip.last.y - upperLip.first.y) /
           math.max(face.boundingBox.height, 1);
     }
-    final smileEnter = math.max(_restingSmileProbability + 0.25, 0.55);
-    final smileExit = math.max(_restingSmileProbability + 0.14, 0.38);
-    final asymmetricSmileReady =
-        frontFacing && smile >= math.max(_restingSmileProbability + 0.18, 0.42);
+    final smileDelta = _threshold(PatientSignalKind.smile, 0.25);
+    final smileEnter = math.max(
+      _restingSmileProbability + smileDelta,
+      _threshold(PatientSignalKind.smile, 0.55).clamp(0.38, 0.72),
+    );
+    final smileExit = math.max(
+      _restingSmileProbability + smileDelta * 0.56,
+      smileEnter * 0.68,
+    );
+    final leftSmileFloor = math.max(
+      _restingSmileProbability + _threshold(PatientSignalKind.smileLeft, 0.18),
+      _threshold(PatientSignalKind.smileLeft, 0.42).clamp(0.30, 0.58),
+    );
+    final rightSmileFloor = math.max(
+      _restingSmileProbability + _threshold(PatientSignalKind.smileRight, 0.18),
+      _threshold(PatientSignalKind.smileRight, 0.42).clamp(0.30, 0.58),
+    );
+    final leftSmileReady =
+        smile != null && frontFacing && smileValue >= leftSmileFloor;
+    final rightSmileReady =
+        smile != null && frontFacing && smileValue >= rightSmileFloor;
     final symmetricScore =
-        frontFacing && cornerHeightDifference.abs() < 0.025 ? smile : 0.0;
+        smile != null && frontFacing && cornerHeightDifference.abs() < 0.025
+            ? smileValue
+            : 0.0;
     _emitStableSignal(
       kind: PatientSignalKind.smile,
       score: symmetricScore,
-      confidence: (0.74 + (smile - smileEnter) * 0.55).clamp(0, 1),
+      confidence: (0.74 + (smileValue - smileEnter) * 0.55).clamp(0, 1),
       now: now,
       enterThreshold: smileEnter,
       exitThreshold: smileExit,
@@ -925,25 +1422,28 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     );
     _emitStableSignal(
       kind: PatientSignalKind.smileLeft,
-      score: asymmetricSmileReady ? cornerHeightDifference : 0,
+      score: leftSmileReady ? cornerHeightDifference : 0,
       confidence: (0.74 + cornerHeightDifference.abs() * 4).clamp(0, 1),
       now: now,
-      enterThreshold: 0.035,
-      exitThreshold: 0.018,
+      enterThreshold: _threshold(PatientSignalKind.smileLeft, 0.035),
+      exitThreshold: _threshold(PatientSignalKind.smileLeft, 0.018),
       minimumHold: const Duration(milliseconds: 350),
     );
     _emitStableSignal(
       kind: PatientSignalKind.smileRight,
-      score: asymmetricSmileReady ? -cornerHeightDifference : 0,
+      score: rightSmileReady ? -cornerHeightDifference : 0,
       confidence: (0.74 + cornerHeightDifference.abs() * 4).clamp(0, 1),
       now: now,
-      enterThreshold: 0.035,
-      exitThreshold: 0.018,
+      enterThreshold: _threshold(PatientSignalKind.smileRight, 0.035),
+      exitThreshold: _threshold(PatientSignalKind.smileRight, 0.018),
       minimumHold: const Duration(milliseconds: 350),
     );
 
     final eyebrowDistance = neutralMeasurements.eyebrowDistance;
-    final requiredElevation = math.max(_restingEyebrowDistance * 0.20, 0.012);
+    final requiredElevation = _threshold(
+      PatientSignalKind.eyebrowsUp,
+      math.max(_restingEyebrowDistance * 0.20, 0.012),
+    );
     final eyebrowElevation = eyebrowDistance == null
         ? 0.0
         : eyebrowDistance - _restingEyebrowDistance;
@@ -960,8 +1460,12 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     );
 
     final mouthDistance = neutralMeasurements.mouthDistance;
-    final mouthEnter = math.max(_restingMouthDistance * 1.50, 0.075);
-    final mouthExit = math.max(_restingMouthDistance * 1.25, 0.055);
+    final mouthDelta = _threshold(
+      PatientSignalKind.mouthOpen,
+      math.max(_restingMouthDistance * 0.50, 0.025),
+    );
+    final mouthEnter = _restingMouthDistance + mouthDelta;
+    final mouthExit = _restingMouthDistance + mouthDelta * 0.55;
     final mouthScore = frontFacing ? (mouthDistance ?? 0) : 0.0;
     _emitStableSignal(
       kind: PatientSignalKind.mouthOpen,
@@ -977,31 +1481,55 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       minimumHold: const Duration(milliseconds: 300),
     );
 
+    final namedExpressionActive = symmetricScore >= smileEnter ||
+        leftSmileReady &&
+            cornerHeightDifference >=
+                _threshold(PatientSignalKind.smileLeft, 0.035) ||
+        rightSmileReady &&
+            -cornerHeightDifference >=
+                _threshold(PatientSignalKind.smileRight, 0.035) ||
+        eyebrowScore >= 1 ||
+        mouthScore >= mouthEnter;
+    final microMotionReady = poseStable && !namedExpressionActive;
+    final lipEnabled = microMotionReady &&
+        _signalSensitivities.containsKey(PatientSignalKind.lipTremor);
+    final eyeEnabled = microMotionReady &&
+        _signalSensitivities.containsKey(PatientSignalKind.eyeTremor) &&
+        (face.leftEyeOpenProbability ?? 0) >= _restingLeftEyeOpenness * 0.65 &&
+        (face.rightEyeOpenProbability ?? 0) >= _restingRightEyeOpenness * 0.65;
     final faceHeight = math.max(face.boundingBox.height, 1);
     final referenceY = noseBridge == null || noseBridge.isEmpty
         ? face.boundingBox.center.dy
         : noseBridge.fold<double>(0, (sum, point) => sum + point.y) /
             noseBridge.length;
-    if (!poseStable) {
+    if (!lipEnabled ||
+        upperLip == null ||
+        upperLip.isEmpty ||
+        lowerLip == null ||
+        lowerLip.isEmpty) {
       _lipDisplacements.clear();
-      _eyeDisplacements.clear();
-    } else if (upperLip != null &&
-        upperLip.isNotEmpty &&
-        lowerLip != null &&
-        lowerLip.isNotEmpty) {
+      _lipObservationTimes.clear();
+      _lastLipTremorTime = DateTime.fromMillisecondsSinceEpoch(0);
+    } else {
       final upperY = upperLip.fold<double>(0, (sum, point) => sum + point.y) /
           upperLip.length;
       final lowerY = lowerLip.fold<double>(0, (sum, point) => sum + point.y) /
           lowerLip.length;
       final lipCenterY = (upperY + lowerY) / 2;
-      _lipDisplacements.add((lipCenterY - referenceY) / faceHeight);
-      if (_lipDisplacements.length > 12) _lipDisplacements.removeAt(0);
-      if (_lipDisplacements.length >= 10) {
+      _appendMicroMovement(
+        _lipDisplacements,
+        _lipObservationTimes,
+        (lipCenterY - referenceY) / faceHeight,
+        now,
+      );
+      if (isConsistentMicroMovement(_lipDisplacements, _lipObservationTimes)) {
         final metrics = analyzeOscillation(_lipDisplacements);
-        if (metrics.detrendedRms >= 0.0015 &&
+        if (metrics.detrendedRms >=
+                _threshold(PatientSignalKind.lipTremor, 0.0018) &&
             metrics.detrendedRms <= 0.025 &&
-            metrics.peakToPeak >= 0.0045 &&
-            metrics.directionChanges >= 3 &&
+            metrics.peakToPeak >=
+                _threshold(PatientSignalKind.lipTremor, 0.0055) &&
+            metrics.directionChanges >= 6 &&
             now.difference(_lastLipTremorTime) >=
                 const Duration(milliseconds: 1500)) {
           _lastLipTremorTime = now;
@@ -1012,14 +1540,21 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
             metadata: {
               'oscillation_rms': metrics.detrendedRms,
               'direction_changes': metrics.directionChanges,
+              'experimental': true,
+              'detection_proxy': 'lip_contour_micro_movement',
             },
           );
           _lipDisplacements.clear();
+          _lipObservationTimes.clear();
         }
       }
     }
 
-    if (poseStable && leftEye != null && leftEye.isNotEmpty) {
+    if (!eyeEnabled || leftEye == null || leftEye.isEmpty) {
+      _eyeDisplacements.clear();
+      _eyeObservationTimes.clear();
+      _lastEyeTremorTime = DateTime.fromMillisecondsSinceEpoch(0);
+    } else {
       final eyeCenters = <double>[
         leftEye.fold<double>(0, (sum, point) => sum + point.y) / leftEye.length,
       ];
@@ -1030,14 +1565,20 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
         );
       }
       final eyeCenterY = eyeCenters.reduce((a, b) => a + b) / eyeCenters.length;
-      _eyeDisplacements.add((eyeCenterY - referenceY) / faceHeight);
-      if (_eyeDisplacements.length > 12) _eyeDisplacements.removeAt(0);
-      if (_eyeDisplacements.length >= 10) {
+      _appendMicroMovement(
+        _eyeDisplacements,
+        _eyeObservationTimes,
+        (eyeCenterY - referenceY) / faceHeight,
+        now,
+      );
+      if (isConsistentMicroMovement(_eyeDisplacements, _eyeObservationTimes)) {
         final metrics = analyzeOscillation(_eyeDisplacements);
-        if (metrics.detrendedRms >= 0.0012 &&
+        if (metrics.detrendedRms >=
+                _threshold(PatientSignalKind.eyeTremor, 0.0015) &&
             metrics.detrendedRms <= 0.020 &&
-            metrics.peakToPeak >= 0.0035 &&
-            metrics.directionChanges >= 3 &&
+            metrics.peakToPeak >=
+                _threshold(PatientSignalKind.eyeTremor, 0.0045) &&
+            metrics.directionChanges >= 6 &&
             now.difference(_lastEyeTremorTime) >=
                 const Duration(milliseconds: 1500)) {
           _lastEyeTremorTime = now;
@@ -1048,9 +1589,12 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
             metadata: {
               'oscillation_rms': metrics.detrendedRms,
               'direction_changes': metrics.directionChanges,
+              'experimental': true,
+              'detection_proxy': 'periocular_contour_micro_movement',
             },
           );
           _eyeDisplacements.clear();
+          _eyeObservationTimes.clear();
         }
       }
     }
@@ -1077,7 +1621,9 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       );
     }
     var normalizedMovement = 0.0;
-    if (_previousContourCenters.isNotEmpty && current.isNotEmpty) {
+    if (poseStable &&
+        _previousContourCenters.isNotEmpty &&
+        current.isNotEmpty) {
       var movement = 0.0;
       var count = 0;
       for (final entry in current.entries) {
@@ -1088,26 +1634,56 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
       }
       normalizedMovement = count == 0 ? 0.0 : movement / count;
     }
-    _previousContourCenters = current;
-    final namedExpressionActive = symmetricScore >= smileEnter ||
-        asymmetricSmileReady && cornerHeightDifference.abs() >= 0.035 ||
-        eyebrowScore >= 1 ||
-        mouthScore >= mouthEnter;
+    _previousContourCenters = poseStable ? current : const {};
+    final muscleEnabled = poseStable &&
+        _signalSensitivities
+            .containsKey(PatientSignalKind.facialMuscleMovement);
+    if (!muscleEnabled) _facialMovementEnergy = 0;
     final muscleScore =
-        poseStable && !namedExpressionActive ? normalizedMovement : 0.0;
+        muscleEnabled && !namedExpressionActive ? normalizedMovement : 0.0;
+    _facialMovementEnergy = muscleScore > 0
+        ? _facialMovementEnergy * 0.62 + muscleScore * 0.38
+        : _facialMovementEnergy * 0.35;
+    final muscleEnter =
+        _threshold(PatientSignalKind.facialMuscleMovement, 0.008);
     _emitStableSignal(
       kind: PatientSignalKind.facialMuscleMovement,
-      score: muscleScore,
-      confidence: (0.74 + muscleScore * 10).clamp(0, 0.98),
+      score: _facialMovementEnergy,
+      confidence:
+          (0.72 + _facialMovementEnergy / muscleEnter * 0.20).clamp(0, 0.98),
       now: now,
-      enterThreshold: 0.015,
-      exitThreshold: 0.008,
-      minimumHold: const Duration(milliseconds: 250),
+      enterThreshold: muscleEnter,
+      exitThreshold: muscleEnter * 0.55,
+      minimumHold: const Duration(milliseconds: 180),
+      metadata: const {
+        'experimental': true,
+        'detection_proxy': 'facial_contour_movement',
+      },
     );
   }
 
-  String _estimateBreathingStatus() {
-    return 'Normal (16 bpm)';
+  void _appendMicroMovement(
+    List<double> values,
+    List<DateTime> observations,
+    double value,
+    DateTime now,
+  ) {
+    if (!value.isFinite ||
+        observations.isNotEmpty &&
+            (now.difference(observations.last) <= Duration.zero ||
+                now.difference(observations.last) >
+                    const Duration(milliseconds: 350))) {
+      values.clear();
+      observations.clear();
+    }
+    if (!value.isFinite) return;
+    values.add(value);
+    observations.add(now);
+    while (values.length > 64 ||
+        now.difference(observations.first) > const Duration(seconds: 4)) {
+      values.removeAt(0);
+      observations.removeAt(0);
+    }
   }
 
   void _resetTemporalTracking() {
@@ -1116,51 +1692,50 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     _previousContourCenters = const {};
     _lipDisplacements.clear();
     _eyeDisplacements.clear();
+    _lipObservationTimes.clear();
+    _eyeObservationTimes.clear();
+    _lastLipTremorTime = DateTime.fromMillisecondsSinceEpoch(0);
+    _lastEyeTremorTime = DateTime.fromMillisecondsSinceEpoch(0);
+    _facialMovementEnergy = 0;
+    _respirationEstimator.clear();
     _eyesClosedSince = DateTime.fromMillisecondsSinceEpoch(0);
     _closedEyeConfidence = 0;
     _recentBlinks.clear();
+    _recentRapidBlinks.clear();
     _pendingBlink = null;
     _pendingBlinkTimer?.cancel();
     _pendingBlinkTimer = null;
     _gazeReturnArmed = false;
   }
 
-  InputImage? _toInputImage(CameraImage image) {
-    final controller = _controller;
-    if (controller == null) return null;
-
-    final InputImageFormat format;
-    if (kIsWeb) {
-      format = InputImageFormat.nv21;
-    } else if (Platform.isAndroid) {
-      format = InputImageFormatValue.fromRawValue(image.format.raw) ??
-          InputImageFormat.nv21;
-    } else {
-      format = InputImageFormatValue.fromRawValue(image.format.raw) ??
-          InputImageFormat.bgra8888;
-    }
-
+  InputImage? _toInputImage(CameraImage image, CameraController controller) {
+    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return null;
     final rotation = _inputRotation(controller);
     if (rotation == null) return null;
-
-    final Uint8List bytes;
-    if (image.planes.length == 1) {
-      bytes = image.planes.first.bytes;
-    } else {
-      final WriteBuffer allBytes = WriteBuffer();
-      for (final Plane plane in image.planes) {
-        allBytes.putUint8List(plane.bytes);
-      }
-      bytes = allBytes.done().buffer.asUint8List();
-    }
+    final frame = prepareFaceCameraFrame(
+      platform: Platform.isAndroid
+          ? FaceFramePlatform.android
+          : FaceFramePlatform.ios,
+      width: image.width,
+      height: image.height,
+      rawFormat: image.format.raw,
+      planes: image.planes
+          .map((plane) => FaceCameraPlane(
+                bytes: plane.bytes,
+                bytesPerRow: plane.bytesPerRow,
+                bytesPerPixel: plane.bytesPerPixel,
+              ))
+          .toList(growable: false),
+    );
+    if (frame == null) return null;
 
     return InputImage.fromBytes(
-      bytes: bytes,
+      bytes: frame.bytes,
       metadata: InputImageMetadata(
         size: Size(image.width.toDouble(), image.height.toDouble()),
         rotation: rotation,
-        format: format,
-        bytesPerRow: image.planes.first.bytesPerRow,
+        format: frame.format,
+        bytesPerRow: frame.bytesPerRow,
       ),
     );
   }
@@ -1189,6 +1764,7 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     int cooldownMs = 750,
     Map<String, Object?>? metadata,
   }) {
+    if (!_lifecycleIntent.shouldRun) return;
     final now = DateTime.now();
     if (!_signalCooldownGate.permits(
       kind,
@@ -1205,6 +1781,7 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
     double confidence, {
     Map<String, Object?>? metadata,
   }) {
+    if (_closed) return;
     _signals.add(PatientSignal(
       kind: kind,
       confidence: confidence.clamp(0, 1).toDouble(),
@@ -1215,30 +1792,35 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
 
   @override
   Future<void> stop() async {
+    _lifecycleIntent.requestStop();
+    ++_streamGeneration;
+    _resetTemporalTracking();
+    _publishStatus(const MonitorStatus.stopped());
+    await _queueCameraTransition(_stopCamera);
+  }
+
+  Future<void> _stopCamera() async {
+    ++_streamGeneration;
     final controller = _controller;
     _controller = null;
-    if (controller != null && controller.value.isStreamingImages) {
-      try {
-        await controller.stopImageStream();
-      } on Object {
-        // Ignored: camera stream might already be stopped.
-      }
-    }
-    try {
-      await controller?.dispose();
-    } on Object {
-      // Ignored: controller might already be disposed.
-    }
     _faceWasPresent = false;
+    _primaryTrackingId = null;
+    _previousPrimaryBox = null;
     _signalCooldownGate.clear();
     _resetTemporalTracking();
-    if (!_closed) _statuses.add(const MonitorStatus.stopped());
+    _publishStatus(const MonitorStatus.stopped());
+    await _disposeController(controller);
   }
 
   @override
   Future<void> dispose() async {
-    await stop();
+    if (_closed) return;
     _closed = true;
+    _lifecycleIntent.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    ++_streamGeneration;
+    _resetTemporalTracking();
+    await _queueCameraTransition(_stopCamera);
     try {
       await _detector.close();
     } on Object {
@@ -1252,9 +1834,13 @@ class MlKitPatientSignalMonitor implements PatientSignalMonitor {
 class NoOpPatientSignalMonitor implements PatientSignalMonitor {
   final _signals = StreamController<PatientSignal>.broadcast();
   final _statuses = StreamController<MonitorStatus>.broadcast();
+  MonitorStatus _currentStatus = const MonitorStatus.stopped();
 
   @override
   CameraController? get cameraController => null;
+
+  @override
+  MonitorStatus get currentStatus => _currentStatus;
 
   @override
   Stream<PatientSignal> get signals => _signals.stream;
@@ -1271,7 +1857,34 @@ class NoOpPatientSignalMonitor implements PatientSignalMonitor {
     double? smileProbability,
     double? headYaw,
     double? headPitch,
-  }) {}
+  }) {
+    if (_currentStatus.lifecycle == MonitorLifecycle.active) {
+      _publishStatus(MonitorStatus(
+        lifecycle: MonitorLifecycle.active,
+        message: 'Monitor active (calibrated baseline applied)',
+        faceDetected: true,
+        observedAt: DateTime.now(),
+        leftEyeOpen: leftEyeOpenness ?? 0.88,
+        rightEyeOpen: rightEyeOpenness ?? 0.88,
+        eyebrowDistance: eyebrowDistance ?? 0.18,
+        mouthDistance: mouthDistance ?? 0.08,
+        smileProbability: smileProbability ?? 0.04,
+        headYaw: headYaw ?? 0.0,
+        headPitch: headPitch ?? 0.0,
+        breathingStatus: _currentStatus.breathingStatus,
+      ));
+    }
+  }
+
+  @override
+  void setSignalSensitivities(
+    Map<PatientSignalKind, double> sensitivities,
+  ) {}
+
+  void _publishStatus(MonitorStatus status) {
+    _currentStatus = status;
+    _statuses.add(status);
+  }
 
   @override
   void simulateSignal(PatientSignalKind kind, {double confidence = 0.95}) {
@@ -1284,16 +1897,25 @@ class NoOpPatientSignalMonitor implements PatientSignalMonitor {
 
   @override
   Future<void> start() async {
-    _statuses.add(const MonitorStatus(
+    _publishStatus(MonitorStatus(
       lifecycle: MonitorLifecycle.active,
       message: 'Monitor active (testing/simulated)',
       faceDetected: true,
+      observedAt: DateTime.now(),
+      leftEyeOpen: 0.88,
+      rightEyeOpen: 0.88,
+      eyebrowDistance: 0.18,
+      mouthDistance: 0.08,
+      smileProbability: 0.04,
+      headYaw: 0.0,
+      headPitch: 0.0,
+      breathingStatus: 'Measuring… keep head and camera still',
     ));
   }
 
   @override
   Future<void> stop() async {
-    _statuses.add(const MonitorStatus.stopped());
+    _publishStatus(const MonitorStatus.stopped());
   }
 
   @override

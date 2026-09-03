@@ -80,6 +80,10 @@ class PersonalAccessProfile {
     this.tremorFilterAlpha = 0.4,
     this.language = AppLanguage.english,
     this.caregiverAssistedSetup = false,
+    this.patientAge,
+    this.conditionNotes,
+    this.caregiverName,
+    this.caregiverContact,
     DateTime? createdAt,
     DateTime? lastCalibratedAt,
     this.customVocabulary = const {},
@@ -88,6 +92,10 @@ class PersonalAccessProfile {
 
   final String id;
   final String patientName;
+  final int? patientAge;
+  final String? conditionNotes;
+  final String? caregiverName;
+  final String? caregiverContact;
   final Map<BodyPart, CapabilityGrade> capabilities;
   final AccessModality primaryModality;
   final AccessModality? backupModality;
@@ -147,6 +155,10 @@ class PersonalAccessProfile {
     return {
       'id': id,
       'patientName': patientName,
+      'patientAge': patientAge,
+      'conditionNotes': conditionNotes,
+      'caregiverName': caregiverName,
+      'caregiverContact': caregiverContact,
       'capabilities': capabilities.map(
         (key, value) => MapEntry(key.name, value.name),
       ),
@@ -207,6 +219,10 @@ class PersonalAccessProfile {
     return PersonalAccessProfile(
       id: json['id'] as String? ?? 'profile_default',
       patientName: json['patientName'] as String? ?? 'Patient',
+      patientAge: json['patientAge'] as int?,
+      conditionNotes: json['conditionNotes'] as String?,
+      caregiverName: json['caregiverName'] as String?,
+      caregiverContact: json['caregiverContact'] as String?,
       capabilities: capabilities,
       primaryModality: primary,
       backupModality: backup,
@@ -237,6 +253,10 @@ class PersonalAccessProfile {
 
   PersonalAccessProfile copyWith({
     String? patientName,
+    int? patientAge,
+    String? conditionNotes,
+    String? caregiverName,
+    String? caregiverContact,
     Map<BodyPart, CapabilityGrade>? capabilities,
     AccessModality? primaryModality,
     AccessModality? backupModality,
@@ -253,6 +273,10 @@ class PersonalAccessProfile {
     return PersonalAccessProfile(
       id: id,
       patientName: patientName ?? this.patientName,
+      patientAge: patientAge ?? this.patientAge,
+      conditionNotes: conditionNotes ?? this.conditionNotes,
+      caregiverName: caregiverName ?? this.caregiverName,
+      caregiverContact: caregiverContact ?? this.caregiverContact,
       capabilities: capabilities ?? this.capabilities,
       primaryModality: primaryModality ?? this.primaryModality,
       backupModality: backupModality ?? this.backupModality,

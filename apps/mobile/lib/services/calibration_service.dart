@@ -337,6 +337,7 @@ class RecognitionTriggerController {
     required String locale,
     this.caregiverNotifications,
     this.cooldown = const Duration(seconds: 3),
+    this.faceBurstCooldown = const Duration(milliseconds: 650),
     EdgeRiskConfirmationGate? edgeRiskGate,
   })  : _repository = repository,
         _voice = voice,
@@ -351,11 +352,13 @@ class RecognitionTriggerController {
   final CaregiverNotificationService? caregiverNotifications;
   final EdgeRiskConfirmationGate _edgeRiskGate;
   final Duration cooldown;
+  final Duration faceBurstCooldown;
   final _spoken = StreamController<CalibratedPhrase>.broadcast();
   final Map<PatientSignalKind, DateTime> _candidateSince = {};
   final Map<PatientSignalKind, DateTime> _candidateLastSeen = {};
   final Map<PatientSignalKind, DateTime> _lastSpoken = {};
   final Map<PatientSignalKind, DateTime> _lastSuppressedAt = {};
+  DateTime? _lastLocalFaceIntent;
   int _calibrationSessions = 0;
 
   Stream<CalibratedPhrase> get spokenPhrases => _spoken.stream;
@@ -368,12 +371,14 @@ class RecognitionTriggerController {
     _calibrationSessions++;
     _candidateSince.clear();
     _candidateLastSeen.clear();
+    _lastLocalFaceIntent = null;
   }
 
   void endCalibrationSession() {
     if (_calibrationSessions > 0) _calibrationSessions--;
     _candidateSince.clear();
     _candidateLastSeen.clear();
+    _lastLocalFaceIntent = null;
   }
 
   Future<void> setCustomMode(bool custom) => _repository.setCustomMode(custom);
@@ -438,6 +443,22 @@ class RecognitionTriggerController {
     // one-shot edge events impossible to execute.
     if (!fromEdge && !_localDwellSatisfied(phrase, signal)) return;
 
+    final faceDerived = signal.kind.category == SignalCategory.eyes ||
+        signal.kind.category == SignalCategory.face ||
+        signal.kind.category == SignalCategory.head;
+    final emergencyRisk = signal.kind == PatientSignalKind.seizureAlert ||
+        EdgeRiskConfirmationGate.isEmergencyRiskText(phrase.phrase);
+    if (!fromEdge && faceDerived && !emergencyRisk) {
+      final previousFaceIntent = _lastLocalFaceIntent;
+      if (previousFaceIntent != null &&
+          !signal.observedAt.isBefore(previousFaceIntent) &&
+          signal.observedAt.difference(previousFaceIntent) <
+              faceBurstCooldown) {
+        _clearCandidate(signal.kind);
+        return;
+      }
+    }
+
     final last = _lastSpoken[signal.kind];
     if (last != null && signal.observedAt.difference(last) < cooldown) return;
     if (fromEdge && !_edgeRiskGate.permits(phrase, signal)) {
@@ -446,6 +467,9 @@ class RecognitionTriggerController {
     }
 
     _lastSpoken[signal.kind] = signal.observedAt;
+    if (!fromEdge && faceDerived && !emergencyRisk) {
+      _lastLocalFaceIntent = signal.observedAt;
+    }
     _clearCandidate(signal.kind);
 
     // 1. Voice playback immediately on device

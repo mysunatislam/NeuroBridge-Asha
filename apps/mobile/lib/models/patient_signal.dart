@@ -108,7 +108,8 @@ extension PatientSignalKindExtension on PatientSignalKind {
         PatientSignalKind.eyeLookCenter => 'Gaze straight at camera',
         PatientSignalKind.eyeLookUp => 'Eyes look up',
         PatientSignalKind.eyeLookDown => 'Eyes look down',
-        PatientSignalKind.eyeTremor => 'Eye micro-tremor',
+        PatientSignalKind.eyeTremor =>
+          'Periocular micro-movement (experimental)',
         PatientSignalKind.eyebrowsUp => 'Raise eyebrows',
         PatientSignalKind.mouthOpen => 'Open mouth',
         PatientSignalKind.headLeft => 'Turn head left',
@@ -117,8 +118,9 @@ extension PatientSignalKindExtension on PatientSignalKind {
         PatientSignalKind.headTurnRapid => 'Move head rapidly',
         PatientSignalKind.headNodSmile => 'Move head while smiling',
         PatientSignalKind.facialMovement => 'Facial movement',
-        PatientSignalKind.lipTremor => 'Lip micro-tremor',
-        PatientSignalKind.facialMuscleMovement => 'Facial muscle activity',
+        PatientSignalKind.lipTremor => 'Lip micro-movement (experimental)',
+        PatientSignalKind.facialMuscleMovement =>
+          'Facial muscle movement (experimental)',
         PatientSignalKind.breathingNormal => 'Breathing normal',
         PatientSignalKind.breathingRapid => 'Rapid breathing pattern',
         PatientSignalKind.breathingShallow => 'Shallow breathing pattern',
@@ -154,6 +156,7 @@ class MonitorStatus {
   const MonitorStatus({
     required this.lifecycle,
     required this.message,
+    this.observedAt,
     this.faceDetected = false,
     this.leftEyeOpen,
     this.rightEyeOpen,
@@ -165,7 +168,7 @@ class MonitorStatus {
     this.lipTremorDetected = false,
     this.eyeTremorDetected = false,
     this.breathingRatePerMin,
-    this.breathingStatus = 'Normal',
+    this.breathingStatus = 'Unavailable',
     this.facialMuscleTension,
   });
 
@@ -177,6 +180,11 @@ class MonitorStatus {
 
   final MonitorLifecycle lifecycle;
   final String message;
+
+  /// Timestamp of the unique camera observation behind these measurements.
+  ///
+  /// Lifecycle-only status updates have no observation timestamp.
+  final DateTime? observedAt;
   final bool faceDetected;
   final double? leftEyeOpen;
   final double? rightEyeOpen;

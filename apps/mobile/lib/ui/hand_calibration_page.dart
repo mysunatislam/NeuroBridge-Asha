@@ -8,7 +8,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/mobile_services.dart';
 import '../models/patient_access_method.dart';
-import '../models/patient_signal.dart';
 import 'studio_view/platform_studio.dart';
 
 enum HandStudioMode { calibration, patientExecution }
