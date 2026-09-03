@@ -19,6 +19,7 @@ try {
     }
     Copy-Item -LiteralPath tool/android/AndroidManifest.xml -Destination android/app/src/main/AndroidManifest.xml -Force
     Copy-Item -LiteralPath tool/android/app.build.gradle.kts -Destination android/app/build.gradle.kts -Force
+    Copy-Item -LiteralPath tool/android/proguard-rules.pro -Destination android/app/proguard-rules.pro -Force
     New-Item -ItemType Directory -Force -Path android/app/src/main/kotlin/org/fingerspeak/mobile | Out-Null
     Copy-Item -LiteralPath tool/android/MainActivity.kt -Destination android/app/src/main/kotlin/org/fingerspeak/mobile/MainActivity.kt -Force
     & $flutterCommand pub get
