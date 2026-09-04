@@ -120,7 +120,7 @@ void main() {
     final services = await MobileServices.forTest();
     addTearDown(services.dispose);
 
-    expect(services.pi.endpoint, Uri.parse('ws://10.0.2.2:8765/v1/device/ws'));
+    expect(services.pi.endpoint, Uri.parse('ws://10.177.49.222:8765/v1/device/ws'));
 
     final customUri = Uri.parse('ws://192.168.43.50:8765/v1/device/ws');
     services.pi.updateEndpoint(customUri);

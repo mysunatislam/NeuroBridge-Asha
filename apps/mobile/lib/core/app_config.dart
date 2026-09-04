@@ -21,7 +21,7 @@ class AppConfig {
       ),
       piWebSocketUrl: String.fromEnvironment(
         'FINGERSPEAK_PI_WS_URL',
-        defaultValue: 'ws://10.0.2.2:8765/v1/device/ws',
+        defaultValue: 'ws://10.177.49.222:8765/v1/device/ws',
       ),
       piDeviceId: String.fromEnvironment(
         'FINGERSPEAK_PI_DEVICE_ID',
