@@ -236,8 +236,12 @@ class PiDeviceClient {
   static const _phoneIdKey = 'fingerspeak.phone.id';
   static const _uuid = Uuid();
 
-  final Uri endpoint;
+  Uri endpoint;
   final String deviceId;
+
+  void updateEndpoint(Uri newEndpoint) {
+    endpoint = newEndpoint;
+  }
   final FlutterSecureStorage _secureStorage;
   final PatientIntentEnvelopeParser _intentParser;
   // Synchronous state delivery ensures the authenticated intent subscription

@@ -89,8 +89,20 @@ class MobileServices {
     } on Object {
       // Best-effort local notification init.
     }
+    final savedPiUrl = preferences.getString('pi.ws_url');
+    var piUri = config.piUri;
+    if (savedPiUrl != null && savedPiUrl.trim().isNotEmpty) {
+      try {
+        final parsed = Uri.parse(savedPiUrl.trim());
+        if (parsed.hasScheme && {'ws', 'wss'}.contains(parsed.scheme)) {
+          piUri = parsed;
+        }
+      } on FormatException {
+        // Fall back to default config endpoint.
+      }
+    }
     final pi = PiDeviceClient(
-      endpoint: config.piUri,
+      endpoint: piUri,
       deviceId: config.piDeviceId,
     );
     final neutralBaselineRepository =

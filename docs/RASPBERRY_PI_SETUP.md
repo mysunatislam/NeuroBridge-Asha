@@ -1,13 +1,35 @@
 # Raspberry Pi edge setup
 
+## Quick Automated Setup (Recommended)
+
+Run the turnkey installation script directly on your Raspberry Pi:
+
+```bash
+chmod +x scripts/setup_raspberry_pi.sh
+sudo ./scripts/setup_raspberry_pi.sh
+```
+
+This single command:
+1. Detects your hardware (Raspberry Pi 4 or 5) and OS.
+2. Installs all required OS packages (`python3-picamera2`, `libcamera-apps`, `git`, `python3-venv`).
+3. Sets up the Python environment with `--system-site-packages` so hardware-accelerated camera bindings work cleanly.
+4. Installs the `services/edge` package.
+5. Generates a secure random 24-character pairing code in `/etc/fingerspeak/edge.env`.
+6. Sets up and starts the persistent `fingerspeak-edge.service` systemd daemon to auto-run on boot.
+7. Prints your Raspberry Pi's local IP address, the WebSocket URL, and the Pairing Code to enter in the NeuroBridge Asha mobile app.
+
+---
+
+## Manual Hardware & Camera Setup
+
 Confirm the precise Model B generation, NoIR camera, and display before wiring. Raspberry Pi 5 uses
 different camera/display ribbon connectors from several earlier boards. Mount electronics in an
 enclosure, protect cables from wheelchair movement, and disconnect power before changing ribbons.
 
-Use a current Raspberry Pi OS image. The supported camera stack is `rpicam-*`/libcamera with
+Use a current Raspberry Pi OS image (Bookworm 64-bit). The supported camera stack is `rpicam-*`/libcamera with
 Picamera2; do not build against legacy `raspistill`, `raspivid`, or the original Picamera library.
 
-## Camera smoke check
+### Camera smoke check
 
 ```bash
 sudo apt update
