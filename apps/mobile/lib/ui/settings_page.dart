@@ -20,6 +20,7 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  final _piUrlController = TextEditingController();
   final _pairingController = TextEditingController();
   final _doctorPhoneController = TextEditingController();
   final _caregiverPhoneController = TextEditingController();
@@ -56,6 +57,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _caregiverPhoneController.text = config.caregiverPhone;
     _patientPhoneController.text = config.patientPhone;
     _ambulancePhoneController.text = config.ambulancePhone;
+    _piUrlController.text = widget.services.pi.endpoint.toString();
 
     _piSubscription = widget.services.pi.states.listen((state) {
       if (!mounted) return;
@@ -90,6 +92,7 @@ class _SettingsPageState extends State<SettingsPage> {
     widget.services.patientAccessMethodRepository
         .removeListener(_onPatientAccessMethodChanged);
     unawaited(_piSubscription?.cancel());
+    _piUrlController.dispose();
     _pairingController.dispose();
     _doctorPhoneController.dispose();
     _caregiverPhoneController.dispose();
@@ -119,6 +122,25 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _pair() async {
+    final customUrl = _piUrlController.text.trim();
+    if (customUrl.isNotEmpty) {
+      try {
+        final parsed = Uri.parse(customUrl);
+        if (parsed.hasScheme && {'ws', 'wss'}.contains(parsed.scheme)) {
+          widget.services.pi.updateEndpoint(parsed);
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('pi.ws_url', customUrl);
+        } else {
+          throw const FormatException('Pi URL must start with ws:// or wss://');
+        }
+      } on Object catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Invalid Pi URL: $error')),
+        );
+        return;
+      }
+    }
     setState(() => _pairing = true);
     try {
       await widget.services.pi.connect(
@@ -192,7 +214,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final config = widget.services.config;
     final selectedVoice = widget.services.voice.preferences.ttsVoiceName;
     final voices = <String>{
       if (selectedVoice != null) selectedVoice,
@@ -421,9 +442,16 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 4),
                 Text(_piStateLabel(_piState)),
                 const SizedBox(height: 12),
-                SelectableText(
-                  config.piWebSocketUrl,
-                  style: Theme.of(context).textTheme.bodySmall,
+                TextField(
+                  controller: _piUrlController,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Pi WebSocket URL',
+                    helperText:
+                        'e.g. ws://192.168.43.50:8765/v1/device/ws or ws://raspberrypi.local:8765/v1/device/ws',
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
