@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { RouterLink, useRoute } from "vue-router";
 import { storeToRefs } from "pinia";
-import { useFingerSpeakStore } from "../stores/fingerspeak";
 import { useCopilotStore } from "../stores/copilot";
 import { modeById } from "../lib/care-modes";
 import AmbientCurves from "./AmbientCurves.vue";
 import AshaCopilot from "./AshaCopilot.vue";
 
-const store = useFingerSpeakStore();
 const copilot = useCopilotStore();
 const route = useRoute();
 const { theme, careMode } = storeToRefs(copilot);

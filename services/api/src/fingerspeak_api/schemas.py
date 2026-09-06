@@ -281,11 +281,25 @@ class AshaCitation(StrictModel):
     source_id: Annotated[str | None, Field(min_length=1, max_length=240)] = None
 
 
+class AshaToolExecution(StrictModel):
+    tool_name: Annotated[str, Field(min_length=1, max_length=80)]
+    summary: Annotated[str, Field(min_length=1, max_length=300)]
+    success: bool
+
+
+class AshaQuickAction(StrictModel):
+    label: Annotated[str, Field(min_length=1, max_length=60)]
+    action_key: Annotated[str, Field(min_length=1, max_length=60)]
+    payload: Annotated[str, Field(max_length=200)] = ""
+
+
 class AshaChatResponse(StrictModel):
     reply: Annotated[str, Field(min_length=1, max_length=4_000)]
-    mode: Literal["fallback", "llm", "safety"]
+    mode: Literal["fallback", "llm", "safety", "gemini-agent", "openai-agent", "offline-agent"]
     previous_response_id: Annotated[str | None, Field(max_length=200)] = None
     citations: Annotated[list[AshaCitation], Field(max_length=12)] = Field(default_factory=list)
+    actions_executed: Annotated[list[AshaToolExecution], Field(max_length=8)] = Field(default_factory=list)
+    quick_actions: Annotated[list[AshaQuickAction], Field(max_length=6)] = Field(default_factory=list)
     urgent: bool = False
 
 

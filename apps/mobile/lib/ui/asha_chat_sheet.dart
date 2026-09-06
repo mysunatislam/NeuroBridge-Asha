@@ -353,6 +353,82 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                             height: 1.35,
                           ),
                         ),
+                        // --- Tool execution badges (agentic actions taken) ---
+                        if (fromAsha && message.actionsExecuted.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: message.actionsExecuted.map((ex) {
+                                final icon = ex.success ? Icons.check_circle : Icons.warning_amber;
+                                final color = ex.success ? const Color(0xFF0B756A) : const Color(0xFFB42318);
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(icon, size: 13, color: color),
+                                      const SizedBox(width: 5),
+                                      Expanded(
+                                        child: Text(
+                                          ex.summary,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: color,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        // --- Clinical citation chips ---
+                        if (fromAsha && message.citations.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: message.citations.map((c) {
+                                return Chip(
+                                  label: Text(
+                                    c.title.length > 34 ? '${c.title.substring(0, 32)}…' : c.title,
+                                    style: const TextStyle(fontSize: 10, color: Color(0xFF0B756A)),
+                                  ),
+                                  avatar: const Icon(Icons.menu_book, size: 12, color: Color(0xFF0B756A)),
+                                  backgroundColor: const Color(0xFFE0F2F0),
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        // --- Dynamic quick action chips from agent ---
+                        if (fromAsha && message.quickActions.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: message.quickActions.take(4).map((qa) {
+                                return ActionChip(
+                                  label: Text(qa.label, style: const TextStyle(fontSize: 11)),
+                                  backgroundColor: const Color(0xFFF0FDF9),
+                                  side: const BorderSide(color: Color(0xFF0B756A), width: 1),
+                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: widget.companion.sending
+                                      ? null
+                                      : () => _send(qa.label),
+                                );
+                              }).toList(),
+                            ),
+                          ),
                         if (fromAsha && widget.voiceService != null)
                           Align(
                             alignment: Alignment.bottomRight,

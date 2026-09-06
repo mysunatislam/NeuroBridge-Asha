@@ -14,7 +14,12 @@ from fingerspeak_api.schemas import (
     AshaChatResponse,
     AshaCitation,
     AshaPatientContext,
+    AshaQuickAction,
+    AshaToolExecution,
 )
+from fingerspeak_api.services.agent.agent_runner import AgentOutput, AgentRunner
+from fingerspeak_api.services.agent.tools import AgentToolRegistry
+from fingerspeak_api.services.rag.engine import EmbeddedRAGRetriever
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
@@ -239,11 +244,19 @@ class GeminiChatProvider:
 
 
 class AshaService:
-    def __init__(self, provider: ChatProvider | None, retriever: Retriever | None = None) -> None:
+    def __init__(
+        self,
+        provider: ChatProvider | None,
+        retriever: Retriever | None = None,
+        *,
+        agent_runner: AgentRunner | None = None,
+    ) -> None:
         self._provider = provider
         self._retriever = retriever or NullRetriever()
+        self._agent_runner = agent_runner
 
     async def chat(self, request: AshaChatRequest) -> AshaChatResponse:
+        # Safety preemption — always checked first regardless of provider
         if is_urgent_message(request.message):
             return AshaChatResponse(
                 reply=_safety_reply(request.locale),
@@ -252,6 +265,49 @@ class AshaService:
                 urgent=True,
             )
 
+        # Route through Agentic Runner if available (RAG + tools + LLM)
+        if self._agent_runner is not None:
+            try:
+                context = (
+                    request.patient_context.model_dump(mode="json", exclude_none=True)
+                    if request.patient_context is not None
+                    else {}
+                )
+                if request.locale:
+                    context.setdefault("locale", request.locale)
+                output: AgentOutput = await self._agent_runner.run(request.message, context)
+                reply = _bounded_reply(output.reply)
+                if reply:
+                    return AshaChatResponse(
+                        reply=reply,
+                        mode=output.mode,
+                        citations=[
+                            AshaCitation(title=c["title"], source_id=c.get("source_id"))
+                            for c in output.citations[:12]
+                        ],
+                        actions_executed=[
+                            AshaToolExecution(
+                                tool_name=ex.tool_name,
+                                summary=ex.summary[:300],
+                                success=ex.success,
+                            )
+                            for ex in output.actions_executed[:8]
+                        ],
+                        quick_actions=[
+                            AshaQuickAction(
+                                label=qa["label"],
+                                action_key=qa["action_key"],
+                                payload=qa.get("payload", ""),
+                            )
+                            for qa in output.quick_actions[:6]
+                        ],
+                        urgent=output.urgent,
+                    )
+            except Exception:
+                # Agent runner errors degrade to legacy provider silently
+                pass
+
+        # Legacy single-turn LLM provider (backward compatibility)
         if self._provider is not None:
             try:
                 retrieval = await self._retriever.plan(request.patient_context)
@@ -280,10 +336,29 @@ class AshaService:
 def build_asha_service(settings: Settings) -> AshaService:
     provider: ChatProvider | None = None
     retriever: Retriever = NullRetriever()
+    agent_runner: AgentRunner | None = None
 
     gemini_key = settings.gemini_api_key
     openai_key = settings.openai_api_key
 
+    # Build the embedded RAG retriever (always available, zero-dependency)
+    rag_retriever = EmbeddedRAGRetriever()
+
+    # Build agent tool registry with the RAG retriever
+    tool_registry = AgentToolRegistry(rag_retriever=rag_retriever)
+
+    # Build the agentic runner using whichever API key is configured
+    agent_runner = AgentRunner(
+        tool_registry=tool_registry,
+        gemini_api_key=gemini_key.get_secret_value() if gemini_key is not None else None,
+        gemini_model=settings.gemini_model,
+        openai_api_key=openai_key.get_secret_value() if openai_key is not None else None,
+        openai_model=settings.openai_model,
+        timeout_seconds=settings.gemini_timeout_seconds,
+        max_output_tokens=settings.gemini_max_output_tokens,
+    )
+
+    # Also wire the legacy single-turn provider (for backward compatibility with older tests)
     if gemini_key is not None:
         provider = GeminiChatProvider(
             api_key=gemini_key.get_secret_value(),
@@ -301,7 +376,7 @@ def build_asha_service(settings: Settings) -> AshaService:
         if settings.openai_vector_store_id is not None:
             retriever = PermissionScopedFileSearchRetriever(settings.openai_vector_store_id)
 
-    return AshaService(provider, retriever)
+    return AshaService(provider, retriever, agent_runner=agent_runner)
 
 
 _URGENT_PATTERNS = tuple(

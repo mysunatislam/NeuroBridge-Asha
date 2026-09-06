@@ -32,9 +32,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--adapter",
         "--camera",
         dest="adapter",
-        choices=("simulated", "picamera2"),
+        choices=("simulated", "picamera", "picamera2"),
         default="simulated",
-        help="Camera adapter. --camera is an equivalent, more explicit alias.",
+        help="Camera adapter. --camera is an equivalent, more explicit alias. 'picamera' is for legacy Pi (Model B/B+/2/3).",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -127,6 +127,10 @@ def build_runtime(
         from fingerspeak_edge.adapters.picamera2_camera import Picamera2Camera
 
         camera = Picamera2Camera()
+    elif args.adapter == "picamera":
+        from fingerspeak_edge.adapters.picamera_legacy_camera import PicameraLegacyCamera
+
+        camera = PicameraLegacyCamera()
     else:
         camera = SimulatedCamera()
     monitor: PatientIntentMonitor | None = None
