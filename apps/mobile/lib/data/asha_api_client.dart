@@ -96,6 +96,15 @@ class AshaApiClient {
         mode: payload['mode']! as String,
         urgent: payload['urgent']! as bool,
         previousResponseId: payload['previous_response_id'] as String?,
+        actionsExecuted: (payload['actions_executed'] as List<dynamic>? ?? [])
+            .map((e) => AshaToolExecution.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        citations: (payload['citations'] as List<dynamic>? ?? [])
+            .map((e) => AshaCitation.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        quickActions: (payload['quick_actions'] as List<dynamic>? ?? [])
+            .map((e) => AshaQuickAction.fromJson(e as Map<String, dynamic>))
+            .toList(),
       );
     } on AshaUnavailableException {
       rethrow;

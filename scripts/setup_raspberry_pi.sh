@@ -59,10 +59,26 @@ echo -e "\n${GREEN}[3/6] Setting up Python virtual environment with system site-
 INSTALL_DIR="/opt/fingerspeak"
 mkdir -p "$INSTALL_DIR"
 
-if [ "$REPO_ROOT" != "$INSTALL_DIR" ]; then
-    echo "Copying edge package to $INSTALL_DIR..."
+if [ -d "$REPO_ROOT/services/edge" ]; then
+    EDGE_SRC="$REPO_ROOT/services/edge"
+elif [ -d "$SCRIPT_DIR/services/edge" ]; then
+    EDGE_SRC="$SCRIPT_DIR/services/edge"
+elif [ -d "$SCRIPT_DIR/edge" ]; then
+    EDGE_SRC="$SCRIPT_DIR/edge"
+elif [ -d "./services/edge" ]; then
+    EDGE_SRC="./services/edge"
+elif [ -d "./edge" ]; then
+    EDGE_SRC="./edge"
+else
+    echo -e "${RED}Error: Could not locate the edge service source folder.${NC}"
+    exit 1
+fi
+
+if [ "$EDGE_SRC" != "$INSTALL_DIR/services/edge" ]; then
+    echo "Copying edge package from $EDGE_SRC to $INSTALL_DIR/services/edge..."
     mkdir -p "$INSTALL_DIR/services"
-    cp -r "$REPO_ROOT/services/edge" "$INSTALL_DIR/services/"
+    rm -rf "$INSTALL_DIR/services/edge"
+    cp -r "$EDGE_SRC" "$INSTALL_DIR/services/edge"
 fi
 
 VENV_PATH="$INSTALL_DIR/.venv"

@@ -50,8 +50,9 @@ class TimestampMixin:
     )
 
 
-def make_engine(database_url: str, **kwargs: Any) -> AsyncEngine:
-    return create_async_engine(database_url, pool_pre_ping=True, **kwargs)
+def make_engine(database_url: str | None, **kwargs: Any) -> AsyncEngine:
+    url = database_url.strip() if database_url and database_url.strip() else "sqlite+aiosqlite:///:memory:"
+    return create_async_engine(url, pool_pre_ping=True, **kwargs)
 
 
 settings = get_settings()

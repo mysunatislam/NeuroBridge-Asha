@@ -114,6 +114,9 @@ class CompanionController extends ChangeNotifier {
       text: reply.text,
       sentAt: DateTime.now(),
       mode: reply.mode,
+      actionsExecuted: reply.actionsExecuted,
+      citations: reply.citations,
+      quickActions: reply.quickActions,
     ));
     _sending = false;
     notifyListeners();
