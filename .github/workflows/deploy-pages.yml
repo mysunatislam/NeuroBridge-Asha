@@ -46,10 +46,9 @@ jobs:
         working-directory: apps/mobile
         run: |
           flutter build web \
-            --web-renderer html \
-            --pwa-strategy offline-first \
             --no-wasm-dry-run \
             --tree-shake-icons \
+            --optimization-level 4 \
             --base-href "/NeuroBridge-Asha/"
           cp build/web/index.html build/web/404.html
 
