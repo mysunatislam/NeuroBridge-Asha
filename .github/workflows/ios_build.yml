@@ -3,6 +3,9 @@ name: Build iOS IPA for Sideloadly
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-ios:
     runs-on: macos-14
@@ -54,3 +57,17 @@ jobs:
         with:
           name: NeuroBridge_Asha_iOS
           path: build_output/NeuroBridge_Asha.ipa
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ios-v2.0
+          name: "NeuroBridge Asha iOS IPA (v2.0)"
+          body: |
+            ### NeuroBridge Asha iOS IPA
+            Pre-packaged unsigned IPA for sideloading via **Sideloadly**, **AltStore**, or **TrollStore**.
+            Includes all MediaPipe hand tracking models, BiGRU neural classifier, voice models, and local speech engines.
+          files: build_output/NeuroBridge_Asha.ipa
+
