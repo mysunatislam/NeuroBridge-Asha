@@ -621,12 +621,12 @@ async function initHandLandmarker(){
 
   // 1. Try local bundled assets from app server (zero internet needed)
   try {
-    console.log("Loading MediaPipe HandLandmarker from local assets (/wasm)...");
-    const vision = await FilesetResolver.forVisionTasks("/wasm");
+    console.log("Loading MediaPipe HandLandmarker from local assets (./wasm)...");
+    const vision = await FilesetResolver.forVisionTasks("./wasm");
     try {
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
-          modelAssetPath: "/models/hand_landmarker.task",
+          modelAssetPath: "./models/hand_landmarker.task",
           delegate: "GPU"
         },
         runningMode: "VIDEO", numHands: 1
@@ -636,7 +636,7 @@ async function initHandLandmarker(){
       console.warn("GPU delegate unavailable, using CPU delegate:", gpuErr);
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
-          modelAssetPath: "/models/hand_landmarker.task",
+          modelAssetPath: "./models/hand_landmarker.task",
           delegate: "CPU"
         },
         runningMode: "VIDEO", numHands: 1
