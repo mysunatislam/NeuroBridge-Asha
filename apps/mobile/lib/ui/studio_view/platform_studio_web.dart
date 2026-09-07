@@ -51,16 +51,20 @@ class _WebStudioViewState extends State<_WebStudioView> {
     final viewType = _viewType;
     if (_registeredViews.add(viewType)) {
       ui_web.platformViewRegistry.registerViewFactory(_viewType, (int viewId) {
+        final src = widget.patientExecutionMode
+            ? 'assets/assets/web/fingerspeak_studio.html?patientMode=1'
+            : 'assets/assets/web/fingerspeak_studio.html';
         final iframe = html.IFrameElement()
-          ..src = widget.patientExecutionMode
-              ? 'assets/web/fingerspeak_studio.html?patientMode=1'
-              : 'assets/web/fingerspeak_studio.html'
+          ..src = src
           ..style.border = 'none'
           ..style.width = '100%'
           ..style.height = '100%'
           ..setAttribute(
-              'allow', 'camera *; microphone *; autoplay; fullscreen')
+              'allow', 'camera *; microphone *; autoplay; fullscreen; display-capture *')
           ..setAttribute('allowfullscreen', 'true')
+          ..setAttribute(
+              'sandbox',
+              'allow-scripts allow-same-origin allow-forms allow-popups allow-modals')
           ..allow = 'camera; microphone; autoplay; display-capture';
         return iframe;
       });
