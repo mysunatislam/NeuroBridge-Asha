@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: "/", name: "welcome", component: () => import("../views/WelcomeView.vue") },
     { path: "/care", name: "care-mode", meta: { mode: "communication" }, component: () => import("../views/ModeHubView.vue") },
