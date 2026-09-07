@@ -1,13 +1,16 @@
 {
-    "name": "fingerspeak_mobile",
-    "short_name": "fingerspeak_mobile",
-    "start_url": ".",
+    "name": "NeuroBridge Asha",
+    "short_name": "Asha",
+    "start_url": "./",
+    "scope": "./",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0b1a27",
+    "theme_color": "#0B756A",
+    "description": "NeuroBridge Asha - Assistive Communication Companion for ALS, Stroke, SCI patients",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
+    "categories": ["health", "medical", "utilities"],
+    "lang": "en",
     "icons": [
         {
             "src": "icons/Icon-192.png",
@@ -30,6 +33,14 @@
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Speak Now",
+            "short_name": "Speak",
+            "description": "Open gesture recognition to speak",
+            "url": "./"
         }
     ]
 }
