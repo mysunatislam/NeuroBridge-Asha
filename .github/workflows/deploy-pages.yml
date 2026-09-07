@@ -45,7 +45,12 @@ jobs:
       - name: Build Flutter Web App
         working-directory: apps/mobile
         run: |
-          flutter build web --no-wasm-dry-run --base-href "/NeuroBridge-Asha/"
+          flutter build web \
+            --web-renderer html \
+            --pwa-strategy offline-first \
+            --no-wasm-dry-run \
+            --tree-shake-icons \
+            --base-href "/NeuroBridge-Asha/"
           cp build/web/index.html build/web/404.html
 
       - name: Setup Pages
