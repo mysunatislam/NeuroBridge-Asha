@@ -36,7 +36,7 @@ jobs:
           cache-dependency-path: apps/web-vue/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build Web App
         env:
