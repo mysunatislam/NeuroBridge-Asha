@@ -1,4 +1,4 @@
-name: Deploy Web App to GitHub Pages
+name: Deploy NeuroBridge Asha Flutter Web App to GitHub Pages
 
 on:
   push:
@@ -21,29 +21,32 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/web-vue
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: apps/web-vue/package-lock.json
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
 
       - name: Install dependencies
-        run: npm install
+        working-directory: apps/mobile
+        run: flutter pub get
 
-      - name: Build Web App
-        env:
-          GITHUB_ACTIONS: "true"
+      - name: Build Flutter Web App
+        working-directory: apps/mobile
         run: |
-          npm run build
-          cp dist/index.html dist/404.html
+          flutter build web --no-wasm-dry-run --base-href "/NeuroBridge-Asha/"
+          cp build/web/index.html build/web/404.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -51,7 +54,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/web-vue/dist
+          path: apps/mobile/build/web
 
       - name: Deploy to GitHub Pages
         id: deployment
