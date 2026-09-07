@@ -50,6 +50,8 @@ jobs:
             --tree-shake-icons \
             --optimization-level 4 \
             --base-href "/NeuroBridge-Asha/"
+          mkdir -p build/web/assets/web
+          cp -r build/web/assets/assets/web/* build/web/assets/web/ 2>/dev/null || true
           cp build/web/index.html build/web/404.html
 
       - name: Setup Pages

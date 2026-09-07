@@ -697,6 +697,21 @@ function openSettings() {
 }
 window.openSettings = openSettings;
 
+function sendFlutterBridge(payload) {
+  const json = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+    try {
+      window.flutter_inappwebview.callHandler('FingerSpeakBridge', json);
+    } catch(e) {}
+  }
+  if (window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage(json, '*');
+    } catch(e) {}
+  }
+}
+window.sendFlutterBridge = sendFlutterBridge;
+
 let animFrameId = null;
 async function attachStream(stream) {
   video.srcObject = stream;
@@ -882,6 +897,10 @@ function renderLoop(){
 
       if (result && result.landmarks && result.landmarks.length > 0){
         lastHandSeenTime = now;
+        if (now - (window._lastHandDetectedTime || 0) > 600) {
+          window._lastHandDetectedTime = now;
+          sendFlutterBridge({ type: 'hand_detected' });
+        }
         const lm = result.landmarks[0];
         drawLandmarks(lm);
         currentRawFrame = flattenLandmarks(lm);
@@ -1419,6 +1438,10 @@ document.getElementById('trainBtn').addEventListener('click', async () => {
   document.getElementById('liveToggle').disabled = false;
   document.getElementById('saveModelBtn').disabled = false;
   document.getElementById('modelSelect').disabled = false;
+  sendFlutterBridge({
+    type: 'training_completed',
+    accSummary: accSummary || 'Training completed successfully'
+  });
 });
 
 async function runModelComparison(valSeqsByClass, xValTensor){
@@ -1835,17 +1858,13 @@ function runInference(rawSeq){
         reliability.latencies.push(elapsed);
         renderReliabilityTable();
 
-        // Send gesture event to Flutter native bridge for Asha voice integration
-        if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-          try {
-            window.flutter_inappwebview.callHandler('FingerSpeakBridge', JSON.stringify({
-              type: 'gesture_fired',
-              gesture: gesture.name,
-              phrase: gesture.phrase,
-              confidence: 0.95
-            }));
-          } catch(e) {}
-        }
+        // Send gesture event to Flutter bridge for Asha voice integration
+        sendFlutterBridge({
+          type: 'gesture_fired',
+          gesture: gesture.name,
+          phrase: gesture.phrase,
+          confidence: 0.95
+        });
       }
       intentState = 'WAIT_RELEASE'; restStreak = 0; candidateIdx = null; updateConfidenceRing(0);
     }
@@ -1922,8 +1941,8 @@ function warmupVoices(){
 }
 function speak(text){
   if (!text) return;
-  // When inside Flutter app, Flutter's native TTS bridge handles speech exclusively
-  if (window.flutter_inappwebview || window.FingerSpeakBridge || window.__fingerSpeakPatientMode) {
+  // When inside Flutter app, Flutter's voice service handles speech exclusively
+  if (window.flutter_inappwebview || window.FingerSpeakBridge || window.__fingerSpeakPatientMode || (window.parent && window.parent !== window)) {
     return;
   }
   if (!('speechSynthesis' in window)){ return; }

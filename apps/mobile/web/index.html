@@ -96,12 +96,13 @@
   </div>
 
   <script>
-    // Register service worker for background caching & keep-alive
+    // Clean up any legacy service workers that cause reload loops
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('flutter_service_worker.js', { scope: './' })
-          .catch(err => console.warn('SW registration failed:', err));
-      });
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (var i = 0; i < registrations.length; i++) {
+          registrations[i].unregister();
+        }
+      }).catch(function() {});
     }
 
     // Dismiss splash once Flutter signals it's ready

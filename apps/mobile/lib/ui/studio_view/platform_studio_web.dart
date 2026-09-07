@@ -1,4 +1,5 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use, unused_field
+import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
@@ -44,16 +45,19 @@ class _WebStudioView extends StatefulWidget {
 class _WebStudioViewState extends State<_WebStudioView> {
   String get _viewType =>
       widget.patientExecutionMode ? _patientViewType : _calibrationViewType;
+  StreamSubscription<html.MessageEvent>? _messageSub;
 
   @override
   void initState() {
     super.initState();
     final viewType = _viewType;
     if (_registeredViews.add(viewType)) {
-      ui_web.platformViewRegistry.registerViewFactory(_viewType, (int viewId) {
-        final src = widget.patientExecutionMode
+      ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
+        final base = html.document.baseUri ?? html.window.location.href;
+        final relativePath = widget.patientExecutionMode
             ? 'assets/assets/web/fingerspeak_studio.html?patientMode=1'
             : 'assets/assets/web/fingerspeak_studio.html';
+        final src = Uri.parse(base).resolve(relativePath).toString();
         final iframe = html.IFrameElement()
           ..src = src
           ..style.border = 'none'
@@ -62,15 +66,12 @@ class _WebStudioViewState extends State<_WebStudioView> {
           ..setAttribute(
               'allow', 'camera *; microphone *; autoplay; fullscreen; display-capture *')
           ..setAttribute('allowfullscreen', 'true')
-          ..setAttribute(
-              'sandbox',
-              'allow-scripts allow-same-origin allow-forms allow-popups allow-modals')
           ..allow = 'camera; microphone; autoplay; display-capture';
         return iframe;
       });
     }
 
-    html.window.onMessage.listen((event) {
+    _messageSub = html.window.onMessage.listen((event) {
       try {
         final raw = event.data;
         if (raw is String) {
@@ -90,6 +91,12 @@ class _WebStudioViewState extends State<_WebStudioView> {
         }
       } catch (_) {}
     });
+  }
+
+  @override
+  void dispose() {
+    _messageSub?.cancel();
+    super.dispose();
   }
 
   @override
