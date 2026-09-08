@@ -174,6 +174,12 @@ class CaregiverNotificationService {
     await _preferences.remove(_alertsKey);
   }
 
+  Future<void> restoreAlerts(List<CaregiverAlert> alerts) async {
+    _recentAlerts.clear();
+    _recentAlerts.addAll(alerts);
+    await _saveAlerts();
+  }
+
   Future<void> dispose() async {
     await _alertsController.close();
   }

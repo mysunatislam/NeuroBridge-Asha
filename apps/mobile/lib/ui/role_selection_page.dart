@@ -45,7 +45,7 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
               child: Column(
@@ -54,8 +54,8 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                 children: [
                   Center(
                     child: Container(
-                      width: 84,
-                      height: 84,
+                      width: 72,
+                      height: 72,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white,
@@ -75,13 +75,13 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => const Icon(
                           Icons.face,
-                          size: 48,
+                          size: 40,
                           color: Color(0xFF0B756A),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
                   Text(
                     'NEUROBRIDGE ASHA',
                     textAlign: TextAlign.center,
@@ -91,7 +91,7 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                           fontWeight: FontWeight.w800,
                         ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   Text(
                     'Who is using this device?',
                     textAlign: TextAlign.center,
@@ -100,13 +100,13 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                           fontWeight: FontWeight.w800,
                         ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   const Text(
                     'Choose your mode. You can easily switch anytime in Setup.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFF5A706A), fontSize: 15),
+                    style: TextStyle(color: Color(0xFF5A706A), fontSize: 14),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
                   AshaGuideTarget(
                     step: AshaGuideStep.role,
                     child: Column(
@@ -118,7 +118,7 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                           icon: Icons.accessible_forward,
                           title: 'I am a Patient',
                           subtitle:
-                              'Speak with eye gaze, facial expressions, or hand gestures. Asha companion stays with you and reassures you.',
+                              'Asha listens to your eyes, face, and hands and speaks for you. Hold your gaze or gesture to communicate with ease.',
                           accentColor: const Color(0xFF0B756A),
                           onTap: () =>
                               setState(() => _selectedRole = UserRole.patient),
@@ -130,7 +130,7 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                           icon: Icons.volunteer_activism,
                           title: 'I am a Caregiver',
                           subtitle:
-                              'Step-by-step patient signal calibration, live speech & distress alerts, wheelchair display writing, and emergency guides.',
+                              'Set up how the patient communicates, receive real-time alerts when they need help, and write to their wheelchair screen.',
                           accentColor: const Color(0xFFC04B67),
                           onTap: () =>
                               setState(() => _selectedRole = UserRole.caregiver),
@@ -138,11 +138,11 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
                   AshaGuideTarget(
                     step: AshaGuideStep.profile,
                     child: SizedBox(
-                      height: 56,
+                      height: 54,
                       child: FilledButton.icon(
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0xFF0B756A),
@@ -163,6 +163,27 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                           style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.bold),
                         ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: _saving
+                          ? null
+                          : () async {
+                              setState(() => _saving = true);
+                              await widget.services.useStandardCalibrationProfile();
+                              await widget.services.roleRepository
+                                  .save(UserRole.caregiver);
+                              if (mounted) {
+                                widget.onRoleSelected(UserRole.caregiver);
+                              }
+                            },
+                      icon: const Icon(Icons.play_circle_outline, size: 18),
+                      label: const Text('Try Demo Mode with Sample Signals'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF0B756A),
                       ),
                     ),
                   ),

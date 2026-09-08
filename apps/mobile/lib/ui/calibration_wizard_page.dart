@@ -32,6 +32,8 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
   double _baselineProgress = 0.0;
   bool _baselineCalibrated = false;
   Timer? _baselineTimer;
+  bool _showAllEyeSignals = false;
+  bool _showAllFaceSignals = false;
 
   bool _isCoachingActive = false;
   PatientSignalKind? _activeCoachingSignal;
@@ -266,7 +268,7 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
       _isCoachingActive = true;
       _activeCoachingSignal = signal;
       _coachingPrompt = prompt;
-      _coachingCountdown = 5;
+      _coachingCountdown = 15;
       _selectedSignal = signal;
       _loadCurrentPhrase();
     });
@@ -749,7 +751,7 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
                     )
                   else
                     Container(
-                      height: 110,
+                      height: 140,
                       color: const Color(0xFF0E1F1C),
                       child: Center(
                         child: Column(
@@ -762,6 +764,16 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
                               _monitorStatus.message,
                               style: const TextStyle(
                                   color: Color(0xFFC9D9D5), fontSize: 12),
+                            ),
+                            const SizedBox(height: 8),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 24),
+                              child: Text(
+                                '1. Ensure room is well lit\n2. Camera at eye level\n3. Stay within 40–60 cm',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    color: Color(0xFF8CA0A8), fontSize: 11),
+                              ),
                             ),
                           ],
                         ),
@@ -998,16 +1010,9 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Blinks use eye-open probability. Direction cues use a slight head-and-gaze pose because ML Kit Face Detection does not expose pupil or iris gaze.',
+                        'Start with the 3 most reliable signals. Expand to calibrate additional eye signals.',
                       ),
                       const SizedBox(height: 10),
-                      _buildCoachCard(
-                        title: 'Return to Camera Center',
-                        prompt:
-                            'Look slightly to either side, then gently return your head and gaze to the camera.',
-                        signal: PatientSignalKind.eyeLookCenter,
-                        icon: Icons.center_focus_strong,
-                      ),
                       _buildCoachCard(
                         title: 'Deliberate Normal Blink',
                         prompt: 'Blink your eyes naturally now.',
@@ -1027,20 +1032,39 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
                         signal: PatientSignalKind.slowBlink,
                         icon: Icons.nights_stay,
                       ),
-                      _buildCoachCard(
-                        title: 'Look Left Eye',
-                        prompt:
-                            'Turn your head slightly left while looking in that direction, then hold.',
-                        signal: PatientSignalKind.eyeLookLeft,
-                        icon: Icons.arrow_back,
+                      TextButton.icon(
+                        onPressed: () =>
+                            setState(() => _showAllEyeSignals = !_showAllEyeSignals),
+                        icon: Icon(_showAllEyeSignals
+                            ? Icons.expand_less
+                            : Icons.expand_more),
+                        label: Text(_showAllEyeSignals
+                            ? 'Hide advanced signals'
+                            : 'Show 3 more eye & direction signals'),
                       ),
-                      _buildCoachCard(
-                        title: 'Look Right Eye',
-                        prompt:
-                            'Turn your head slightly right while looking in that direction, then hold.',
-                        signal: PatientSignalKind.eyeLookRight,
-                        icon: Icons.arrow_forward,
-                      ),
+                      if (_showAllEyeSignals) ...[
+                        _buildCoachCard(
+                          title: 'Return to Camera Center',
+                          prompt:
+                              'Look slightly to either side, then gently return your head and gaze to the camera.',
+                          signal: PatientSignalKind.eyeLookCenter,
+                          icon: Icons.center_focus_strong,
+                        ),
+                        _buildCoachCard(
+                          title: 'Look Left Eye',
+                          prompt:
+                              'Turn your head slightly left while looking in that direction, then hold.',
+                          signal: PatientSignalKind.eyeLookLeft,
+                          icon: Icons.arrow_back,
+                        ),
+                        _buildCoachCard(
+                          title: 'Look Right Eye',
+                          prompt:
+                              'Turn your head slightly right while looking in that direction, then hold.',
+                          signal: PatientSignalKind.eyeLookRight,
+                          icon: Icons.arrow_forward,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1052,25 +1076,13 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
                   content: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Separate facial muscle mappings:'),
+                      const Text('Start with the 3 easiest facial signals:'),
                       const SizedBox(height: 10),
                       _buildCoachCard(
                         title: 'Gentle Symmetrical Smile',
                         prompt: 'Smile gently with both sides of your mouth.',
                         signal: PatientSignalKind.smile,
                         icon: Icons.sentiment_satisfied_alt,
-                      ),
-                      _buildCoachCard(
-                        title: 'Smile Left Lip Only',
-                        prompt: 'Smile towards your left lip corner only.',
-                        signal: PatientSignalKind.smileLeft,
-                        icon: Icons.mood,
-                      ),
-                      _buildCoachCard(
-                        title: 'Smile Right Lip Only',
-                        prompt: 'Smile towards your right lip corner only.',
-                        signal: PatientSignalKind.smileRight,
-                        icon: Icons.mood,
                       ),
                       _buildCoachCard(
                         title: 'Open Mouth',
@@ -1084,6 +1096,30 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
                         signal: PatientSignalKind.eyebrowsUp,
                         icon: Icons.arrow_upward,
                       ),
+                      TextButton.icon(
+                        onPressed: () => setState(
+                            () => _showAllFaceSignals = !_showAllFaceSignals),
+                        icon: Icon(_showAllFaceSignals
+                            ? Icons.expand_less
+                            : Icons.expand_more),
+                        label: Text(_showAllFaceSignals
+                            ? 'Hide advanced signals'
+                            : 'Show 2 more lip-corner signals'),
+                      ),
+                      if (_showAllFaceSignals) ...[
+                        _buildCoachCard(
+                          title: 'Smile Left Lip Only',
+                          prompt: 'Smile towards your left lip corner only.',
+                          signal: PatientSignalKind.smileLeft,
+                          icon: Icons.mood,
+                        ),
+                        _buildCoachCard(
+                          title: 'Smile Right Lip Only',
+                          prompt: 'Smile towards your right lip corner only.',
+                          signal: PatientSignalKind.smileRight,
+                          icon: Icons.mood,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1200,10 +1236,16 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
                         children: [
                           const Text('Detection Sensitivity',
                               style: TextStyle(fontWeight: FontWeight.w600)),
-                          Text('${(_sensitivity * 100).round()}%',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF0B756A))),
+                          Text(
+                            _sensitivity < 0.55
+                                ? 'Low (${(_sensitivity * 100).round()}%)'
+                                : _sensitivity < 0.80
+                                    ? 'Medium (${(_sensitivity * 100).round()}%)'
+                                    : 'High (${(_sensitivity * 100).round()}%)',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0B756A)),
+                          ),
                         ],
                       ),
                       Slider(
@@ -1212,6 +1254,14 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
                         max: 0.95,
                         divisions: 11,
                         onChanged: (val) => setState(() => _sensitivity = val),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'Raise for strong intentional movements. Lower for weak or tremor-affected muscle control.',
+                          style: TextStyle(
+                              fontSize: 12, color: Color(0xFF556E68)),
+                        ),
                       ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1225,13 +1275,32 @@ class _CalibrationWizardPageState extends State<CalibrationWizardPage> {
                         ],
                       ),
                       Slider(
-                        value: _dwellMilliseconds.toDouble(),
-                        min: 0,
+                        value: _dwellMilliseconds.toDouble().clamp(50, 1500),
+                        min: 50,
                         max: 1500,
-                        divisions: 15,
+                        divisions: 14,
                         onChanged: (val) =>
                             setState(() => _dwellMilliseconds = val.round()),
                       ),
+                      if (_dwellMilliseconds < 100)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            children: [
+                              Icon(Icons.warning_amber,
+                                  size: 14, color: Color(0xFFB45309)),
+                              SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Very short hold time — may trigger accidentally for patients with tremors.',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xFFB45309)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       const SizedBox(height: 10),
                       Wrap(
                         spacing: 8,

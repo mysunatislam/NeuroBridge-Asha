@@ -252,13 +252,6 @@ class CaregiverPageState extends State<CaregiverPage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('NEUROBRIDGE ASHA • CAREGIVER',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: const Color(0xFFC04B67),
-                          letterSpacing: 1.6,
-                          fontWeight: FontWeight.w800,
-                        )),
-                const SizedBox(height: 4),
                 Text('Caregiver Hub',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                           fontWeight: FontWeight.w800,
@@ -276,6 +269,45 @@ class CaregiverPageState extends State<CaregiverPage> {
                   showCaregiverEmergencySheet(context, widget.services),
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        StreamBuilder<MonitorStatus>(
+          stream: widget.services.monitor.statuses,
+          initialData: widget.services.monitor.currentStatus,
+          builder: (context, snapshot) {
+            final status = snapshot.data;
+            final isActive =
+                status?.lifecycle == MonitorLifecycle.active ||
+                status?.lifecycle == MonitorLifecycle.starting;
+            return Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isActive
+                        ? const Color(0xFF22C55E)
+                        : const Color(0xFFEF4444),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  isActive
+                      ? 'Asha is monitoring patient'
+                      : 'Patient monitoring paused',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isActive
+                        ? const Color(0xFF15803D)
+                        : const Color(0xFF991B1B),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 16),
 
@@ -301,7 +333,7 @@ class CaregiverPageState extends State<CaregiverPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'MediaPipe Hand Gesture Suite',
+                        'Hand Gesture Communicator',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
@@ -309,7 +341,7 @@ class CaregiverPageState extends State<CaregiverPage> {
                         ),
                       ),
                       Text(
-                        '98-Feature 3D DTW & Prototype Calibrator',
+                        'Teaches Asha to recognise the patient\'s hand signs.',
                         style:
                             TextStyle(fontSize: 13, color: Color(0xFF8CA0A8)),
                       ),
@@ -323,7 +355,13 @@ class CaregiverPageState extends State<CaregiverPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                   ),
                   onPressed: _openHandCalibration,
-                  child: const Text('Calibrate'),
+                  child: Builder(builder: (context) {
+                    final hasGestures =
+                        widget.services.recognition.phrases.isNotEmpty;
+                    return Text(hasGestures
+                        ? 'Manage Gestures'
+                        : 'Train Hand Gestures');
+                  }),
                 ),
               ],
             ),
@@ -433,27 +471,73 @@ class CaregiverPageState extends State<CaregiverPage> {
                   style: TextStyle(fontSize: 13, color: Color(0xFF556E68)),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _patientProfileIdController,
-                        style: const TextStyle(
-                            fontSize: 13, fontFamily: 'monospace'),
-                        decoration: const InputDecoration(
-                          hintText: 'Enter patient profile UUID…',
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                        ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: _patientProfileIdController,
+                          builder: (context, value, _) {
+                            final text = value.text.trim();
+                            final isValidFormat = RegExp(
+                              r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+                            ).hasMatch(text);
+                            final showValid = text.isNotEmpty && isValidFormat;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller:
+                                            _patientProfileIdController,
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            fontFamily: 'monospace'),
+                                        decoration: InputDecoration(
+                                          hintText:
+                                              'e.g. 8a3f7c2e-… (36 characters)',
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 10),
+                                          suffixIcon: showValid
+                                              ? const Icon(
+                                                  Icons.check_circle,
+                                                  color: Color(0xFF0B756A),
+                                                  size: 20,
+                                                )
+                                              : null,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    FilledButton(
+                                      onPressed: _connectCloudDashboard,
+                                      child: const Text('Connect'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.info_outline,
+                                      size: 13,
+                                      color: Color(0xFF556E68),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Expanded(
+                                      child: Text(
+                                        'Ask the patient\'s NeuroBridge clinic for their profile ID.',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF556E68)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            );
+                          },
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: _connectCloudDashboard,
-                      child: const Text('Connect'),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -633,15 +717,37 @@ class CaregiverPageState extends State<CaregiverPage> {
                   style: TextStyle(color: Color(0xFF556E68)),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _captionController,
-                  maxLength: 280,
-                  minLines: 2,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Message for patient display',
-                    hintText: 'e.g., I am bringing your lunch now',
-                  ),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _captionController,
+                  builder: (context, value, _) {
+                    final len = value.text.length;
+                    final Color counterColor = len > 270
+                        ? const Color(0xFFB42318)
+                        : len > 250
+                            ? const Color(0xFFB45309)
+                            : const Color(0xFF556E68);
+                    return TextField(
+                      controller: _captionController,
+                      maxLength: 280,
+                      buildCounter: (context,
+                              {required currentLength,
+                              required isFocused,
+                              required maxLength}) =>
+                          Text(
+                        '$currentLength/$maxLength',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: counterColor,
+                            fontWeight: FontWeight.w600),
+                      ),
+                      minLines: 2,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Message for patient display (280 chars max)',
+                        hintText: 'e.g., I am bringing your lunch now',
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -649,34 +755,24 @@ class CaregiverPageState extends State<CaregiverPage> {
                   runSpacing: 6,
                   children: [
                     _PresetCaptionChip(
-                      label: '“I’m on my way”',
-                      onTap: () {
-                        _captionController.text = 'I am on my way';
-                        _sendCaption();
-                      },
+                      label: '"I\'m on my way"',
+                      onTap: () =>
+                          _captionController.text = 'I am on my way',
                     ),
                     _PresetCaptionChip(
-                      label: '“Lunch is ready”',
-                      onTap: () {
-                        _captionController.text = 'Lunch is ready for you';
-                        _sendCaption();
-                      },
+                      label: '"Lunch is ready"',
+                      onTap: () =>
+                          _captionController.text = 'Lunch is ready for you',
                     ),
                     _PresetCaptionChip(
-                      label: '“Rest well”',
-                      onTap: () {
-                        _captionController.text =
-                            'Take your time and rest well';
-                        _sendCaption();
-                      },
+                      label: '"Rest well"',
+                      onTap: () => _captionController.text =
+                          'Take your time and rest well',
                     ),
                     _PresetCaptionChip(
-                      label: '“Water is here”',
-                      onTap: () {
-                        _captionController.text =
-                            'I am bringing some fresh water';
-                        _sendCaption();
-                      },
+                      label: '"Water is here"',
+                      onTap: () => _captionController.text =
+                          'I am bringing some fresh water',
                     ),
                   ],
                 ),
@@ -725,9 +821,27 @@ class CaregiverPageState extends State<CaregiverPage> {
                         widget.services.cloudAlerts.alerts.isNotEmpty)
                       TextButton(
                         onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final clearedAlerts = List.of(
+                              widget.services.caregiverNotifications
+                                  .recentAlerts);
                           await widget.services.caregiverNotifications
                               .clearAlerts();
                           if (mounted) setState(() {});
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: const Text('Alert history cleared.'),
+                              duration: const Duration(seconds: 5),
+                              action: SnackBarAction(
+                                label: 'Undo',
+                                onPressed: () async {
+                                  await widget.services.caregiverNotifications
+                                      .restoreAlerts(clearedAlerts);
+                                  if (mounted) setState(() {});
+                                },
+                              ),
+                            ),
+                          );
                         },
                         child: const Text('Clear Local'),
                       ),

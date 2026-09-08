@@ -152,23 +152,28 @@ class _PatientPageState extends State<PatientPage> {
   Future<PatientAccessMethod?> _askFingerCapability() {
     return showDialog<PatientAccessMethod>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         icon: const Icon(Icons.accessibility_new,
-            color: Color(0xFF2DD4BF), size: 32),
+            color: Color(0xFF0B756A), size: 36),
         title: const Text('Can the patient intentionally move their fingers?'),
         content: const Text(
           'Choose the movement the patient can control reliably. You can change this later in Setup.',
         ),
         actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Decide Later'),
+          ),
           OutlinedButton.icon(
             onPressed: () {
               Navigator.pop(context);
               _openAssessmentWizard();
             },
             style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF2DD4BF)),
+                foregroundColor: const Color(0xFF0B756A)),
             icon: const Icon(Icons.auto_awesome),
             label: const Text('Ability Assessment'),
           ),
@@ -178,7 +183,7 @@ class _PatientPageState extends State<PatientPage> {
               PatientAccessMethod.faceEyesAndHead,
             ),
             style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF94A3B8)),
+                foregroundColor: const Color(0xFF556E68)),
             icon: const Icon(Icons.face_retouching_natural),
             label: const Text('No — use face & eyes'),
           ),
@@ -188,8 +193,8 @@ class _PatientPageState extends State<PatientPage> {
               PatientAccessMethod.handGestures,
             ),
             style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF2DD4BF),
-                foregroundColor: Colors.black),
+                backgroundColor: const Color(0xFF0B756A),
+                foregroundColor: Colors.white),
             icon: const Icon(Icons.pan_tool_alt),
             label: const Text('Yes — use fingers'),
           ),
@@ -285,28 +290,8 @@ class _PatientPageState extends State<PatientPage> {
   }
 
   Future<void> _requestEmergencyHelp() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Request emergency help?'),
-        content: const Text(
-          'This will speak the urgent request aloud, show it on the wheelchair display, notify the caregiver, and open the emergency phone dialer.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFB42318)),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Request Emergency Help'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
+    // No confirmation dialog — press-and-hold on the button handles intent.
+    // Execute immediately on call (triggered by GestureDetector longPress).
     const message = 'Emergency help requested! Please assist immediately.';
     await widget.services.voice.speakAsha(message, force: true);
     if (widget.services.pi.state == PiConnectionState.connected) {
@@ -320,7 +305,28 @@ class _PatientPageState extends State<PatientPage> {
       'Patient requested urgent emergency help.',
       urgency: AlertUrgency.emergency,
     );
-    if (mounted) await _callCaregiver();
+    if (mounted) {
+      // Undo snackbar — 5 seconds to cancel (cannot unsend voice but can note false alarm)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Emergency alert sent. Tap Undo if accidental.'),
+          backgroundColor: const Color(0xFFB42318),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Undo',
+            textColor: Colors.white,
+            onPressed: () {
+              widget.services.caregiverNotifications.notifyEmergency(
+                'SOS Cancelled',
+                'Patient indicated the emergency SOS was accidental.',
+                urgency: AlertUrgency.normal,
+              );
+            },
+          ),
+        ),
+      );
+      await _callCaregiver();
+    }
   }
 
   Widget _buildCapabilityPending(BuildContext context) {
@@ -477,31 +483,19 @@ class _PatientPageState extends State<PatientPage> {
         const SizedBox(height: 16),
         SizedBox(
           height: 56,
-          child: FilledButton.icon(
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+            ),
             onPressed: _callCaregiver,
             icon: const Icon(Icons.call),
-            label: const Text(
-              'Call My Caregiver',
-              style: TextStyle(fontSize: 16),
-            ),
+            label: const Text('Call My Caregiver',
+                style: TextStyle(fontSize: 16)),
           ),
         ),
         const SizedBox(height: 10),
-        SizedBox(
-          height: 56,
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFB42318),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: _requestEmergencyHelp,
-            icon: const Icon(Icons.emergency),
-            label: const Text(
-              'Emergency Help SOS',
-              style: TextStyle(fontSize: 16),
-            ),
-          ),
-        ),
+        _SosHoldButton(onTriggered: _requestEmergencyHelp),
       ],
     );
   }
@@ -619,7 +613,7 @@ class _PatientPageState extends State<PatientPage> {
                                       'LIVE WEBCAM CV',
                                       style: TextStyle(
                                         color: Color(0xFF4ADE80),
-                                        fontSize: 10,
+                                        fontSize: 12,
                                         fontWeight: FontWeight.w700,
                                         letterSpacing: 0.5,
                                       ),
@@ -645,14 +639,34 @@ class _PatientPageState extends State<PatientPage> {
                         ),
                       )
                     else
-                      const SizedBox(
-                        height: 160,
-                        child: Center(
-                          child: Icon(
-                            Icons.face_retouching_natural,
-                            color: Color(0xFFA6E3D9),
-                            size: 60,
-                          ),
+                      SizedBox(
+                        height: 180,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.face_retouching_natural,
+                              color: Color(0xFFA6E3D9),
+                              size: 52,
+                            ),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Face not detected',
+                              style: TextStyle(
+                                  color: Color(0xFFA6E3D9),
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 6),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 24),
+                              child: Text(
+                                '1. Ensure room is well lit\n2. Position camera at eye level\n3. Stay within 40–60 cm of camera',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    color: Color(0xFFC9D9D5), fontSize: 12),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     Padding(
@@ -774,12 +788,14 @@ class _PatientPageState extends State<PatientPage> {
                           const SizedBox(height: 12),
                           const Divider(color: Color(0x33FFFFFF)),
                           const SizedBox(height: 6),
-                          const Text(
-                            'Quick Signal Test (Tap to Trigger):',
-                            style: TextStyle(
-                              color: Color(0xFFA6E3D9),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                          ExcludeSemantics(
+                            child: Text(
+                              'Quick Signal Test (Tap to Trigger):',
+                              style: TextStyle(
+                                color: Color(0xFFA6E3D9),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -917,8 +933,8 @@ class _PatientPageState extends State<PatientPage> {
               const SizedBox(height: 16),
               SizedBox(
                 height: 56,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16)),
                   ),
@@ -929,21 +945,7 @@ class _PatientPageState extends State<PatientPage> {
                 ),
               ),
               const SizedBox(height: 10),
-              SizedBox(
-                height: 56,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFB42318),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                  ),
-                  onPressed: _requestEmergencyHelp,
-                  icon: const Icon(Icons.emergency),
-                  label: const Text('Emergency Help SOS',
-                      style: TextStyle(fontSize: 16)),
-                ),
-              ),
+              _SosHoldButton(onTriggered: _requestEmergencyHelp),
             ],
           ),
         ),
@@ -1181,6 +1183,128 @@ class _TestSignalButton extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Press-and-hold SOS button. Triggers after 1.5s hold; shows radial progress.
+/// Replaces confirmation dialog with immediate action + undo snackbar.
+class _SosHoldButton extends StatefulWidget {
+  const _SosHoldButton({required this.onTriggered});
+  final VoidCallback onTriggered;
+
+  @override
+  State<_SosHoldButton> createState() => _SosHoldButtonState();
+}
+
+class _SosHoldButtonState extends State<_SosHoldButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  bool _holding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed && _holding) {
+        widget.onTriggered();
+        _controller.reset();
+        setState(() => _holding = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onLongPressStart(LongPressStartDetails _) {
+    setState(() => _holding = true);
+    _controller.forward(from: 0);
+  }
+
+  void _onLongPressEnd(LongPressEndDetails _) {
+    if (_controller.status != AnimationStatus.completed) {
+      _controller.reset();
+    }
+    setState(() => _holding = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Emergency SOS. Press and hold to activate.',
+      button: true,
+      child: GestureDetector(
+        onLongPressStart: _onLongPressStart,
+        onLongPressEnd: _onLongPressEnd,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Container(
+              height: 72,
+              decoration: BoxDecoration(
+                color: const Color(0xFFB42318),
+                borderRadius: BorderRadius.circular(16),
+                border: _holding
+                    ? Border.all(color: Colors.white54, width: 2)
+                    : null,
+              ),
+              child: Stack(
+                children: [
+                  if (_holding)
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: LinearProgressIndicator(
+                          value: _controller.value,
+                          backgroundColor: const Color(0x44FFFFFF),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                              Colors.white30),
+                          minHeight: 72,
+                        ),
+                      ),
+                    ),
+                  Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.emergency,
+                            color: Colors.white, size: 24),
+                        const SizedBox(width: 10),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _holding ? 'Hold to confirm…' : 'Emergency Help SOS',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            if (!_holding)
+                              const Text(
+                                'Press and hold to activate',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 11),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );

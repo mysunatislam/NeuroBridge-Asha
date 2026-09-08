@@ -33,6 +33,7 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
     super.initState();
     // Do not construct the WebView until the background CameraController has
     // fully released the hardware. Android & iOS otherwise race two camera clients.
+    // M-7: A 10-second timeout is applied in FutureBuilder to avoid permanent loading.
     _cameraRelease = widget.services.monitor.stop();
   }
 
@@ -101,7 +102,7 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('TensorFlow.js Model: $message'),
+          content: Text('Asha Hand Model: $message'),
           backgroundColor: const Color(0xFF2E7D74),
         ),
       );
@@ -110,6 +111,7 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isPatientMode = widget.mode == HandStudioMode.patientExecution;
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -133,7 +135,7 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                widget.mode == HandStudioMode.patientExecution
+                isPatientMode
                     ? 'NeuroBridge Asha Hand Communicator'
                     : 'NeuroBridge Asha 3D Studio',
                 overflow: TextOverflow.ellipsis,
@@ -147,8 +149,33 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
           ],
         ),
       ),
+      // C-6: Large accessible "Return to Dashboard" FAB for patients in execution mode.
+      // Face/eye/switch users cannot reach the standard AppBar back arrow.
+      floatingActionButton: isPatientMode
+          ? Semantics(
+              label: 'Return to Dashboard',
+              button: true,
+              child: FloatingActionButton.extended(
+                onPressed: () => Navigator.of(context).pop(),
+                backgroundColor: const Color(0xFF0D9488),
+                foregroundColor: Colors.white,
+                icon: const Icon(Icons.arrow_back),
+                label: const Text(
+                  'Return to Dashboard',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+              ),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: FutureBuilder<void>(
-        future: _cameraRelease,
+        // M-7: 10-second timeout prevents permanent spinner if camera release hangs.
+        future: _cameraRelease.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => throw TimeoutException(
+            'Camera took too long to release.',
+          ),
+        ),
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(
@@ -175,14 +202,15 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
                     const Icon(Icons.videocam_off, color: Color(0xFFE86A6A)),
                     const SizedBox(height: 12),
                     const Text(
-                      'Could not release the patient camera for hand tracking.',
+                      'Camera took too long to release. Tap Retry to try again.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white),
+                      style: TextStyle(color: Color(0xFF64748B)),
                     ),
                     const SizedBox(height: 12),
-                    FilledButton(
+                    FilledButton.icon(
                       onPressed: _retryCameraRelease,
-                      child: const Text('Retry'),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
                     ),
                   ],
                 ),
@@ -194,8 +222,7 @@ class _HandCalibrationPageState extends State<HandCalibrationPage> {
             onGestureFired: _onGestureFired,
             onHandDetected: _onHandDetected,
             onTrainingCompleted: _onTrainingCompleted,
-            patientExecutionMode:
-                widget.mode == HandStudioMode.patientExecution,
+            patientExecutionMode: isPatientMode,
           );
         },
       ),
