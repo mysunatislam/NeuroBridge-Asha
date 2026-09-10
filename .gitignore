@@ -29,9 +29,10 @@ apps/mobile/build/
 apps/mobile/.idea/
 .pytest-tmp-face-intent/
 *.ipa
-
-
-latest_bundle*
-ios_build_latest*
+*.apk
+releases/
+apps/mobile/android/.kotlin/
 *.zip
+
+
 

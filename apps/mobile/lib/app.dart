@@ -11,12 +11,18 @@ import 'package:fingerspeak_mobile/ui/patient_page.dart';
 import 'package:fingerspeak_mobile/ui/pi_display_page.dart';
 import 'package:fingerspeak_mobile/ui/role_selection_page.dart';
 import 'package:fingerspeak_mobile/ui/settings_page.dart';
+import 'package:fingerspeak_mobile/ui/caregiver_multi_patient_page.dart';
 import 'package:flutter/material.dart';
 
 class FingerSpeakMobileApp extends StatefulWidget {
-  const FingerSpeakMobileApp({super.key, this.services});
+  const FingerSpeakMobileApp({
+    super.key,
+    this.services,
+    this.forcedRole,
+  });
 
   final MobileServices? services;
+  final UserRole? forcedRole;
 
   @override
   State<FingerSpeakMobileApp> createState() => _FingerSpeakMobileAppState();
@@ -100,7 +106,10 @@ class _FingerSpeakMobileAppState extends State<FingerSpeakMobileApp> {
             );
           }
 
-          return _AppRoot(services: services);
+          return _AppRoot(
+            services: services,
+            forcedRole: widget.forcedRole,
+          );
         },
       ),
     );
@@ -108,9 +117,13 @@ class _FingerSpeakMobileAppState extends State<FingerSpeakMobileApp> {
 }
 
 class _AppRoot extends StatefulWidget {
-  const _AppRoot({required this.services});
+  const _AppRoot({
+    required this.services,
+    this.forcedRole,
+  });
 
   final MobileServices services;
+  final UserRole? forcedRole;
 
   @override
   State<_AppRoot> createState() => _AppRootState();
@@ -124,7 +137,7 @@ class _AppRootState extends State<_AppRoot> {
   @override
   void initState() {
     super.initState();
-    _activeRole = widget.services.roleRepository.load();
+    _activeRole = widget.forcedRole ?? widget.services.roleRepository.load();
     unawaited(widget.services.ashaGuide.setRoleSelected(_activeRole != null));
     widget.services.roleRepository.addListener(_onRoleChanged);
   }
@@ -137,7 +150,8 @@ class _AppRootState extends State<_AppRoot> {
 
   void _onRoleChanged() {
     if (mounted) {
-      setState(() => _activeRole = widget.services.roleRepository.load());
+      setState(() => _activeRole =
+          widget.forcedRole ?? widget.services.roleRepository.load());
       _resumeGuideAfterRoleSelection();
     }
   }
@@ -154,6 +168,10 @@ class _AppRootState extends State<_AppRoot> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.forcedRole == UserRole.caregiver) {
+      return CaregiverMultiPatientPage(services: widget.services);
+    }
+
     final Widget content;
     if (_activeRole == null) {
       content = RoleSelectionPage(
@@ -168,6 +186,7 @@ class _AppRootState extends State<_AppRoot> {
         key: _mobileHomeKey,
         services: widget.services,
         initialRole: _activeRole!,
+        forcedRole: widget.forcedRole,
       );
     }
     return AshaGuideHost(
@@ -221,11 +240,13 @@ class MobileHome extends StatefulWidget {
   const MobileHome({
     required this.services,
     this.initialRole = UserRole.patient,
+    this.forcedRole,
     super.key,
   });
 
   final MobileServices services;
   final UserRole initialRole;
+  final UserRole? forcedRole;
 
   @override
   State<MobileHome> createState() => _MobileHomeState();
@@ -261,6 +282,72 @@ class _MobileHomeState extends State<MobileHome> {
   @override
   Widget build(BuildContext context) {
     final services = widget.services;
+    final isPatientOnly = widget.forcedRole == UserRole.patient;
+
+    if (isPatientOnly) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        body: SafeArea(
+          bottom: false,
+          child: IndexedStack(
+            index: _index.clamp(0, 2),
+            children: [
+              PatientPage(services: services, isActive: _index == 0),
+              PiDisplayPage(services: services),
+              SettingsPage(
+                services: services,
+                onRoleChanged: (_) {},
+              ),
+            ],
+          ),
+        ),
+        floatingActionButton: Padding(
+          padding: const EdgeInsets.only(bottom: 72),
+          child: AngelicAshaButton(
+            isCaregiver: false,
+            onTap: () => showAshaChatSheet(
+              context,
+              services.companion,
+              role: UserRole.patient,
+              voiceService: services.voice,
+              services: services,
+            ),
+          ),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        bottomNavigationBar: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+          ),
+          child: NavigationBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            indicatorColor: const Color(0xFFCCFBF1),
+            selectedIndex: _index.clamp(0, 2),
+            onDestinationSelected: (index) => setState(() => _index = index),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.favorite_outline, color: Color(0xFF64748B)),
+                selectedIcon: Icon(Icons.favorite, color: Color(0xFF0D9488)),
+                label: 'Asha Patient',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.tv_outlined, color: Color(0xFF64748B)),
+                selectedIcon: Icon(Icons.tv, color: Color(0xFFD97706)),
+                label: 'Wheelchair Display',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined, color: Color(0xFF64748B)),
+                selectedIcon: Icon(Icons.settings, color: Color(0xFF0D9488)),
+                label: 'Setup & Voice',
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final currentRole = _index == 1 ? UserRole.caregiver : UserRole.patient;
 
     return Scaffold(

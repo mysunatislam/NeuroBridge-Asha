@@ -16,6 +16,8 @@ import 'package:fingerspeak_mobile/services/cloud_sync_service.dart';
 import 'package:fingerspeak_mobile/services/companion_controller.dart';
 import 'package:fingerspeak_mobile/services/multimodal_fusion_engine.dart';
 import 'package:fingerspeak_mobile/services/patient_signal_monitor.dart';
+import 'package:fingerspeak_mobile/services/local_peer_sync_service.dart';
+import 'package:fingerspeak_mobile/services/patient_roster_service.dart';
 import 'package:fingerspeak_mobile/services/reminder_service.dart';
 import 'package:fingerspeak_mobile/services/session_metrics_service.dart';
 import 'package:fingerspeak_mobile/services/voice_service.dart';
@@ -41,6 +43,8 @@ class MobileServices {
     required this.cloudAlerts,
     required this.fusionEngine,
     required this.ashaGuide,
+    required this.localPeerSync,
+    required this.patientRoster,
   });
 
   final AppConfig config;
@@ -61,6 +65,8 @@ class MobileServices {
   final CloudAlertRepository cloudAlerts;
   final MultimodalFusionEngine fusionEngine;
   final AshaGuideService ashaGuide;
+  final LocalPeerSyncService localPeerSync;
+  final PatientRosterService patientRoster;
   StreamSubscription<Object?>? _signalSubscription;
   StreamSubscription<PiConnectionState>? _piStateSubscription;
   StreamSubscription<PatientSignal>? _piSignalSubscription;
@@ -153,6 +159,11 @@ class MobileServices {
       },
     );
     final ashaGuide = AshaGuideService(preferences);
+    final localPeerSync = LocalPeerSyncService();
+    final patientRoster = PatientRosterService(
+      preferences: preferences,
+      peerSync: localPeerSync,
+    );
 
     final result = MobileServices._(
       config: config,
@@ -173,6 +184,8 @@ class MobileServices {
       cloudAlerts: cloudAlerts,
       fusionEngine: fusionEngine,
       ashaGuide: ashaGuide,
+      localPeerSync: localPeerSync,
+      patientRoster: patientRoster,
     );
     result._signalSubscription = monitor.signals.listen((signal) {
       unawaited(recognition.ingest(signal));
@@ -228,6 +241,12 @@ class MobileServices {
       onConfirmationPromptRequested: (_, __) {},
     );
     final ashaGuide = AshaGuideService(prefs);
+    final localPeerSync = LocalPeerSyncService();
+    final patientRoster = PatientRosterService(
+      preferences: prefs,
+      peerSync: localPeerSync,
+      autoStartHeartbeat: false,
+    );
     return MobileServices._(
       config: cfg,
       roleRepository: roleRepo,
@@ -247,6 +266,8 @@ class MobileServices {
       cloudAlerts: CloudAlertRepository(apiClient: cloudApi),
       fusionEngine: fusionEngine,
       ashaGuide: ashaGuide,
+      localPeerSync: localPeerSync,
+      patientRoster: patientRoster,
     );
   }
 
@@ -342,5 +363,7 @@ class MobileServices {
     cloudAlerts.dispose();
     cloudApi.close();
     ashaGuide.dispose();
+    localPeerSync.dispose();
+    patientRoster.dispose();
   }
 }

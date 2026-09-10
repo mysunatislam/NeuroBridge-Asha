@@ -24,6 +24,21 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appLabel"] = "NeuroBridge Asha"
+    }
+
+    flavorDimensions += listOf("mode")
+    productFlavors {
+        create("patient") {
+            dimension = "mode"
+            applicationId = "org.fingerspeak.patient"
+            manifestPlaceholders["appLabel"] = "Asha Patient"
+        }
+        create("caregiver") {
+            dimension = "mode"
+            applicationId = "org.fingerspeak.caregiver"
+            manifestPlaceholders["appLabel"] = "Asha Caregiver"
+        }
     }
 
     buildTypes {

@@ -8,6 +8,7 @@ import 'package:fingerspeak_mobile/models/patient_signal.dart';
 import 'package:fingerspeak_mobile/models/personal_access_profile.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/services/caregiver_notification_service.dart';
+import 'package:fingerspeak_mobile/services/local_peer_sync_service.dart';
 import 'package:fingerspeak_mobile/services/asha_guide_service.dart';
 import 'package:fingerspeak_mobile/ui/ability_assessment_page.dart';
 import 'package:fingerspeak_mobile/ui/asha_chat_sheet.dart';
@@ -44,6 +45,11 @@ class _PatientPageState extends State<PatientPage> {
   StreamSubscription<MonitorStatus>? _monitorSubscription;
   StreamSubscription<PatientSignal>? _signalSubscription;
   StreamSubscription<CalibratedPhrase>? _phraseSubscription;
+  StreamSubscription<RemoteDisplayCommand>? _remoteDisplaySubscription;
+  StreamSubscription<void>? _emergencyAckSubscription;
+  String? _incomingCaregiverMessage;
+  String? _caregiverSender;
+  bool _emergencyAcknowledged = false;
 
   @override
   void initState() {
@@ -62,6 +68,25 @@ class _PatientPageState extends State<PatientPage> {
     _phraseSubscription =
         widget.services.recognition.spokenPhrases.listen((phrase) {
       if (mounted) setState(() => _lastPhrase = phrase);
+    });
+    _remoteDisplaySubscription =
+        widget.services.localPeerSync.remoteDisplayCommands.listen((cmd) {
+      if (mounted) {
+        setState(() {
+          _incomingCaregiverMessage = cmd.message;
+          _caregiverSender = cmd.sender;
+        });
+        unawaited(widget.services.voice.speakAsha(cmd.message, force: true));
+      }
+    });
+    _emergencyAckSubscription =
+        widget.services.localPeerSync.emergencyAcks.listen((_) {
+      if (mounted) {
+        setState(() => _emergencyAcknowledged = true);
+        unawaited(widget.services.voice.speakAsha(
+            'Your caregiver has acknowledged the emergency. Help is on the way.',
+            force: true));
+      }
     });
     if (widget.isActive && !_configuringAccessMethod) {
       _scheduleAccessMethodConfiguration();
@@ -89,6 +114,8 @@ class _PatientPageState extends State<PatientPage> {
     unawaited(_monitorSubscription?.cancel());
     unawaited(_signalSubscription?.cancel());
     unawaited(_phraseSubscription?.cancel());
+    unawaited(_remoteDisplaySubscription?.cancel());
+    unawaited(_emergencyAckSubscription?.cancel());
     super.dispose();
   }
 
@@ -290,6 +317,10 @@ class _PatientPageState extends State<PatientPage> {
   }
 
   Future<void> _requestEmergencyHelp() async {
+    // Immediate multi-burst offline UDP beacon blast (<10ms latency)
+    unawaited(widget.services.localPeerSync.broadcastEmergency());
+    setState(() => _emergencyAcknowledged = false);
+
     // No confirmation dialog — press-and-hold on the button handles intent.
     // Execute immediately on call (triggered by GestureDetector longPress).
     const message = 'Emergency help requested! Please assist immediately.';
@@ -329,12 +360,113 @@ class _PatientPageState extends State<PatientPage> {
     }
   }
 
+  Widget _buildCaregiverIncomingAlerts() {
+    if (_incomingCaregiverMessage == null && !_emergencyAcknowledged) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_incomingCaregiverMessage != null) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF22C55E), width: 1.5),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.mark_chat_unread,
+                    color: Color(0xFF16A34A), size: 26),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Message from ${_caregiverSender ?? "Caregiver"}:',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF15803D),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        _incomingCaregiverMessage!,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () =>
+                      setState(() => _incomingCaregiverMessage = null),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (_emergencyAcknowledged) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF3B82F6), width: 1.5),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.verified, color: Color(0xFF2563EB), size: 26),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Caregiver Acknowledged SOS',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1D4ED8),
+                        ),
+                      ),
+                      Text(
+                        'Help is on the way to your bedside now.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF1E40AF)),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () =>
+                      setState(() => _emergencyAcknowledged = false),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildCapabilityPending(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
       children: [
         const _PatientHeader(),
-        const SizedBox(height: 18),
+        const SizedBox(height: 12),
+        _buildCaregiverIncomingAlerts(),
+        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -377,7 +509,9 @@ class _PatientPageState extends State<PatientPage> {
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
       children: [
         const _PatientHeader(),
-        const SizedBox(height: 18),
+        const SizedBox(height: 12),
+        _buildCaregiverIncomingAlerts(),
+        const SizedBox(height: 12),
         _ReassuranceCard(
           online: widget.services.companion.online,
           onTap: () => showAshaChatSheet(
@@ -541,7 +675,9 @@ class _PatientPageState extends State<PatientPage> {
           sliver: SliverList.list(
             children: [
               const _PatientHeader(),
-              const SizedBox(height: 18),
+              const SizedBox(height: 12),
+              _buildCaregiverIncomingAlerts(),
+              const SizedBox(height: 12),
               _ReassuranceCard(
                 online: widget.services.companion.online,
                 onTap: () => showAshaChatSheet(
@@ -970,12 +1106,40 @@ class _PatientHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('NEUROBRIDGE ASHA • PATIENT',
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: const Color(0xFF0B756A),
-                  letterSpacing: 1.6,
-                  fontWeight: FontWeight.w800,
-                )),
+        Row(
+          children: [
+            Text('NEUROBRIDGE ASHA • PATIENT',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: const Color(0xFF0B756A),
+                      letterSpacing: 1.6,
+                      fontWeight: FontWeight.w800,
+                    )),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFD1FAE5),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFA7F3D0)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.wifi, size: 12, color: Color(0xFF065F46)),
+                  SizedBox(width: 4),
+                  Text(
+                    'Bed 101 • LAN Active',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF065F46),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 6),
         Text('You’re not alone.',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
