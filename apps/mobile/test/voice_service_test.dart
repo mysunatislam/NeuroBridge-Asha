@@ -188,6 +188,28 @@ void main() {
       ['I need water, please.', 'Please bring water.'],
     );
   });
+
+  test(
+      'Asha voice initializes with Samantha, normal speech rate, and normal pitch',
+      () async {
+    final preferences = await SharedPreferences.getInstance();
+    final tts = _FakeFlutterTts();
+    final player = _FakeAudioPlayer();
+    final service = PatientVoiceService(
+      preferenceRepository: VoicePreferenceRepository(preferences),
+      recordings: RecordedPhraseRepository(preferences),
+      tts: tts,
+      audioPlayer: player,
+    );
+
+    await service.initialize();
+
+    expect(tts.speechRate, 0.50); // Normal speech rate
+    expect(tts.pitch, 1.00); // Normal pitch
+    expect(tts.configuredVoice?['name'],
+        'com.apple.voice.compact.en-US.Samantha');
+    await service.dispose();
+  });
 }
 
 Future<void> _saveRecordingMetadata(SharedPreferences preferences) {
@@ -244,6 +266,40 @@ class _FakeAudioPlayer implements AudioPlayer {
 
 class _FakeFlutterTts implements FlutterTts {
   final List<String> spoken = [];
+  double? speechRate;
+  double? pitch;
+  Map<String, String>? configuredVoice;
+  List<dynamic> voices = [
+    {'name': 'com.apple.voice.compact.en-US.Samantha', 'locale': 'en-US'},
+    {'name': 'en-us-x-sfg-network', 'locale': 'en-US'},
+  ];
+
+  @override
+  Future<dynamic> get getVoices async => voices;
+
+  @override
+  Future<dynamic> setSpeechRate(double rate) async {
+    speechRate = rate;
+    return 1;
+  }
+
+  @override
+  Future<dynamic> setPitch(double p) async {
+    pitch = p;
+    return 1;
+  }
+
+  @override
+  Future<dynamic> setVoice(Map<String, String> voice) async {
+    configuredVoice = voice;
+    return 1;
+  }
+
+  @override
+  Future<dynamic> setLanguage(String language) async => 1;
+
+  @override
+  Future<dynamic> awaitSpeakCompletion(bool awaitCompletion) async => 1;
 
   @override
   Future<dynamic> speak(String text, {bool focus = false}) async {

@@ -575,10 +575,10 @@ class _SettingsPageState extends State<SettingsPage> {
                       style: const TextStyle(fontWeight: FontWeight.w600)),
                 ]),
                 Slider(
-                  value: _speechRate,
+                  value: _speechRate.clamp(0.25, 1.0),
                   min: 0.25,
-                  max: 0.70,
-                  divisions: 9,
+                  max: 1.0,
+                  divisions: 15,
                   label: _speechRate.toStringAsFixed(2),
                   onChanged: (value) => setState(() => _speechRate = value),
                   onChangeEnd: _saveSpeechRate,

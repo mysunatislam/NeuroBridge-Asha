@@ -12,6 +12,7 @@ const MALE_HINTS = [
 
 function nameScore(name: string, gender: VoiceGender): number {
   const lower = name.toLowerCase();
+  if (lower.includes("samantha")) return 100;
   const preferred = gender === "Female" ? FEMALE_HINTS : MALE_HINTS;
   const opposite = gender === "Female" ? MALE_HINTS : FEMALE_HINTS;
   let score = 0;
@@ -66,9 +67,9 @@ export function speakAsha(text: string, options: {
 
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = options.language === "Bangla" ? "bn-BD" : "en-US";
-  utterance.rate = options.speed === "Slow" ? 0.78 : options.speed === "Fast" ? 1.08 : 0.92;
+  utterance.rate = options.speed === "Slow" ? 0.80 : options.speed === "Fast" ? 1.20 : 1.00;
   const styleOffset = options.style === "Bright" ? .05 : options.style === "Natural" ? -.02 : 0;
-  utterance.pitch = (options.gender === "Female" ? 1.06 : 0.92) + styleOffset;
+  utterance.pitch = 1.00 + styleOffset;
 
   // Only pin a voice when it actually matches the selected language.
   // If a device has no explicit Bengali voice, leaving voice unset lets the

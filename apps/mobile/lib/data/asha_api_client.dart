@@ -19,7 +19,7 @@ class AshaApiClient {
     http.Client? client,
     this.bearerTokenProvider,
     this.geminiApiKeyProvider,
-    this.geminiModel = 'gemini-2.0-flash',
+    this.geminiModel = 'gemini-flash-latest',
   })  : _baseUri = baseUri,
         _client = client ?? http.Client();
 
@@ -120,8 +120,12 @@ class AshaApiClient {
     String? preferredName,
     String careMode = 'continuous',
   }) async {
+    final modelName =
+        (geminiModel.isEmpty || geminiModel.startsWith('gemini-2.0'))
+            ? 'gemini-flash-latest'
+            : geminiModel;
     final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$geminiModel:generateContent?key=$apiKey',
+      'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey',
     );
 
     final systemInstruction =

@@ -375,7 +375,9 @@ void main() {
     final repo = VoicePreferenceRepository(prefs);
 
     final initial = repo.load();
-    expect(initial.pitch, 1.20);
+    expect(initial.pitch, 1.00);
+    expect(initial.speechRate, 0.50);
+    expect(initial.ttsVoiceName, 'Samantha');
     expect(initial.volume, 1.0);
     expect(
         initial.playbackPreference, PlaybackPreference.caregiverRecordingFirst);

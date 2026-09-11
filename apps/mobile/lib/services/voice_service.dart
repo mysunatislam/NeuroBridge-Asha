@@ -21,12 +21,13 @@ class VoicePreferences {
   const VoicePreferences({
     this.automaticallySpeak = true,
     this.phraseMode = PhraseVoiceMode.caregiverRecording,
-    this.ttsVoiceName,
-    this.speechRate = 0.46,
-    this.pitch = 1.20,
+    this.ttsVoiceName = 'Samantha',
+    this.speechRate = 0.50,
+    this.pitch = 1.00,
     this.volume = 1.0,
     this.playbackPreference = PlaybackPreference.caregiverRecordingFirst,
   });
+
 
   final bool automaticallySpeak;
   final PhraseVoiceMode phraseMode;
@@ -118,9 +119,9 @@ class VoicePreferenceRepository {
         (mode) => mode.name == modeName,
         orElse: () => PhraseVoiceMode.caregiverRecording,
       ),
-      ttsVoiceName: _preferences.getString(_nameKey),
-      speechRate: _preferences.getDouble(_rateKey) ?? 0.46,
-      pitch: _preferences.getDouble(_pitchKey) ?? 1.20,
+      ttsVoiceName: _preferences.getString(_nameKey) ?? 'Samantha',
+      speechRate: _preferences.getDouble(_rateKey) ?? 0.50,
+      pitch: _preferences.getDouble(_pitchKey) ?? 1.00,
       volume: _preferences.getDouble(_volumeKey) ?? 1.0,
       playbackPreference: PlaybackPreference.values.firstWhere(
         (p) => p.name == playbackPrefName,
@@ -338,23 +339,34 @@ class PatientVoiceService {
       } catch (_) {}
       await _tts.setLanguage(locale);
       await _tts.setSpeechRate(preferences.speechRate);
-      await _tts.setPitch(1.20); // Reassuring, clear female pitch
+      await _tts.setPitch(preferences.pitch);
       await _tts.awaitSpeakCompletion(true);
-      var voice = preferences.ttsVoiceName;
-      if (voice == null) {
-        final allVoices = await availableVoiceNames();
-        final femaleVoice = allVoices.cast<String?>().firstWhere(
-              (v) =>
-                  v != null &&
-                  RegExp(r'(female|zira|samantha|karen|victoria|eva|jenny|aria|sfg)',
-                          caseSensitive: false)
-                      .hasMatch(v),
-              orElse: () => null,
-            );
-        if (femaleVoice != null) {
-          voice = femaleVoice;
+      final allVoices = await availableVoiceNames();
+
+      // Look specifically for Samantha first
+      String? voice = allVoices.cast<String?>().firstWhere(
+            (v) => v != null && v.toLowerCase().contains('samantha'),
+            orElse: () => null,
+          );
+
+      // If Samantha is not found, check if a custom voice was explicitly configured
+      if (voice == null &&
+          preferences.ttsVoiceName != null &&
+          preferences.ttsVoiceName!.isNotEmpty) {
+        if (allVoices.contains(preferences.ttsVoiceName)) {
+          voice = preferences.ttsVoiceName;
         }
       }
+
+      // Otherwise fall back to a clear natural female voice
+      voice ??= allVoices.cast<String?>().firstWhere(
+            (v) =>
+                v != null &&
+                RegExp(r'(female|zira|karen|victoria|eva|jenny|aria|sfg)',
+                        caseSensitive: false)
+                    .hasMatch(v),
+            orElse: () => null,
+          );
       if (voice != null) {
         await _tts.setVoice(<String, String>{'name': voice, 'locale': locale});
       }
@@ -387,8 +399,17 @@ class PatientVoiceService {
       if (voice == null) {
         await _tts.setLanguage(_locale);
       } else {
+        String targetVoice = voice;
+        if (voice.toLowerCase().contains('samantha')) {
+          final allVoices = await availableVoiceNames();
+          final sam = allVoices.cast<String?>().firstWhere(
+                (v) => v != null && v.toLowerCase().contains('samantha'),
+                orElse: () => null,
+              );
+          if (sam != null) targetVoice = sam;
+        }
         await _tts.setVoice(<String, String>{
-          'name': voice,
+          'name': targetVoice,
           'locale': _locale,
         });
       }

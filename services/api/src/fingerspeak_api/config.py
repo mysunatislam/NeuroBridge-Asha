@@ -54,7 +54,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GEMINI_API_KEY", "FINGERSPEAK_GEMINI_API_KEY"),
         repr=False,
     )
-    gemini_model: str = Field(default="gemini-2.0-flash", min_length=1, max_length=100)
+    gemini_model: str = Field(default="gemini-flash-latest", min_length=1, max_length=100)
     gemini_timeout_seconds: float = Field(default=12.0, ge=1.0, le=30.0)
     gemini_max_output_tokens: int = Field(default=500, ge=64, le=2_000)
     log_level: str = "INFO"

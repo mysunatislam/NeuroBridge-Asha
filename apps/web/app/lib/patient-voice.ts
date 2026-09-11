@@ -83,7 +83,7 @@ export function createDefaultPatientSpeechSettings(profileId: string, now = new 
   requireId(profileId, "profile id");
   return {
     id: patientSpeechSettingsId(profileId), profileId, preference: "caregiver-recording-first",
-    preferredVoiceUri: null, language: "en-US", rate: 0.92, pitch: 1.20, volume: 1, updatedAt: now.toISOString(),
+    preferredVoiceUri: null, language: "en-US", rate: 1.0, pitch: 1.0, volume: 1, updatedAt: now.toISOString(),
   };
 }
 
@@ -226,9 +226,12 @@ export function selectSystemVoice(voices: ReadonlyArray<SystemVoiceDescriptor>, 
     if (preferred) return preferred;
   }
   const language = settings.language.toLocaleLowerCase("en-US");
-  const femaleMatch = (name: string) => /(female|zira|samantha|karen|victoria|eva|jenny|aria|sfg)/i.test(name);
+  const isSamantha = (name: string) => name.toLowerCase().includes("samantha");
+  const femaleMatch = (name: string) => /(samantha|female|zira|karen|victoria|eva|jenny|aria|sfg)/i.test(name);
 
-  return voices.find((voice) => voice.localService && voice.lang.toLocaleLowerCase("en-US") === language && femaleMatch(voice.voiceURI))
+  return voices.find((voice) => isSamantha(voice.voiceURI))
+    ?? voices.find((voice) => voice.localService && isSamantha(voice.voiceURI))
+    ?? voices.find((voice) => voice.localService && voice.lang.toLocaleLowerCase("en-US") === language && femaleMatch(voice.voiceURI))
     ?? voices.find((voice) => voice.localService && voice.lang.toLocaleLowerCase("en-US") === language)
     ?? voices.find((voice) => voice.lang.toLocaleLowerCase("en-US") === language && femaleMatch(voice.voiceURI))
     ?? voices.find((voice) => voice.localService && voice.lang.toLocaleLowerCase("en-US").startsWith(language.split("-")[0]))

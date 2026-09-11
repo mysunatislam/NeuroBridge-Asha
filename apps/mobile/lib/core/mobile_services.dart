@@ -74,6 +74,12 @@ class MobileServices {
   static Future<MobileServices> create() async {
     final config = AppConfig.fromEnvironment();
     final preferences = await SharedPreferences.getInstance();
+    final savedGeminiKey = preferences.getString('gemini.api_key');
+    if (savedGeminiKey == null || savedGeminiKey.trim().isEmpty) {
+      if (config.geminiApiKey.isNotEmpty) {
+        await preferences.setString('gemini.api_key', config.geminiApiKey);
+      }
+    }
     final roleRepository = UserRoleRepository(preferences);
     final patientAccessMethodRepository =
         PatientAccessMethodRepository(preferences);
