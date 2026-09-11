@@ -209,3 +209,28 @@ async def test_agent_runner_peec_full_loop(offline_runner: AgentRunner) -> None:
     assert output.verification["safety_passed"] is True
     assert isinstance(output.memory_recalled, list)
 
+
+@pytest.mark.asyncio
+async def test_agent_runner_explicit_offline_mode(tool_registry: AgentToolRegistry) -> None:
+    runner = AgentRunner(
+        tool_registry=tool_registry,
+        llm_provider="offline",
+        gemini_api_key="mock_gemini_key",
+    )
+    output = await runner.run("I am thirsty, get me water")
+    assert output.mode == "offline-agent"
+    assert any(a.tool_name == "manage_care_routine" for a in output.actions_executed)
+
+
+def test_agent_runner_ollama_configuration(tool_registry: AgentToolRegistry) -> None:
+    runner = AgentRunner(
+        tool_registry=tool_registry,
+        openai_base_url="http://localhost:11434/v1",
+        openai_model="llama3.2:3b",
+        llm_provider="ollama",
+    )
+    assert runner._openai_base_url == "http://localhost:11434/v1"
+    assert runner._openai_model == "llama3.2:3b"
+    assert runner._llm_provider == "ollama"
+
+

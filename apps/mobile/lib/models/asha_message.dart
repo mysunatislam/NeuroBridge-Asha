@@ -173,8 +173,15 @@ class AshaReply {
   final List<AshaMemoryFact> memoryRecalled;
 
   bool get isOnline =>
-      mode == 'llm' || mode == 'gemini-agent' || mode == 'openai-agent';
+      mode == 'llm' ||
+      mode == 'gemini-agent' ||
+      mode == 'openai-agent' ||
+      mode == 'local-llm-agent';
 
   bool get isAgentMode =>
-      mode == 'gemini-agent' || mode == 'openai-agent' || mode == 'offline-agent';
+      mode == 'gemini-agent' ||
+      mode == 'openai-agent' ||
+      mode == 'offline-agent' ||
+      mode == 'offline-rag-agent' ||
+      mode == 'local-llm-agent';
 }

@@ -396,6 +396,8 @@ def build_asha_service(settings: Settings) -> AshaService:
         gemini_model=settings.gemini_model,
         openai_api_key=openai_key.get_secret_value() if openai_key is not None else None,
         openai_model=settings.openai_model,
+        openai_base_url=settings.openai_base_url,
+        llm_provider=settings.llm_provider,
         timeout_seconds=settings.gemini_timeout_seconds,
         max_output_tokens=settings.gemini_max_output_tokens,
     )

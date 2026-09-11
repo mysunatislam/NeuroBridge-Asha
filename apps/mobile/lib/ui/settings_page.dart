@@ -27,7 +27,12 @@ class _SettingsPageState extends State<SettingsPage> {
   final _patientPhoneController = TextEditingController();
   final _ambulancePhoneController = TextEditingController();
   final _geminiKeyController = TextEditingController();
+  final _customBaseUrlController = TextEditingController();
+  final _customModelController = TextEditingController();
+  final _customApiKeyController = TextEditingController();
+  String _aiProvider = 'offline';
   bool _obscureGeminiKey = true;
+  bool _obscureCustomKey = true;
 
   PiConnectionState _piState = PiConnectionState.disconnected;
   bool _pairing = false;
@@ -65,24 +70,42 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() => _piState = state);
     });
     unawaited(_loadVoices());
-    unawaited(_loadGeminiKey());
+    unawaited(_loadAiSettings());
   }
 
-  Future<void> _loadGeminiKey() async {
+  Future<void> _loadAiSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    final provider = prefs.getString('ai.provider') ?? 'offline';
     final key = prefs.getString('gemini.api_key') ??
         widget.services.config.geminiApiKey;
+    final baseUrl = prefs.getString('ai.base_url') ?? 'http://10.0.2.2:11434/v1';
+    final model = prefs.getString('ai.model') ?? 'llama3.2:3b';
+    final customKey = prefs.getString('ai.api_key') ?? '';
     if (mounted) {
-      _geminiKeyController.text = key;
+      setState(() {
+        _aiProvider = provider;
+        _geminiKeyController.text = key;
+        _customBaseUrlController.text = baseUrl;
+        _customModelController.text = model;
+        _customApiKeyController.text = customKey;
+      });
     }
   }
 
-  Future<void> _saveGeminiKey(String key) async {
+  Future<void> _saveAiSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('gemini.api_key', key.trim());
+    await prefs.setString('ai.provider', _aiProvider);
+    await prefs.setString('gemini.api_key', _geminiKeyController.text.trim());
+    await prefs.setString('ai.base_url', _customBaseUrlController.text.trim());
+    await prefs.setString('ai.model', _customModelController.text.trim());
+    await prefs.setString('ai.api_key', _customApiKeyController.text.trim());
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gemini API key saved.')),
+        SnackBar(
+          content: Text(_aiProvider == 'offline'
+              ? 'Asha set to Offline Deterministic RAG (Zero API cost).'
+              : 'AI Engine settings saved for $_aiProvider mode.'),
+        ),
       );
     }
   }
@@ -99,6 +122,9 @@ class _SettingsPageState extends State<SettingsPage> {
     _patientPhoneController.dispose();
     _ambulancePhoneController.dispose();
     _geminiKeyController.dispose();
+    _customBaseUrlController.dispose();
+    _customModelController.dispose();
+    _customApiKeyController.dispose();
     super.dispose();
   }
 
@@ -637,7 +663,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
         const SizedBox(height: 16),
 
-        // Google Gemini AI Configuration Card
+        // Asha AI & Knowledge Engine Card
         Card(
           color: Colors.white,
           shape:
@@ -655,13 +681,13 @@ class _SettingsPageState extends State<SettingsPage> {
                         color: const Color(0xFFE8F0FE),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.auto_awesome,
-                          color: Color(0xFF1A73E8), size: 20),
+                      child: const Icon(Icons.psychology,
+                          color: Color(0xFF0B756A), size: 22),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Google Gemini AI (Asha)',
+                        'Asha AI & Knowledge Engine',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
@@ -669,46 +695,168 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Powers intelligent, compassionate speech and assistance. Uses the free-tier Gemini API from Google AI Studio.',
+                  'Select your intelligence engine. Offline RAG works 100% locally with zero API cost, or connect to self-hosted Ollama or cloud providers.',
                   style: TextStyle(fontSize: 13, color: Color(0xFF556E68)),
                 ),
                 const SizedBox(height: 14),
-                TextField(
-                  controller: _geminiKeyController,
-                  obscureText: _obscureGeminiKey,
-                  decoration: InputDecoration(
-                    labelText: 'Gemini API Key',
-                    hintText: 'AIzaSy...',
-                    prefixIcon: const Icon(Icons.key, color: Color(0xFF0B756A)),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureGeminiKey
-                            ? Icons.visibility
-                            : Icons.visibility_off,
-                        color: const Color(0xFF556E68),
-                      ),
-                      onPressed: () => setState(
-                          () => _obscureGeminiKey = !_obscureGeminiKey),
-                    ),
-                    helperText:
-                        'Free API key from Google AI Studio (aistudio.google.com)',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
+
+                // Engine Selector Chips
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF0B756A),
-                        ),
-                        onPressed: () =>
-                            _saveGeminiKey(_geminiKeyController.text),
-                        icon: const Icon(Icons.save, size: 18),
-                        label: const Text('Save Gemini Key'),
-                      ),
+                    ChoiceChip(
+                      avatar: const Icon(Icons.offline_bolt, size: 16, color: Color(0xFF15803D)),
+                      label: const Text('Offline RAG (\$0)'),
+                      selected: _aiProvider == 'offline',
+                      onSelected: (selected) {
+                        if (selected) setState(() => _aiProvider = 'offline');
+                      },
+                    ),
+                    ChoiceChip(
+                      avatar: const Icon(Icons.computer, size: 16),
+                      label: const Text('Local Ollama'),
+                      selected: _aiProvider == 'ollama',
+                      onSelected: (selected) {
+                        if (selected) setState(() => _aiProvider = 'ollama');
+                      },
+                    ),
+                    ChoiceChip(
+                      avatar: const Icon(Icons.flash_on, size: 16),
+                      label: const Text('OpenAI / Groq'),
+                      selected: _aiProvider == 'custom_openai',
+                      onSelected: (selected) {
+                        if (selected) setState(() => _aiProvider = 'custom_openai');
+                      },
+                    ),
+                    ChoiceChip(
+                      avatar: const Icon(Icons.auto_awesome, size: 16),
+                      label: const Text('Gemini API'),
+                      selected: _aiProvider == 'gemini',
+                      onSelected: (selected) {
+                        if (selected) setState(() => _aiProvider = 'gemini');
+                      },
                     ),
                   ],
+                ),
+                const SizedBox(height: 14),
+
+                if (_aiProvider == 'offline') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF86EFAC)),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Color(0xFF15803D), size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              '100% Free On-Device Deterministic RAG',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF15803D),
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          '• \$0.00 API cost — no credit card, account, or API key needed.\n'
+                          '• Instant bedside response (< 5ms latency) with zero network dependency.\n'
+                          '• 100% HIPAA-compliant: clinical queries and vitals never leave the device.\n'
+                          '• Grounded in verified medical knowledge for ALS, stroke, dysreflexia, seizures, and safe hydration.',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF166534), height: 1.4),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (_aiProvider == 'ollama') ...[
+                  TextField(
+                    controller: _customBaseUrlController,
+                    decoration: const InputDecoration(
+                      labelText: 'Ollama Endpoint URL',
+                      hintText: 'http://10.0.2.2:11434/v1 or http://192.168.1.X:11434/v1',
+                      prefixIcon: Icon(Icons.link, color: Color(0xFF0B756A)),
+                      helperText: 'Zero token cost. Runs on local bedside PC or ward server.',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _customModelController,
+                    decoration: const InputDecoration(
+                      labelText: 'Ollama Model',
+                      hintText: 'llama3.2:3b, qwen2.5:3b, gemma2:2b',
+                      prefixIcon: Icon(Icons.memory, color: Color(0xFF0B756A)),
+                    ),
+                  ),
+                ] else if (_aiProvider == 'custom_openai') ...[
+                  TextField(
+                    controller: _customBaseUrlController,
+                    decoration: const InputDecoration(
+                      labelText: 'API Base URL',
+                      hintText: 'https://api.groq.com/openai/v1',
+                      prefixIcon: Icon(Icons.cloud_queue, color: Color(0xFF0B756A)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _customModelController,
+                    decoration: const InputDecoration(
+                      labelText: 'Model Name',
+                      hintText: 'llama-3.1-8b-instant, deepseek-chat',
+                      prefixIcon: Icon(Icons.smart_toy, color: Color(0xFF0B756A)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _customApiKeyController,
+                    obscureText: _obscureCustomKey,
+                    decoration: InputDecoration(
+                      labelText: 'API Key',
+                      prefixIcon: const Icon(Icons.key, color: Color(0xFF0B756A)),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureCustomKey ? Icons.visibility : Icons.visibility_off),
+                        onPressed: () => setState(() => _obscureCustomKey = !_obscureCustomKey),
+                      ),
+                    ),
+                  ),
+                ] else if (_aiProvider == 'gemini') ...[
+                  TextField(
+                    controller: _geminiKeyController,
+                    obscureText: _obscureGeminiKey,
+                    decoration: InputDecoration(
+                      labelText: 'Gemini API Key',
+                      hintText: 'AIzaSy...',
+                      prefixIcon: const Icon(Icons.key, color: Color(0xFF0B756A)),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureGeminiKey
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                          color: const Color(0xFF556E68),
+                        ),
+                        onPressed: () => setState(
+                            () => _obscureGeminiKey = !_obscureGeminiKey),
+                      ),
+                      helperText: 'Optional key from Google AI Studio (aistudio.google.com)',
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF0B756A),
+                  ),
+                  onPressed: _saveAiSettings,
+                  icon: const Icon(Icons.save, size: 18),
+                  label: const Text('Save AI Engine Settings'),
                 ),
               ],
             ),

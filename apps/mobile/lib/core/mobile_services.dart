@@ -143,6 +143,10 @@ class MobileServices {
           return config.geminiApiKey.isNotEmpty ? config.geminiApiKey : null;
         },
         geminiModel: config.geminiModel,
+        aiProviderProvider: () async => preferences.getString('ai.provider'),
+        customBaseUrlProvider: () async => preferences.getString('ai.base_url'),
+        customApiKeyProvider: () async => preferences.getString('ai.api_key'),
+        customModelProvider: () async => preferences.getString('ai.model'),
       ),
       voice: voice,
       locale: config.locale,

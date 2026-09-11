@@ -73,6 +73,8 @@ class AgentRunner:
         gemini_model: str = "gemini-flash-latest",
         openai_api_key: str | None = None,
         openai_model: str = "gpt-4o-mini",
+        openai_base_url: str | None = None,
+        llm_provider: str = "auto",
         timeout_seconds: float = 12.0,
         max_output_tokens: int = 500,
         locale: str = "en-US",
@@ -85,6 +87,8 @@ class AgentRunner:
         self._gemini_model = gemini_model
         self._openai_key = openai_api_key
         self._openai_model = openai_model
+        self._openai_base_url = openai_base_url
+        self._llm_provider = llm_provider
         self._timeout = timeout_seconds
         self._max_tokens = max_output_tokens
         self._locale = locale
@@ -121,13 +125,19 @@ class AgentRunner:
         # -------------------------------------------------------------
         raw_output: AgentOutput | None = None
 
-        if self._gemini_key:
+        if self._llm_provider == "offline":
+            raw_output = await self._run_offline(message, context, plan_steps)
+        elif self._gemini_key and self._llm_provider in ("auto", "gemini"):
             try:
                 raw_output = await self._run_gemini(message, context, plan_steps)
             except Exception:
                 raw_output = None
 
-        if raw_output is None and self._openai_key:
+        if (
+            raw_output is None
+            and (self._openai_key or self._openai_base_url)
+            and self._llm_provider in ("auto", "openai", "ollama")
+        ):
             try:
                 raw_output = await self._run_openai(message, context, plan_steps)
             except Exception:
@@ -299,6 +309,12 @@ class AgentRunner:
         ]
         tool_rounds = 0
 
+        base_url = (self._openai_base_url or "https://api.openai.com/v1").rstrip("/")
+        endpoint = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if self._openai_key:
+            headers["Authorization"] = f"Bearer {self._openai_key}"
+
         async with httpx.AsyncClient(timeout=httpx.Timeout(self._timeout)) as client:
             while tool_rounds < MAX_TOOL_ROUNDS:
                 payload = {
@@ -310,11 +326,8 @@ class AgentRunner:
                     "temperature": 0.3,
                 }
                 resp = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self._openai_key}",
-                        "Content-Type": "application/json",
-                    },
+                    endpoint,
+                    headers=headers,
                     json=payload,
                 )
                 resp.raise_for_status()

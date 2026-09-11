@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     alert_replay_limit: int = Field(default=100, ge=1, le=500)
     device_online_ttl_seconds: int = Field(default=30, ge=5, le=300)
     device_caption_ttl_seconds: int = Field(default=120, ge=10, le=300)
+    openai_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_BASE_URL", "OLLAMA_BASE_URL", "LLM_BASE_URL"),
+    )
+    llm_provider: str = Field(default="auto", min_length=1, max_length=50)
     openai_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("OPENAI_API_KEY", "FINGERSPEAK_OPENAI_API_KEY"),
@@ -62,6 +67,7 @@ class Settings(BaseSettings):
     @field_validator(
         "gateway_hmac_secret",
         "openai_api_key",
+        "openai_base_url",
         "openai_vector_store_id",
         "gemini_api_key",
         mode="before",

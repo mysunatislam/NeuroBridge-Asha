@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fingerspeak_mobile/data/asha_api_client.dart';
+import 'package:fingerspeak_mobile/data/asha_offline_agent.dart';
 import 'package:fingerspeak_mobile/models/asha_message.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/services/voice_service.dart';
@@ -11,11 +12,14 @@ class CompanionController extends ChangeNotifier {
     required AshaApiClient api,
     required PatientVoiceService voice,
     required this.locale,
+    AshaOfflineAgent? offlineAgent,
   })  : _api = api,
-        _voice = voice;
+        _voice = voice,
+        _offlineAgent = offlineAgent ?? AshaOfflineAgent();
 
   final AshaApiClient _api;
   final PatientVoiceService _voice;
+  final AshaOfflineAgent _offlineAgent;
   final String locale;
   final List<AshaMessage> _messages = [];
   Timer? _checkInTimer;
@@ -107,7 +111,11 @@ class CompanionController extends ChangeNotifier {
       _previousResponseId = reply.previousResponseId;
     } on AshaUnavailableException {
       _online = false;
-      reply = _fallbackResponseFor(message, role: role);
+      reply = _fallbackResponseFor(
+        message,
+        role: role,
+        preferredName: preferredName,
+      );
     }
     _messages.add(AshaMessage(
       role: AshaMessageRole.asha,
@@ -126,43 +134,16 @@ class CompanionController extends ChangeNotifier {
     await _voice.speakAsha(reply.text, force: reply.urgent);
   }
 
-  AshaReply _fallbackResponseFor(String query, {required UserRole role}) {
-    final lower = query.toLowerCase();
-    if (lower.contains('seizure') || lower.contains('convulsion') || lower.contains('jerking') || lower.contains('fit')) {
-      return const AshaReply(
-        text: 'SEIZURE FIRST AID:\n'
-            '1. Clear all sharp or hard objects around the wheelchair.\n'
-            '2. Do NOT restrain the patient or place anything in their mouth.\n'
-            '3. Gently support and cushion their head.\n'
-            '4. Turn onto side (recovery position) once jerking stops to keep airway clear.\n'
-            '5. Time the seizure. If it lasts over 5 minutes or patient is injured, call 911 / Ambulance immediately.',
-        mode: 'emergency_protocol',
-        urgent: true,
-      );
-    }
-    if (lower.contains('chok') || lower.contains('cannot breathe') || lower.contains('cant breathe') || lower.contains('breath')) {
-      return const AshaReply(
-        text: 'BREATHING DISTRESS / CHOKING:\n'
-            '1. Sit the patient upright and check if airway is obstructed.\n'
-            '2. Encourage coughing if conscious. For choking, perform back blows / abdominal thrusts.\n'
-            '3. Loosen tight clothing around neck and chest.\n'
-            '4. If breathing stops or worsens, call emergency ambulance immediately.',
-        mode: 'emergency_protocol',
-        urgent: true,
-      );
-    }
-    if (role == UserRole.caregiver) {
-      return const AshaReply(
-        text: 'I am here with you. The online service is offline, but emergency guidance, local patient signal alerts, and wheelchair controls remain active.',
-        mode: 'offline',
-        urgent: false,
-      );
-    }
-    return const AshaReply(
-      text: 'I’m here with you. The online service is unavailable, but your '
-          'local voice, reminders, camera signals, and caregiver contact still work.',
-      mode: 'offline',
-      urgent: false,
+  AshaReply _fallbackResponseFor(
+    String query, {
+    required UserRole role,
+    String? preferredName,
+  }) {
+    return _offlineAgent.process(
+      message: query,
+      locale: locale,
+      preferredName: preferredName,
+      role: role,
     );
   }
 
