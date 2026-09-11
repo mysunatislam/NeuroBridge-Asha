@@ -150,9 +150,62 @@ async def test_agent_output_always_has_quick_actions(offline_runner: AgentRunner
 
 
 def test_tool_definitions_schema_is_well_formed() -> None:
-    assert len(TOOL_DEFINITIONS) == 6
+    assert len(TOOL_DEFINITIONS) == 9
     for td in TOOL_DEFINITIONS:
         assert td["type"] == "function"
         assert "name" in td["function"]
         assert "description" in td["function"]
         assert "parameters" in td["function"]
+
+
+@pytest.mark.asyncio
+async def test_patient_memory_store_and_recall() -> None:
+    from fingerspeak_api.services.agent.memory import PatientMemoryEngine
+
+    engine = PatientMemoryEngine()
+    engine.store("pat_1", "preference", "drinking_preference", "cold water with flexible straw")
+    engine.store("pat_1", "caregiver_info", "primary_caregiver", "Sarah Jenkins")
+
+    recalled = engine.recall("straw water", profile_id="pat_1")
+    assert len(recalled) > 0
+    assert recalled[0].key == "drinking_preference"
+    assert "straw" in recalled[0].value
+
+
+@pytest.mark.asyncio
+async def test_task_planner_multi_step_goal_decomposition() -> None:
+    from fingerspeak_api.services.agent.planner import TaskPlanner
+
+    planner = TaskPlanner()
+    steps = planner.plan("Check my wheelchair battery and tell my caregiver I need help")
+    tool_names = [s.tool_name for s in steps]
+    assert "check_device_telemetry" in tool_names
+    assert "trigger_caregiver_alert" in tool_names
+    assert len(steps) >= 2
+
+
+@pytest.mark.asyncio
+async def test_verification_engine_detects_prohibited_diagnosis() -> None:
+    from fingerspeak_api.services.agent.verifier import VerificationEngine
+
+    verifier = VerificationEngine()
+    result = verifier.evaluate(
+        user_message="I have a headache",
+        draft_reply="You have developed severe migraine, I prescribe you ibuprofen.",
+        actions_executed=[],
+    )
+    assert result.is_verified is False
+    assert result.safety_passed is False
+    assert "diagnosis" in result.critique_notes.lower() or "prescrib" in result.critique_notes.lower()
+
+
+@pytest.mark.asyncio
+async def test_agent_runner_peec_full_loop(offline_runner: AgentRunner) -> None:
+    output = await offline_runner.run("Please check my battery and call my caregiver")
+    assert output.mode == "offline-agent"
+    assert len(output.plan) >= 2
+    assert output.verification is not None
+    assert output.verification["is_verified"] is True
+    assert output.verification["safety_passed"] is True
+    assert isinstance(output.memory_recalled, list)
+

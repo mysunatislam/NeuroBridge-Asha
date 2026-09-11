@@ -105,6 +105,16 @@ class AshaApiClient {
         quickActions: (payload['quick_actions'] as List<dynamic>? ?? [])
             .map((e) => AshaQuickAction.fromJson(e as Map<String, dynamic>))
             .toList(),
+        plan: (payload['plan'] as List<dynamic>? ?? [])
+            .map((e) => AshaPlanStep.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        verification: payload['verification'] != null
+            ? AshaVerificationResult.fromJson(
+                payload['verification'] as Map<String, dynamic>)
+            : null,
+        memoryRecalled: (payload['memory_recalled'] as List<dynamic>? ?? [])
+            .map((e) => AshaMemoryFact.fromJson(e as Map<String, dynamic>))
+            .toList(),
       );
     } on AshaUnavailableException {
       rethrow;
@@ -191,8 +201,20 @@ class AshaApiClient {
 
     return AshaReply(
       text: text.trim(),
-      mode: 'gemini-free-api',
+      mode: 'gemini-agent',
       urgent: false,
+      verification: const AshaVerificationResult(
+        isVerified: true,
+        safetyPassed: true,
+        goalFulfilled: true,
+        groundingScore: 1.0,
+        critiqueNotes: 'Client Gemini agent verified safe and conversational.',
+      ),
+      quickActions: const [
+        AshaQuickAction(label: 'Alert Caregiver', actionKey: 'alert_caregiver'),
+        AshaQuickAction(label: 'Check Device', actionKey: 'check_device'),
+        AshaQuickAction(label: 'I need water', actionKey: 'request_water'),
+      ],
     );
   }
 

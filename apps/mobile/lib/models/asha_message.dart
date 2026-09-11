@@ -54,6 +54,73 @@ class AshaCitation {
       );
 }
 
+/// A planned step in Asha's multi-step autonomous execution plan.
+class AshaPlanStep {
+  const AshaPlanStep({
+    required this.stepNumber,
+    required this.toolName,
+    required this.purpose,
+    this.status = 'completed',
+  });
+
+  final int stepNumber;
+  final String toolName;
+  final String purpose;
+  final String status;
+
+  factory AshaPlanStep.fromJson(Map<String, dynamic> json) => AshaPlanStep(
+        stepNumber: json['step_number'] as int? ?? 1,
+        toolName: json['tool_name'] as String? ?? '',
+        purpose: json['purpose'] as String? ?? '',
+        status: json['status'] as String? ?? 'completed',
+      );
+}
+
+/// The result of Asha's closed-loop verification critic.
+class AshaVerificationResult {
+  const AshaVerificationResult({
+    required this.isVerified,
+    required this.safetyPassed,
+    required this.goalFulfilled,
+    this.groundingScore = 1.0,
+    this.critiqueNotes = '',
+  });
+
+  final bool isVerified;
+  final bool safetyPassed;
+  final bool goalFulfilled;
+  final double groundingScore;
+  final String critiqueNotes;
+
+  factory AshaVerificationResult.fromJson(Map<String, dynamic> json) =>
+      AshaVerificationResult(
+        isVerified: json['is_verified'] as bool? ?? true,
+        safetyPassed: json['safety_passed'] as bool? ?? true,
+        goalFulfilled: json['goal_fulfilled'] as bool? ?? true,
+        groundingScore: (json['grounding_score'] as num?)?.toDouble() ?? 1.0,
+        critiqueNotes: json['critique_notes'] as String? ?? '',
+      );
+}
+
+/// A recalled or stored patient memory fact.
+class AshaMemoryFact {
+  const AshaMemoryFact({
+    required this.category,
+    required this.key,
+    required this.value,
+  });
+
+  final String category;
+  final String key;
+  final String value;
+
+  factory AshaMemoryFact.fromJson(Map<String, dynamic> json) => AshaMemoryFact(
+        category: json['category'] as String? ?? '',
+        key: json['key'] as String? ?? '',
+        value: json['value'] as String? ?? '',
+      );
+}
+
 class AshaMessage {
   const AshaMessage({
     required this.role,
@@ -63,6 +130,9 @@ class AshaMessage {
     this.actionsExecuted = const [],
     this.citations = const [],
     this.quickActions = const [],
+    this.plan = const [],
+    this.verification,
+    this.memoryRecalled = const [],
   });
 
   final AshaMessageRole role;
@@ -72,6 +142,9 @@ class AshaMessage {
   final List<AshaToolExecution> actionsExecuted;
   final List<AshaCitation> citations;
   final List<AshaQuickAction> quickActions;
+  final List<AshaPlanStep> plan;
+  final AshaVerificationResult? verification;
+  final List<AshaMemoryFact> memoryRecalled;
 }
 
 class AshaReply {
@@ -83,6 +156,9 @@ class AshaReply {
     this.actionsExecuted = const [],
     this.citations = const [],
     this.quickActions = const [],
+    this.plan = const [],
+    this.verification,
+    this.memoryRecalled = const [],
   });
 
   final String text;
@@ -92,6 +168,9 @@ class AshaReply {
   final List<AshaToolExecution> actionsExecuted;
   final List<AshaCitation> citations;
   final List<AshaQuickAction> quickActions;
+  final List<AshaPlanStep> plan;
+  final AshaVerificationResult? verification;
+  final List<AshaMemoryFact> memoryRecalled;
 
   bool get isOnline =>
       mode == 'llm' || mode == 'gemini-agent' || mode == 'openai-agent';

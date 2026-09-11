@@ -39,6 +39,22 @@ async def test_asha_api_works_without_provider_configuration(client: httpx.Async
     assert isinstance(response.json()["citations"], list)
 
 
+async def test_asha_api_returns_agentic_metadata(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/v1/asha/chat",
+        headers=OWNER_HEADERS,
+        json={"message": "Check my battery and tell my caregiver I need water", "locale": "en-US"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["mode"] == "offline-agent"
+    assert "plan" in data and len(data["plan"]) >= 2
+    assert "verification" in data and data["verification"] is not None
+    assert data["verification"]["is_verified"] is True
+    assert "memory_recalled" in data
+
+
+
 async def test_asha_uses_injected_provider_without_a_live_call() -> None:
     provider = FakeProvider()
     service = AshaService(provider)

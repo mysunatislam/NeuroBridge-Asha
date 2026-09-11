@@ -13,12 +13,18 @@ from fingerspeak_api.schemas import (
     AshaChatRequest,
     AshaChatResponse,
     AshaCitation,
+    AshaMemoryFact,
     AshaPatientContext,
+    AshaPlanStep,
     AshaQuickAction,
     AshaToolExecution,
+    AshaVerificationResult,
 )
 from fingerspeak_api.services.agent.agent_runner import AgentOutput, AgentRunner
+from fingerspeak_api.services.agent.memory import PatientMemoryEngine
+from fingerspeak_api.services.agent.planner import TaskPlanner
 from fingerspeak_api.services.agent.tools import AgentToolRegistry
+from fingerspeak_api.services.agent.verifier import VerificationEngine
 from fingerspeak_api.services.rag.engine import EmbeddedRAGRetriever
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
@@ -278,6 +284,15 @@ class AshaService:
                 output: AgentOutput = await self._agent_runner.run(request.message, context)
                 reply = _bounded_reply(output.reply)
                 if reply:
+                    verification_res = None
+                    if output.verification is not None:
+                        verification_res = AshaVerificationResult(
+                            is_verified=output.verification.get("is_verified", True),
+                            safety_passed=output.verification.get("safety_passed", True),
+                            goal_fulfilled=output.verification.get("goal_fulfilled", True),
+                            grounding_score=output.verification.get("grounding_score", 1.0),
+                            critique_notes=output.verification.get("critique_notes", ""),
+                        )
                     return AshaChatResponse(
                         reply=reply,
                         mode=output.mode,
@@ -300,6 +315,24 @@ class AshaService:
                                 payload=qa.get("payload", ""),
                             )
                             for qa in output.quick_actions[:6]
+                        ],
+                        plan=[
+                            AshaPlanStep(
+                                step_number=step["step_number"],
+                                tool_name=step["tool_name"],
+                                purpose=step["purpose"][:300],
+                                status=step.get("status", "completed"),
+                            )
+                            for step in output.plan[:10]
+                        ],
+                        verification=verification_res,
+                        memory_recalled=[
+                            AshaMemoryFact(
+                                category=mem["category"],
+                                key=mem["key"],
+                                value=mem["value"][:500],
+                            )
+                            for mem in output.memory_recalled[:8]
                         ],
                         urgent=output.urgent,
                     )
@@ -343,13 +376,22 @@ def build_asha_service(settings: Settings) -> AshaService:
 
     # Build the embedded RAG retriever (always available, zero-dependency)
     rag_retriever = EmbeddedRAGRetriever()
+    memory_engine = PatientMemoryEngine()
+    task_planner = TaskPlanner()
+    verification_engine = VerificationEngine()
 
-    # Build agent tool registry with the RAG retriever
-    tool_registry = AgentToolRegistry(rag_retriever=rag_retriever)
+    # Build agent tool registry with the RAG retriever and memory engine
+    tool_registry = AgentToolRegistry(
+        rag_retriever=rag_retriever,
+        memory_engine=memory_engine,
+    )
 
     # Build the agentic runner using whichever API key is configured
     agent_runner = AgentRunner(
         tool_registry=tool_registry,
+        memory_engine=memory_engine,
+        task_planner=task_planner,
+        verification_engine=verification_engine,
         gemini_api_key=gemini_key.get_secret_value() if gemini_key is not None else None,
         gemini_model=settings.gemini_model,
         openai_api_key=openai_key.get_secret_value() if openai_key is not None else None,

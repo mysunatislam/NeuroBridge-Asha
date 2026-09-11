@@ -353,6 +353,109 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                             height: 1.35,
                           ),
                         ),
+                        // --- Recalled memory facts ---
+                        if (fromAsha && message.memoryRecalled.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: message.memoryRecalled.map((mem) {
+                                return Chip(
+                                  label: Text(
+                                    'Recalled: ${mem.key} = ${mem.value}',
+                                    style: const TextStyle(
+                                        fontSize: 10, color: Color(0xFF0B756A)),
+                                  ),
+                                  avatar: const Icon(Icons.psychology,
+                                      size: 12, color: Color(0xFF0B756A)),
+                                  backgroundColor: const Color(0xFFE8F5E9),
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 4),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        // --- Autonomous Plan steps ---
+                        if (fromAsha && message.plan.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF3FBF9),
+                                borderRadius: BorderRadius.circular(10),
+                                border:
+                                    Border.all(color: const Color(0xFFBFE5DC)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.account_tree_outlined,
+                                          size: 13, color: Color(0xFF0B756A)),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        'Autonomous Plan (${message.plan.length} steps)',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF0B756A),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  ...message.plan.map((s) => Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          '${s.stepNumber}. ${s.purpose}',
+                                          style: const TextStyle(
+                                              fontSize: 10,
+                                              color: Color(0xFF334E48)),
+                                        ),
+                                      )),
+                                ],
+                              ),
+                            ),
+                          ),
+                        // --- Verification badge ---
+                        if (fromAsha && message.verification != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  message.verification!.isVerified
+                                      ? Icons.verified_user
+                                      : Icons.gpp_maybe,
+                                  size: 13,
+                                  color: message.verification!.isVerified
+                                      ? const Color(0xFF0B756A)
+                                      : const Color(0xFFB45309),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    message.verification!.isVerified
+                                        ? 'Verified: Clinically safe, grounded, & task complete'
+                                        : 'Verification note: ${message.verification!.critiqueNotes}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: message.verification!.isVerified
+                                          ? const Color(0xFF0B756A)
+                                          : const Color(0xFFB45309),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         // --- Tool execution badges (agentic actions taken) ---
                         if (fromAsha && message.actionsExecuted.isNotEmpty)
                           Padding(

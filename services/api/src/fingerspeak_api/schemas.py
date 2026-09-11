@@ -293,6 +293,27 @@ class AshaQuickAction(StrictModel):
     payload: Annotated[str, Field(max_length=200)] = ""
 
 
+class AshaPlanStep(StrictModel):
+    step_number: int
+    tool_name: Annotated[str, Field(min_length=1, max_length=80)]
+    purpose: Annotated[str, Field(min_length=1, max_length=300)]
+    status: Literal["pending", "completed", "failed", "skipped"] = "completed"
+
+
+class AshaVerificationResult(StrictModel):
+    is_verified: bool
+    safety_passed: bool
+    goal_fulfilled: bool
+    grounding_score: float = Field(ge=0.0, le=1.0, default=1.0)
+    critique_notes: Annotated[str, Field(max_length=500)] = ""
+
+
+class AshaMemoryFact(StrictModel):
+    category: Annotated[str, Field(min_length=1, max_length=60)]
+    key: Annotated[str, Field(min_length=1, max_length=120)]
+    value: Annotated[str, Field(min_length=1, max_length=500)]
+
+
 class AshaChatResponse(StrictModel):
     reply: Annotated[str, Field(min_length=1, max_length=4_000)]
     mode: Literal["fallback", "llm", "safety", "gemini-agent", "openai-agent", "offline-agent"]
@@ -300,6 +321,9 @@ class AshaChatResponse(StrictModel):
     citations: Annotated[list[AshaCitation], Field(max_length=12)] = Field(default_factory=list)
     actions_executed: Annotated[list[AshaToolExecution], Field(max_length=8)] = Field(default_factory=list)
     quick_actions: Annotated[list[AshaQuickAction], Field(max_length=6)] = Field(default_factory=list)
+    plan: Annotated[list[AshaPlanStep], Field(max_length=10)] = Field(default_factory=list)
+    verification: AshaVerificationResult | None = None
+    memory_recalled: Annotated[list[AshaMemoryFact], Field(max_length=8)] = Field(default_factory=list)
     urgent: bool = False
 
 

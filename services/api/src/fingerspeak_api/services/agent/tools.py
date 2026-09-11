@@ -152,6 +152,84 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall_memory",
+            "description": (
+                "Search patient long-term episodic and semantic memory for preferences, care history, or habits."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Query to search memory for, e.g. 'water temperature', 'straw preference', 'caregiver name'",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["preference", "clinical_profile", "caregiver_info", "routine_history", "general"],
+                        "description": "Optional category filter",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "record_memory",
+            "description": (
+                "Store a new fact, patient preference, routine note, or observation in long-term memory."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["preference", "clinical_profile", "caregiver_info", "routine_history", "general"],
+                        "description": "Category for the memory fact",
+                    },
+                    "key": {
+                        "type": "string",
+                        "description": "Key label, e.g. 'drinking_preference', 'morning_routine'",
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Details of the memory to record",
+                    },
+                },
+                "required": ["category", "key", "value"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "verify_action_safety",
+            "description": (
+                "Verify that a requested patient action adheres to clinical safety guidelines before dispatch."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action_name": {
+                        "type": "string",
+                        "description": "Name of the proposed action",
+                    },
+                    "action_payload": {
+                        "type": "string",
+                        "description": "Details or parameters of the proposed action",
+                    },
+                },
+                "required": ["action_name", "action_payload"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -174,11 +252,13 @@ class AgentToolRegistry:
         patient_context: dict[str, Any] | None = None,
         device_telemetry: dict[str, Any] | None = None,
         alert_hub: "AlertHub | None" = None,
+        memory_engine: Any | None = None,
     ) -> None:
         self._rag = rag_retriever
         self._patient_context = patient_context or {}
         self._device_telemetry = device_telemetry or {}
         self._alert_hub = alert_hub
+        self._memory = memory_engine
         self._executions: list[ToolExecution] = []
 
     @property
@@ -200,6 +280,12 @@ class AgentToolRegistry:
                 result = await self._check_device_telemetry()
             elif name == "manage_care_routine":
                 result = await self._manage_care_routine(**arguments)
+            elif name == "recall_memory":
+                result = await self._recall_memory(**arguments)
+            elif name == "record_memory":
+                result = await self._record_memory(**arguments)
+            elif name == "verify_action_safety":
+                result = await self._verify_action_safety(**arguments)
             else:
                 result = {"error": f"Unknown tool: {name}"}
 
@@ -352,3 +438,51 @@ class AgentToolRegistry:
             }
         else:
             return {"error": f"Unknown action: {action}"}
+
+    async def _recall_memory(
+        self, query: str, category: str | None = None
+    ) -> dict[str, Any]:
+        if self._memory is None:
+            return {"found": False, "summary": "Memory engine is not configured.", "results": []}
+        profile_id = str(self._patient_context.get("profile_id") or "default_patient")
+        facts = self._memory.recall(query, profile_id=profile_id, category=category, top_k=3)
+        if not facts:
+            return {"found": False, "summary": f"No memory facts found for query: '{query}'", "results": []}
+        results = [
+            {"category": f.category, "key": f.key, "value": f.value}
+            for f in facts
+        ]
+        return {
+            "found": True,
+            "summary": f"Recalled {len(facts)} memory fact(s): {', '.join(f.key for f in facts)}",
+            "results": results,
+        }
+
+    async def _record_memory(
+        self, category: str, key: str, value: str
+    ) -> dict[str, Any]:
+        if self._memory is None:
+            return {"recorded": False, "summary": "Memory engine is not configured."}
+        profile_id = str(self._patient_context.get("profile_id") or "default_patient")
+        fact = self._memory.store(profile_id, category, key, value)
+        return {
+            "recorded": True,
+            "id": fact.id,
+            "summary": f"Stored patient memory [{category}] {key} = {value}",
+        }
+
+    async def _verify_action_safety(
+        self, action_name: str, action_payload: str
+    ) -> dict[str, Any]:
+        safe = True
+        reason = "Action adheres to clinical safety bounds."
+        if "emergency" in action_payload.lower() and action_name != "trigger_caregiver_alert":
+            safe = False
+            reason = "Emergency escalations must be dispatched through authorized caregiver alert pathways."
+        return {
+            "safe": safe,
+            "action_name": action_name,
+            "summary": f"Safety evaluation for {action_name}: {'APPROVED' if safe else 'REJECTED'}. {reason}",
+            "reason": reason,
+        }
+

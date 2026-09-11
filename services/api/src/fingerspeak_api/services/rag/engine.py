@@ -50,6 +50,30 @@ def _tokenize(text: str) -> list[str]:
     return [t for t in tokens if len(t) >= 2 and t not in _STOPWORDS]
 
 
+_SYNONYMS: dict[str, list[str]] = {
+    "জল": ["water", "hydration"],
+    "পানি": ["water", "hydration"],
+    "thirsty": ["hydration", "drinking", "water"],
+    "কাঁপুনি": ["seizure", "convulsion"],
+    "খিঁচুনি": ["seizure", "convulsion"],
+    "seizure": ["convulsion", "airway", "recovery"],
+    "choking": ["airway", "obstruction", "distress"],
+    "dysreflexia": ["autonomic", "hypertension", "spinal"],
+    "fatigue": ["als", "micro-gesture", "dwell"],
+    "tremor": ["dwell", "sensitivity", "als"],
+    "battery": ["charging", "telemetry", "wheelchair", "pi"],
+}
+
+
+def _expand_query(query: str) -> list[str]:
+    tokens = _tokenize(query)
+    expanded = list(tokens)
+    for t in tokens:
+        if t in _SYNONYMS:
+            expanded.extend(_SYNONYMS[t])
+    return expanded
+
+
 @dataclass(frozen=True, slots=True)
 class RetrievalResult:
     document_id: str
@@ -100,7 +124,7 @@ class EmbeddedRAGRetriever:
             norm_sq = 0.0
             for term, count in counts.items():
                 tf = count / total_terms
-                idf = math.log((num_docs + 1) / (self._doc_freqs.get(term, 0) + 1)) + 1.0
+                idf = math.log((num_docs + 1) / (self._doc_freqs[term] + 1)) + 1.0
                 weight = tf * idf
                 vector[term] = weight
                 norm_sq += weight * weight
@@ -115,7 +139,7 @@ class EmbeddedRAGRetriever:
         min_score: float = 0.08,
         category: str | None = None,
     ) -> list[RetrievalResult]:
-        query_tokens = _tokenize(query)
+        query_tokens = _expand_query(query)
         if not query_tokens or not self._documents:
             return []
 

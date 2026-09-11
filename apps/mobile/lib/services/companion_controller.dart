@@ -117,6 +117,9 @@ class CompanionController extends ChangeNotifier {
       actionsExecuted: reply.actionsExecuted,
       citations: reply.citations,
       quickActions: reply.quickActions,
+      plan: reply.plan,
+      verification: reply.verification,
+      memoryRecalled: reply.memoryRecalled,
     ));
     _sending = false;
     notifyListeners();
