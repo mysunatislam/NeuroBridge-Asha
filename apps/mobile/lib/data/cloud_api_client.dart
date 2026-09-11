@@ -1,8 +1,14 @@
-﻿import 'dart:convert';
-import 'dart:io';
+import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+
+class CloudApiException implements Exception {
+  const CloudApiException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
 
 class CloudAlert {
   const CloudAlert({
@@ -137,8 +143,8 @@ class CloudApiClient {
         .post(
           _resolve(path),
           headers: {
-            HttpHeaders.acceptHeader: 'application/json',
-            HttpHeaders.contentTypeHeader: 'application/json',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
           },
           body: jsonEncode(body),
         )
@@ -147,18 +153,18 @@ class CloudApiClient {
       if (response.body.isEmpty) return {};
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
-    throw HttpException('API error ${response.statusCode}: ${response.body}');
+    throw CloudApiException('API error ${response.statusCode}: ${response.body}');
   }
 
   Future<dynamic> _get(String path) async {
     final response = await _client.get(
       _resolve(path),
-      headers: {HttpHeaders.acceptHeader: 'application/json'},
+      headers: {'Accept': 'application/json'},
     ).timeout(const Duration(seconds: 15));
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body);
     }
-    throw HttpException('API error ${response.statusCode}');
+    throw CloudApiException('API error ${response.statusCode}');
   }
 
   Future<String> createRemoteProfile({
@@ -199,8 +205,8 @@ class CloudApiClient {
     final response = await _client.patch(
       _resolve('profiles/$profileId'),
       headers: {
-        HttpHeaders.acceptHeader: 'application/json',
-        HttpHeaders.contentTypeHeader: 'application/json',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
       },
       body: jsonEncode({
         'analytics_consent': analyticsConsent,
@@ -209,7 +215,7 @@ class CloudApiClient {
       }),
     ).timeout(const Duration(seconds: 15));
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('Failed to update consent: ${response.statusCode}');
+      throw CloudApiException('Failed to update consent: ${response.statusCode}');
     }
   }
 
@@ -267,13 +273,13 @@ class CloudApiClient {
     final response = await _client.put(
       _resolve('profiles/$profileId/caregivers'),
       headers: {
-        HttpHeaders.acceptHeader: 'application/json',
-        HttpHeaders.contentTypeHeader: 'application/json',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
       },
       body: jsonEncode({'caregiver_subject': caregiverSubject}),
     ).timeout(const Duration(seconds: 15));
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('Failed to grant caregiver: ${response.statusCode}');
+      throw CloudApiException('Failed to grant caregiver: ${response.statusCode}');
     }
   }
 

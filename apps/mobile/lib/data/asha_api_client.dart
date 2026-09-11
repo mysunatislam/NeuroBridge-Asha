@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:fingerspeak_mobile/data/asha_offline_agent.dart';
 import 'package:fingerspeak_mobile/models/asha_message.dart';
@@ -138,10 +137,10 @@ class AshaApiClient {
     // -------------------------------------------------------------
     final token = await bearerTokenProvider?.call();
     final headers = <String, String>{
-      HttpHeaders.acceptHeader: 'application/json',
-      HttpHeaders.contentTypeHeader: 'application/json',
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
       if (token != null && token.isNotEmpty)
-        HttpHeaders.authorizationHeader: 'Bearer $token',
+        'Authorization': 'Bearer $token',
     };
     final body = <String, Object?>{
       'message': message.trim(),
@@ -251,9 +250,9 @@ class AshaApiClient {
       'max_tokens': 200,
     };
 
-    final headers = <String, String>{
-      HttpHeaders.contentTypeHeader: 'application/json',
-      if (apiKey.isNotEmpty) HttpHeaders.authorizationHeader: 'Bearer $apiKey',
+    final headers = {
+      'Content-Type': 'application/json',
+      if (apiKey.isNotEmpty) 'Authorization': 'Bearer $apiKey',
     };
 
     final response = await _client
@@ -348,7 +347,7 @@ class AshaApiClient {
     final response = await _client
         .post(
           url,
-          headers: {HttpHeaders.contentTypeHeader: 'application/json'},
+          headers: {'Content-Type': 'application/json'},
           body: jsonEncode(payload),
         )
         .timeout(const Duration(seconds: 15));

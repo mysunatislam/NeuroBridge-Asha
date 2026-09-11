@@ -282,19 +282,20 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                         Icon(
                           widget.companion.online
                               ? Icons.cloud_done
-                              : Icons.cloud_off,
+                              : Icons.offline_bolt,
                           size: 14,
-                          color: widget.companion.online
-                              ? const Color(0xFF0B756A)
-                              : Colors.orange,
+                          color: const Color(0xFF0B756A),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           widget.companion.online
                               ? 'Online AI LLM • answers spoken'
-                              : 'Local assistant ready',
+                              : 'Offline RAG Active • \$0 API cost',
                           style: const TextStyle(
-                              fontSize: 12, color: Color(0xFF6B8A84)),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF0B756A),
+                          ),
                         ),
                       ],
                     ),
