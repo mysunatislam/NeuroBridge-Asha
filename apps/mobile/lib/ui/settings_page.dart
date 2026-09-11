@@ -33,6 +33,8 @@ class _SettingsPageState extends State<SettingsPage> {
   String _aiProvider = 'offline';
   bool _obscureGeminiKey = true;
   bool _obscureCustomKey = true;
+  bool _testingConnection = false;
+  Map<String, dynamic>? _testResult;
 
   PiConnectionState _piState = PiConnectionState.disconnected;
   bool _pairing = false;
@@ -92,14 +94,14 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _saveAiSettings() async {
+  Future<void> _saveAiSettings({bool silent = false}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('ai.provider', _aiProvider);
     await prefs.setString('gemini.api_key', _geminiKeyController.text.trim());
     await prefs.setString('ai.base_url', _customBaseUrlController.text.trim());
     await prefs.setString('ai.model', _customModelController.text.trim());
     await prefs.setString('ai.api_key', _customApiKeyController.text.trim());
-    if (mounted) {
+    if (mounted && !silent) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_aiProvider == 'offline'
@@ -107,6 +109,21 @@ class _SettingsPageState extends State<SettingsPage> {
               : 'AI Engine settings saved for $_aiProvider mode.'),
         ),
       );
+    }
+  }
+
+  Future<void> _testConnection() async {
+    setState(() {
+      _testingConnection = true;
+      _testResult = null;
+    });
+    await _saveAiSettings(silent: true);
+    final res = await widget.services.companion.api.testConnection();
+    if (mounted) {
+      setState(() {
+        _testingConnection = false;
+        _testResult = res;
+      });
     }
   }
 
@@ -781,9 +798,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     controller: _customBaseUrlController,
                     decoration: const InputDecoration(
                       labelText: 'Ollama Endpoint URL',
-                      hintText: 'http://10.0.2.2:11434/v1 or http://192.168.1.X:11434/v1',
+                      hintText: 'http://localhost:11434/v1 or LAN IP',
                       prefixIcon: Icon(Icons.link, color: Color(0xFF0B756A)),
-                      helperText: 'Zero token cost. Runs on local bedside PC or ward server.',
+                      helperText: 'Zero token cost. Runs locally on your machine or ward server.',
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -791,9 +808,50 @@ class _SettingsPageState extends State<SettingsPage> {
                     controller: _customModelController,
                     decoration: const InputDecoration(
                       labelText: 'Ollama Model',
-                      hintText: 'llama3.2:3b, qwen2.5:3b, gemma2:2b',
+                      hintText: 'gemma2:2b, llama3.2:3b, qwen2.5:3b',
                       prefixIcon: Icon(Icons.memory, color: Color(0xFF0B756A)),
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.bolt, size: 14, color: Color(0xFF0B756A)),
+                        label: const Text('Gemma 2 (2B)', style: TextStyle(fontSize: 11)),
+                        onPressed: () {
+                          _customModelController.text = 'gemma2:2b';
+                          if (_customBaseUrlController.text.isEmpty ||
+                              _customBaseUrlController.text.contains('10.0.2.2')) {
+                            _customBaseUrlController.text = 'http://localhost:11434/v1';
+                          }
+                          setState(() {});
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.smart_toy, size: 14, color: Color(0xFF0B756A)),
+                        label: const Text('Llama 3.2 (3B)', style: TextStyle(fontSize: 11)),
+                        onPressed: () {
+                          _customModelController.text = 'llama3.2:3b';
+                          if (_customBaseUrlController.text.isEmpty) {
+                            _customBaseUrlController.text = 'http://localhost:11434/v1';
+                          }
+                          setState(() {});
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.psychology, size: 14, color: Color(0xFF0B756A)),
+                        label: const Text('Qwen 2.5 (3B)', style: TextStyle(fontSize: 11)),
+                        onPressed: () {
+                          _customModelController.text = 'qwen2.5:3b';
+                          if (_customBaseUrlController.text.isEmpty) {
+                            _customBaseUrlController.text = 'http://localhost:11434/v1';
+                          }
+                          setState(() {});
+                        },
+                      ),
+                    ],
                   ),
                 ] else if (_aiProvider == 'custom_openai') ...[
                   TextField(
@@ -809,7 +867,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     controller: _customModelController,
                     decoration: const InputDecoration(
                       labelText: 'Model Name',
-                      hintText: 'llama-3.1-8b-instant, deepseek-chat',
+                      hintText: 'gemma2-9b-it, llama-3.3-70b-versatile',
                       prefixIcon: Icon(Icons.smart_toy, color: Color(0xFF0B756A)),
                     ),
                   ),
@@ -818,13 +876,47 @@ class _SettingsPageState extends State<SettingsPage> {
                     controller: _customApiKeyController,
                     obscureText: _obscureCustomKey,
                     decoration: InputDecoration(
-                      labelText: 'API Key',
+                      labelText: 'API Key (Optional for some local proxies)',
                       prefixIcon: const Icon(Icons.key, color: Color(0xFF0B756A)),
                       suffixIcon: IconButton(
                         icon: Icon(_obscureCustomKey ? Icons.visibility : Icons.visibility_off),
                         onPressed: () => setState(() => _obscureCustomKey = !_obscureCustomKey),
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.speed, size: 14, color: Color(0xFF0B756A)),
+                        label: const Text('Groq Gemma 2-9B (\$0)', style: TextStyle(fontSize: 11)),
+                        onPressed: () {
+                          _customBaseUrlController.text = 'https://api.groq.com/openai/v1';
+                          _customModelController.text = 'gemma2-9b-it';
+                          setState(() {});
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.bolt, size: 14, color: Color(0xFF0B756A)),
+                        label: const Text('Groq Llama 3.3 (\$0)', style: TextStyle(fontSize: 11)),
+                        onPressed: () {
+                          _customBaseUrlController.text = 'https://api.groq.com/openai/v1';
+                          _customModelController.text = 'llama-3.3-70b-versatile';
+                          setState(() {});
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.cloud_done, size: 14, color: Color(0xFF0B756A)),
+                        label: const Text('OpenRouter Gemma (\$0)', style: TextStyle(fontSize: 11)),
+                        onPressed: () {
+                          _customBaseUrlController.text = 'https://openrouter.ai/api/v1';
+                          _customModelController.text = 'google/gemma-2-9b-it:free';
+                          setState(() {});
+                        },
+                      ),
+                    ],
                   ),
                 ] else if (_aiProvider == 'gemini') ...[
                   TextField(
@@ -844,20 +936,92 @@ class _SettingsPageState extends State<SettingsPage> {
                         onPressed: () => setState(
                             () => _obscureGeminiKey = !_obscureGeminiKey),
                       ),
-                      helperText: 'Optional key from Google AI Studio (aistudio.google.com)',
+                      helperText: 'Free tier key from Google AI Studio (aistudio.google.com)',
                     ),
                   ),
                 ],
 
                 const SizedBox(height: 14),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF0B756A),
-                  ),
-                  onPressed: _saveAiSettings,
-                  icon: const Icon(Icons.save, size: 18),
-                  label: const Text('Save AI Engine Settings'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF0B756A),
+                        ),
+                        onPressed: () => _saveAiSettings(),
+                        icon: const Icon(Icons.save, size: 18),
+                        label: const Text('Save Settings'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _testingConnection ? null : _testConnection,
+                      icon: _testingConnection
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.network_check, size: 18),
+                      label: Text(_testingConnection ? 'Testing…' : 'Test Connection'),
+                    ),
+                  ],
                 ),
+                if (_testResult != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: _testResult!['success'] == true
+                          ? const Color(0xFFF0FDF4)
+                          : const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _testResult!['success'] == true
+                            ? const Color(0xFF86EFAC)
+                            : const Color(0xFFFECACA),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _testResult!['success'] == true
+                              ? Icons.check_circle
+                              : Icons.error,
+                          color: _testResult!['success'] == true
+                              ? const Color(0xFF15803D)
+                              : const Color(0xFFDC2626),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _testResult!['message'] as String? ?? '',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _testResult!['success'] == true
+                                  ? const Color(0xFF166534)
+                                  : const Color(0xFF991B1B),
+                            ),
+                          ),
+                        ),
+                        if (_testResult!['latencyMs'] != null)
+                          Text(
+                            '${_testResult!['latencyMs']}ms',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: _testResult!['success'] == true
+                                  ? const Color(0xFF15803D)
+                                  : const Color(0xFFDC2626),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

@@ -31,6 +31,7 @@ class CompanionController extends ChangeNotifier {
   List<AshaMessage> get messages => List.unmodifiable(_messages);
   bool get sending => _sending;
   bool get online => _online;
+  AshaApiClient get api => _api;
 
   Future<void> start({UserRole role = UserRole.patient}) async {
     if (_started) return;

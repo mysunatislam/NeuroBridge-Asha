@@ -9,6 +9,14 @@ enum AshaKnowledgeCategory {
   deviceOperations,
   careRoutine,
   bilingualGuidance,
+  parkinsonsTremor,
+  ventilatorTrach,
+  painAssessment,
+  cognitiveTbi,
+  sleepNightSafety,
+  bowelBladderCrisis,
+  medicationSafety,
+  mentalHealthEmpathy,
 }
 
 /// A structured knowledge document in Asha's embedded clinical repository.
@@ -71,33 +79,58 @@ const _kStopwords = {
 };
 
 const Map<String, List<String>> _kSynonyms = {
-  'জল': ['water', 'hydration'],
-  'পানি': ['water', 'hydration'],
+  'জল': ['water', 'hydration', 'thirsty'],
+  'পানি': ['water', 'hydration', 'thirsty'],
   'thirsty': ['hydration', 'drinking', 'water', 'thirst'],
   'thirst': ['hydration', 'drinking', 'water'],
   'drink': ['water', 'hydration', 'dysphagia', 'swallow'],
   'swallowing': ['dysphagia', 'choking', 'aspiration', 'water'],
   'swallow': ['dysphagia', 'choking', 'aspiration', 'water'],
-  'কাঁপুনি': ['seizure', 'convulsion'],
+  'কাঁপুনি': ['seizure', 'convulsion', 'tremor', 'shaking'],
   'খিঁচুনি': ['seizure', 'convulsion'],
-  'seizure': ['convulsion', 'airway', 'recovery', 'first aid'],
+  'seizure': ['convulsion', 'airway', 'recovery', 'first aid', 'epilepsy'],
   'convulsion': ['seizure', 'cushion', 'recovery', 'airway'],
-  'choking': ['airway', 'obstruction', 'distress', 'breathing', 'cough'],
+  'choking': ['airway', 'obstruction', 'distress', 'breathing', 'cough', 'suction'],
   'choke': ['airway', 'obstruction', 'distress', 'breathing', 'cough'],
-  'breathe': ['airway', 'respiration', 'choking', 'distress'],
-  'breathing': ['airway', 'respiration', 'choking', 'distress'],
-  'dysreflexia': ['autonomic', 'hypertension', 'blood pressure', 'headache', 'spinal'],
+  'breathe': ['airway', 'respiration', 'choking', 'distress', 'ventilator'],
+  'breathing': ['airway', 'respiration', 'choking', 'distress', 'ventilator', 'oxygen'],
+  'dysreflexia': ['autonomic', 'hypertension', 'blood pressure', 'headache', 'spinal', 'catheter'],
   'headache': ['dysreflexia', 'blood pressure', 'hypertension', 'catheter'],
   'fatigue': ['als', 'mnd', 'micro-gesture', 'dwell', 'pacing', 'weakness'],
   'tired': ['fatigue', 'als', 'energy', 'dwell', 'rest'],
   'weak': ['fatigue', 'als', 'energy', 'dwell', 'rest'],
   'cramp': ['als', 'fatigue', 'fasciculation', 'spasm', 'rest'],
-  'tremor': ['dwell', 'sensitivity', 'als', 'pacing'],
+  'tremor': ['dwell', 'sensitivity', 'parkinson', 'resting', 'smoothing', 'shaking'],
+  'parkinson': ['tremor', 'rigidity', 'bradykinesia', 'freezing', 'dwell'],
+  'shaking': ['tremor', 'parkinson', 'seizure', 'rigidity'],
   'battery': ['charging', 'telemetry', 'wheelchair', 'pi', 'power'],
   'screen': ['caption', 'wheelchair', 'display', 'lcd'],
   'display': ['caption', 'wheelchair', 'screen', 'lcd'],
-  'reposition': ['pressure', 'sore', 'injury', 'turning', 'bed'],
-  'turning': ['pressure', 'sore', 'reposition', 'skin'],
+  'reposition': ['pressure', 'sore', 'injury', 'turning', 'bed', 'tilt'],
+  'turning': ['pressure', 'sore', 'reposition', 'skin', 'ulcer'],
+  'ulcer': ['pressure', 'sore', 'reposition', 'skin', 'ischemia'],
+  'trach': ['tracheostomy', 'ventilator', 'suction', 'mucus', 'airway'],
+  'tracheostomy': ['trach', 'ventilator', 'suction', 'mucus', 'airway', 'passy-muir'],
+  'suction': ['trach', 'mucus', 'airway', 'phlegm', 'aspiration'],
+  'mucus': ['suction', 'trach', 'phlegm', 'airway', 'choking'],
+  'pain': ['aching', 'hurts', 'discomfort', 'painad', 'flacc', 'wong-baker'],
+  'hurts': ['pain', 'discomfort', 'aching'],
+  'ব্যথা': ['pain', 'hurts', 'discomfort'],
+  'কষ্ট': ['distress', 'pain', 'difficulty'],
+  'catheter': ['bladder', 'dysreflexia', 'urine', 'foley', 'blockage', 'kink'],
+  'urine': ['catheter', 'bladder', 'foley', 'dysreflexia'],
+  'bladder': ['catheter', 'urine', 'dysreflexia', 'fullness'],
+  'bowel': ['dysreflexia', 'impaction', 'constipation'],
+  'medicine': ['pill', 'medication', 'dose', 'swallow', 'crushing', 'schedule'],
+  'pill': ['medicine', 'medication', 'swallow', 'dysphagia'],
+  'ওষুধ': ['medicine', 'pill', 'medication'],
+  'panic': ['anxiety', 'fear', 'calm', 'reassurance', 'breathing'],
+  'scared': ['panic', 'fear', 'reassurance', 'calm'],
+  'afraid': ['panic', 'fear', 'reassurance', 'calm'],
+  'depressed': ['sad', 'distress', 'empathy', 'crying'],
+  'lonely': ['isolation', 'empathy', 'companion', 'support'],
+  'ঘুম': ['sleep', 'night', 'bed', 'elevation'],
+  'sleep': ['night', 'elevation', 'aspiration', 'turning', 'position'],
 };
 
 /// Embedded clinical documents for NeuroBridge Asha.
@@ -249,7 +282,186 @@ const List<AshaKnowledgeDocument> kClinicalKnowledgeDocuments = [
         '2. Culturally Respectful Tone: Spoken responses maintain dignified, respectful phrasing addressing the patient '
         'with warmth and calm reassurance.\n'
         '3. Dual-Language Display: Messages can be presented simultaneously in Bengali script and English translations on '
-        'the companion LCD screen.',
+        'the wheelchair companion screen for family and caregivers.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'als-bulbar-02',
+    title: 'Advanced Bulbar ALS: Secretion Management, Sialorrhea & BiPAP Ventilation Support',
+    category: AshaKnowledgeCategory.alsMnd,
+    keywords: [
+      'als', 'bulbar', 'sialorrhea', 'saliva', 'bipap', 'ventilation', 'secretions',
+      'choking', 'suction', 'cough assist', 'breathing'
+    ],
+    summary: 'Clinical guidelines for managing excessive oral secretions and non-invasive ventilation comfort in bulbar ALS.',
+    content: 'Bulbar-onset ALS impairs pharyngeal clearance, leading to pooling secretions and respiratory strain:\n'
+        '1. Secretion Management: For thick secretions, ensure adequate baseline hydration and humidification. For thin saliva pooling '
+        '(sialorrhea), oral suction should be placed within comfortable reach. Postural drainage with gentle forward tilt helps.\n'
+        '2. Non-Invasive Ventilation (BiPAP): When orthopnea or dyspnea occurs, prompt caregiver assistance to fit the BiPAP mask. '
+        'Ensure the mask cushion does not compromise visual field needed for camera gaze or hand tracking.\n'
+        '3. Cough Assist: Ineffective mechanical cough requires mechanical insufflation-exsufflation. Watch for paradoxical breathing or air hunger.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'stroke-apraxia-02',
+    title: 'Apraxia of Speech & Visual Symbol Grids for Post-Stroke Communication',
+    category: AshaKnowledgeCategory.strokeAphasia,
+    keywords: [
+      'apraxia', 'stroke', 'motor speech', 'articulation', 'visual grid', 'symbols',
+      'scanning', 'pacing', 'one-touch'
+    ],
+    summary: 'Access strategies differentiating apraxia of speech from cognitive aphasia using high-contrast icon boards.',
+    content: 'Apraxia of speech impairs the motor programming of articulatory gestures despite intact linguistic comprehension:\n'
+        '1. Separate Speech Execution from Cognition: The patient knows exactly what they want to convey. Avoid childish speech or simplistic answers.\n'
+        '2. High-Contrast AAC Grids: Present visual icons with simultaneous textual captions. Use 1-touch or micro-dwell gesture confirmations.\n'
+        '3. Multi-Modal Affirmation: Mirror selected phrases simultaneously in audio via Samantha TTS and visually on the wheelchair companion screen.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'sci-orthostatic-02',
+    title: 'Orthostatic Hypotension Management in High-Level Spinal Cord Injury',
+    category: AshaKnowledgeCategory.spinalCordInjury,
+    keywords: [
+      'orthostatic', 'hypotension', 'dizziness', 'lightheaded', 'fainting', 'sci',
+      'tilt', 'blood pressure', 'compression stockings', 'abdominal binder'
+    ],
+    summary: 'Management of blood pressure drops during upright wheelchair tilting and transfers in tetraplegia.',
+    content: 'Loss of sympathetic tone in high-level SCI frequently causes venous pooling and acute blood pressure drops upon sitting up:\n'
+        '1. Symptom Recognition: Lightheadedness, blurred vision, dizziness, yawning, or pallor when the wheelchair tilts forward or reclines upright.\n'
+        '2. Immediate Action: Recline or tilt the wheelchair back immediately (elevate legs above heart level) until symptoms resolve.\n'
+        '3. Gradual Elevation: Use power tilt controls to elevate the patient in 10-15 degree increments over 5-10 minutes.\n'
+        '4. Supportive Wear: Verify abdominal binders and elastic compression stockings are snugly applied prior to morning transfers.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'parkinsons-tremor-01',
+    title: 'Parkinson\'s Disease: Resting Tremor Filtering, Dwell Smoothing & Freezing of Gait',
+    category: AshaKnowledgeCategory.parkinsonsTremor,
+    keywords: [
+      'parkinson', 'tremor', 'shaking', 'rigidity', 'bradykinesia', 'freezing',
+      'dwell', 'filter', 'smoothing', 'micro-movement'
+    ],
+    summary: 'Algorithmic filtering for Parkinsonian 4-6 Hz resting tremors, dwell smoothing, and motor freezing prompts.',
+    content: 'Parkinson\'s disease manifests with involuntary 4-6 Hz resting tremors and bradykinesia that can interfere with optical gesture capture:\n'
+        '1. Algorithmic Tremor Damping: Configure Asha\'s gesture engine with exponential moving average (EMA) smoothing and raised dwell thresholds (600-800ms) '
+        'to reject oscillatory involuntary finger tremors.\n'
+        '2. Freezing Episodes: When motor freezing occurs, provide rhythmic metronomic or auditory tones through Samantha voice to re-initiate movement.\n'
+        '3. Medication Timing: Performance fluctuates dramatically between "on" and "off" medication states. Note time since last levodopa dose.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'ventilator-trach-01',
+    title: 'Tracheostomy & Mechanical Ventilation: Secretion Suctioning & Speaking Valves',
+    category: AshaKnowledgeCategory.ventilatorTrach,
+    keywords: [
+      'tracheostomy', 'trach', 'ventilator', 'suction', 'secretions', 'phlegm',
+      'passy-muir', 'cuff', 'cannula', 'airway', 'oxygen'
+    ],
+    summary: 'Care protocols for ventilator-dependent patients, emergency suctioning indicators, and speaking valve usage.',
+    content: 'Ventilator-dependent patients face acute airway obstruction risks from mucus plugging:\n'
+        '1. Urgent Suctioning Signs: Increased airway peak pressures, audible bubbling/gurgling in the cannula, drop in SpO2 below 92%, '
+        'restlessness, or wide-eyed anxiety require immediate tracheal suctioning.\n'
+        '2. Passy-Muir Speaking Valve: Ensure the tracheostomy cuff is completely DEFLATED before applying a speaking valve. '
+        'Never occlude a cuffed tube without deflation.\n'
+        '3. Emergency Disconnection: If ventilator alarm sounds or tube disconnects, Asha activates high-priority audible caregiver alarm.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'pain-nonverbal-01',
+    title: 'Non-Verbal Pain Assessment (PAINAD & FLACC Scales) & Comfort Protocols',
+    category: AshaKnowledgeCategory.painAssessment,
+    keywords: [
+      'pain', 'hurts', 'discomfort', 'non-verbal', 'painad', 'flacc', 'grimacing',
+      'guarding', 'wong-baker', 'aching', 'agitation'
+    ],
+    summary: 'Clinical behavioral pain assessment for non-verbal patients and prompt caregiver triage.',
+    content: 'Non-verbal patients cannot speak their pain score. Use validated observational scales:\n'
+        '1. Behavioral Indicators: Facial grimacing, furrowed brow, clenching fists, guarded breathing, groaning vocalizations, or restlessness.\n'
+        '2. Body Location Pointing: Asha presents an interactive anatomical grid (Head, Chest, Stomach, Back, Arm, Leg) allowing 1-tap confirmation.\n'
+        '3. Wong-Baker Visuals: Present 0-10 numerical face scale with visual emotional expressions.\n'
+        '4. Nursing Action: Identify acute sources: repositioning needs, full bladder, sheet wrinkles, limb positioning, or musculoskeletal spasm.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'cognitive-pacing-01',
+    title: 'Cognitive Fatigue & Traumatic Brain Injury (TBI) AAC Scaffolding',
+    category: AshaKnowledgeCategory.cognitiveTbi,
+    keywords: [
+      'tbi', 'brain injury', 'cognitive', 'fatigue', 'confusion', 'overload',
+      'scaffolding', 'processing time', 'simple'
+    ],
+    summary: 'Reducing cognitive load, visual clutter, and sensory fatigue for post-TBI and anoxic brain injury patients.',
+    content: 'Cognitive pacing protocols for neuro-rehabilitation:\n'
+        '1. Minimized Visual Complexity: Limit choice screens to 2-4 large high-contrast options. Avoid cluttered 20-icon grids.\n'
+        '2. Extended Processing Windows: Wait at least 10 seconds before repeating a prompt or offering assistance.\n'
+        '3. Sensory Regulation: Reduce ambient room noise, dim harsh overhead glare, and prioritize short, structured communication bursts.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'sleep-night-safety-01',
+    title: 'Nighttime Bedside Monitoring: 30° Head Elevation & Aspiration Aversion',
+    category: AshaKnowledgeCategory.sleepNightSafety,
+    keywords: [
+      'sleep', 'night', 'bed', 'elevation', 'aspiration', 'turning', 'alarm',
+      'fall', 'dark', 'nocturnal'
+    ],
+    summary: 'Nighttime safety guidelines, nocturnal aspiration prevention, and silent monitoring.',
+    content: 'Nighttime safety protocol for paralyzed or bed-bound patients:\n'
+        '1. Head-of-Bed Elevation: Maintain bed elevated at minimum 30 degrees continuously during sleep to prevent nocturnal reflux and silent aspiration.\n'
+        '2. Call-Bell Proximity: Ensure the primary assistive trigger (micro-gesture camera or switch) remains active within natural reach in low-light infrared mode.\n'
+        '3. Scheduled Turning: Nighttime repositioning every 2-3 hours remains essential even during sleep; use gentle turning wedges to minimize waking.\n'
+        '4. Fall Prevention: Bed rails padded and raised; suction canister powered and primed at bedside.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'bowel-bladder-ad-01',
+    title: 'Neurogenic Bladder & Bowel Emergency: Catheter Kinks & Overflow Incontinence',
+    category: AshaKnowledgeCategory.bowelBladderCrisis,
+    keywords: [
+      'catheter', 'foley', 'bladder', 'urine', 'kink', 'fullness', 'autonomic dysreflexia',
+      'incontinence', 'retention'
+    ],
+    summary: 'Troubleshooting urinary drainage and recognizing bladder distension as the primary trigger for life-threatening autonomic crises.',
+    content: 'Over 85% of autonomic dysreflexia episodes are triggered by bladder distension or catheter occlusion:\n'
+        '1. Catheter Inspection Checklist: Trace tubing from meatus to collection bag. Check for twists, dependent loops, kinks, or sediment obstruction.\n'
+        '2. Collection Bag Level: Ensure drainage bag is positioned below the level of the patient bladder to maintain gravity flow.\n'
+        '3. Gentle Flushing: If no urine flows and bladder feels palpable, sterile irrigation with 10-15 mL normal saline may clear blockages.\n'
+        '4. Urgent Action: If catheter cannot be unblocked and patient is sweating or hypertensive, replace catheter immediately or alert emergency physician.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'medication-dysphagia-01',
+    title: 'Safe Medication Administration in Dysphagia & Levodopa Timing Protocols',
+    category: AshaKnowledgeCategory.medicationSafety,
+    keywords: [
+      'medication', 'medicine', 'pill', 'tablet', 'swallowing', 'crushing',
+      'dysphagia', 'levodopa', 'timing', 'schedule'
+    ],
+    summary: 'Safe pill swallowing, avoiding hazardous tablet crushing, and timing critical neurological medications.',
+    content: 'Medication administration safety guidelines for neuromuscular patients:\n'
+        '1. Crushing Hazards: Never crush enteric-coated (EC) or extended-release (ER/XR) medications. Consult clinical pharmacist for liquid or dissolvable alternatives.\n'
+        '2. Applesauce / Puree Vehicle: Administer crushed permitted tablets mixed into thick purees (level 3/4) rather than thin water to prevent choking.\n'
+        '3. Levodopa On-Time Adherence: For Parkinson\'s patients, levodopa must be given within 15 minutes of scheduled time. Asha sounds timely medication alarms.\n'
+        '4. Anti-Epileptic Consistency: Strict timing of anti-seizure medications prevents breakthrough convulsive status.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'mental-health-paralysis-01',
+    title: 'Emotional Validation, Panic De-escalation & Preserving Autonomy in Locked-in Syndrome',
+    category: AshaKnowledgeCategory.mentalHealthEmpathy,
+    keywords: [
+      'panic', 'anxiety', 'fear', 'locked-in', 'isolation', 'autonomy', 'empathy',
+      'reassurance', 'dignity', 'depression'
+    ],
+    summary: 'Compassionate de-escalation for acute panic, helplessness, or sensory isolation in motor-paralyzed individuals.',
+    content: 'Being unable to move or speak produces profound situational anxiety and existential helplessness:\n'
+        '1. Unconditional Presence: Asha speaks with a calm, steady, unhurried cadence (Samantha standard pace). Validate the patient experience.\n'
+        '2. Immediate Control: Offer small, manageable choices immediately: "Would you like me to alert your caregiver, change your display message, or simply stay with you?"\n'
+        '3. Breathing Grounding: Guide the patient through slow diaphragmatic breaths: "Breathe in gently through your nose... and slowly breathe out. You are safe."',
+  ),
+  AshaKnowledgeDocument(
+    id: 'bilingual-medical-lexicon-02',
+    title: 'Comprehensive Bengali-English Bedside & Medical AAC Lexicon',
+    category: AshaKnowledgeCategory.bilingualGuidance,
+    keywords: [
+      'lexicon', 'bengali', 'bangla', 'dictionary', 'vocabulary', 'words',
+      'মেডিকেল', 'ক্লিনিকাল', 'জরুরি', 'শ্বাসকষ্ট', 'পিপাসা'
+    ],
+    summary: 'Curated 50+ core medical and physiological terms mapped across English and Bengali with semantic equivalence.',
+    content: 'Core bedside medical vocabulary mapped for bilingual patient synthesis:\n'
+        '1. Biological Needs: Water -> জল/পানি | Hunger -> ক্ষুধা/খাবার | Sleep -> ঘুম/বিশ্রাম | Bathroom -> প্রস্রাব/টয়লেট\n'
+        '2. Acute Discomfort: Severe Pain -> তীব্র ব্যথা | Difficulty Breathing -> শ্বাসকষ্ট/দম আটকে আসছে | Cold -> ঠান্ডা লাগছে | Hot -> গরম লাগছে\n'
+        '3. Physical Positioning: Sit Up -> সোজা করে বসিয়ে দিন | Lie Down -> শুইয়ে দিন | Turn Left/Right -> পাশ ফিরিয়ে দিন | Fix Pillow -> বালিশ ঠিক করুন\n'
+        '4. Personnel & Care: Call Doctor -> ডাক্তার ডাকুন | Call Nurse -> নার্স ডাকুন | Family -> পরিবারের সদস্য | Medication -> সময়মতো ওষুধ দিন',
   ),
 ];
 
@@ -260,6 +472,9 @@ class AshaLocalKnowledgeRetriever {
   }) : _documents = documents ?? kClinicalKnowledgeDocuments {
     _buildIndex();
   }
+
+  static final AshaLocalKnowledgeRetriever instance =
+      AshaLocalKnowledgeRetriever();
 
   final List<AshaKnowledgeDocument> _documents;
   final List<List<String>> _docTokens = [];
@@ -429,3 +644,69 @@ class AshaLocalKnowledgeRetriever {
         : content.substring(0, math.min(300, content.length));
   }
 }
+
+/// Grounded clinical RAG context for downstream LLM prompting and deterministic synthesis.
+class GroundedRagContext {
+  const GroundedRagContext({
+    required this.query,
+    required this.matches,
+    required this.formattedContext,
+  });
+
+  final String query;
+  final List<AshaLocalRetrievalResult> matches;
+  final String formattedContext;
+
+  bool get hasMatches => matches.isNotEmpty;
+  AshaKnowledgeCategory? get topCategory =>
+      matches.isNotEmpty ? matches.first.category : null;
+  String? get topTitle => matches.isNotEmpty ? matches.first.title : null;
+  String? get topSnippet => matches.isNotEmpty ? matches.first.snippet : null;
+}
+
+/// Clinical RAG pipeline that coordinates local retrieval and context augmentation.
+class AshaRagPipeline {
+  AshaRagPipeline({AshaLocalKnowledgeRetriever? retriever})
+      : _retriever = retriever ?? AshaLocalKnowledgeRetriever.instance;
+
+  final AshaLocalKnowledgeRetriever _retriever;
+
+  GroundedRagContext buildGroundedContext(
+    String query, {
+    int topK = 3,
+    double minScore = 0.06,
+  }) {
+    final matches = _retriever.retrieve(query, topK: topK, minScore: minScore);
+    if (matches.isEmpty) {
+      return GroundedRagContext(
+        query: query,
+        matches: const [],
+        formattedContext: '',
+      );
+    }
+
+    final buffer = StringBuffer();
+    buffer.writeln('CLINICAL KNOWLEDGE BASE (GROUND TRUTH):');
+    for (var i = 0; i < matches.length; i++) {
+      final m = matches[i];
+      buffer.writeln('${i + 1}. [${m.title}] (${m.category.name}): ${m.snippet}');
+    }
+    buffer.writeln();
+    buffer.writeln('INSTRUCTIONS FOR ASHA:');
+    buffer.writeln('- Ground your response in this factual clinical guidance.');
+    buffer.writeln('- Speak concisely, empathetically, and clearly (1-2 sentences for Samantha TTS).');
+    buffer.writeln('- If patient describes acute distress or danger, recommend safety actions and notify caregiver.');
+
+    return GroundedRagContext(
+      query: query,
+      matches: matches,
+      formattedContext: buffer.toString().trim(),
+    );
+  }
+
+  String augmentSystemInstruction(String baseInstruction, GroundedRagContext rag) {
+    if (!rag.hasMatches) return baseInstruction;
+    return '$baseInstruction\n\n${rag.formattedContext}';
+  }
+}
+

@@ -277,27 +277,67 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                                 : const Color(0xFF0B756A),
                           ),
                     ),
-                    Row(
-                      children: [
-                        Icon(
-                          widget.companion.online
-                              ? Icons.cloud_done
-                              : Icons.offline_bolt,
-                          size: 14,
-                          color: const Color(0xFF0B756A),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          widget.companion.online
-                              ? 'Online AI LLM • answers spoken'
-                              : 'Offline RAG Active • \$0 API cost',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF0B756A),
+                    Builder(
+                      builder: (context) {
+                        final lastAshaMsg = messages.reversed
+                            .where((m) => m.role == AshaMessageRole.asha)
+                            .firstOrNull;
+                        final lastMode = lastAshaMsg?.mode ??
+                            (widget.companion.online ? 'online' : 'offline');
+
+                        IconData modeIcon = Icons.offline_bolt;
+                        String modeLabel = 'Offline RAG Active • \$0 API cost';
+
+                        if (lastMode.contains('ollama') || lastMode.contains('local')) {
+                          modeIcon = Icons.computer;
+                          modeLabel = 'Local Gemma/Llama • \$0 cost';
+                        } else if (lastMode.contains('groq')) {
+                          modeIcon = Icons.speed;
+                          modeLabel = 'Groq Cloud • \$0 Free Tier';
+                        } else if (lastMode.contains('openrouter')) {
+                          modeIcon = Icons.cloud_done;
+                          modeLabel = 'OpenRouter Gemma • \$0 Free';
+                        } else if (lastMode.contains('gemini')) {
+                          modeIcon = Icons.auto_awesome;
+                          modeLabel = 'Gemini AI • answers spoken';
+                        } else if (widget.companion.online) {
+                          modeIcon = Icons.cloud_done;
+                          modeLabel = 'Online AI • answers spoken';
+                        }
+
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(6),
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Asha Engine: $modeLabel. Grounded in 20+ clinical domains with Samantha TTS voice output.',
+                                ),
+                                duration: const Duration(seconds: 3),
+                              ),
+                            );
+                          },
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                modeIcon,
+                                size: 14,
+                                color: const Color(0xFF0B756A),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                modeLabel,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF0B756A),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
                   ],
                 ),

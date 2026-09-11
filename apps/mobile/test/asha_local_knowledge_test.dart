@@ -47,9 +47,96 @@ void main() {
       expect(docIds.contains('care-dysphagia-01') || docIds.contains('bilingual-bengali-01'), isTrue);
     });
 
+    test('retrieves Parkinsons tremor and dwell smoothing protocol', () {
+      final results = retriever.retrieve('Parkinsons resting tremor and freezing of gait');
+      expect(results, isNotEmpty);
+      expect(results.first.documentId, 'parkinsons-tremor-01');
+      expect(results.first.category, AshaKnowledgeCategory.parkinsonsTremor);
+    });
+
+    test('retrieves tracheostomy and ventilator suction protocol', () {
+      final results = retriever.retrieve('tracheostomy suctioning mucus cannula blockage');
+      expect(results, isNotEmpty);
+      expect(results.first.documentId, 'ventilator-trach-01');
+      expect(results.first.category, AshaKnowledgeCategory.ventilatorTrach);
+    });
+
+    test('retrieves non-verbal pain PAINAD scale protocol', () {
+      final results = retriever.retrieve('non-verbal pain assessment PAINAD scale facial grimacing');
+      expect(results, isNotEmpty);
+      expect(results.first.documentId, 'pain-nonverbal-01');
+      expect(results.first.category, AshaKnowledgeCategory.painAssessment);
+    });
+
+    test('retrieves cognitive TBI memory and fatigue pacing protocol', () {
+      final results = retriever.retrieve('traumatic brain injury memory loss fatigue pacing');
+      expect(results, isNotEmpty);
+      expect(results.first.documentId, 'cognitive-pacing-01');
+      expect(results.first.category, AshaKnowledgeCategory.cognitiveTbi);
+    });
+
+    test('retrieves sleep and night safety protocol', () {
+      final results = retriever.retrieve('overnight turning schedule sleep apnea bed rail safety');
+      expect(results, isNotEmpty);
+      expect(results.first.documentId, 'sleep-night-safety-01');
+      expect(results.first.category, AshaKnowledgeCategory.sleepNightSafety);
+    });
+
+    test('retrieves bowel and bladder catheter crisis protocol', () {
+      final results = retriever.retrieve('blocked Foley catheter full bladder autonomic trigger');
+      expect(results, isNotEmpty);
+      expect(results.first.documentId, 'bowel-bladder-ad-01');
+      expect(results.first.category, AshaKnowledgeCategory.bowelBladderCrisis);
+    });
+
+    test('retrieves medication safety protocol', () {
+      final results = retriever.retrieve('medication timing double dose side effect interaction');
+      expect(results, isNotEmpty);
+      expect(results.first.documentId, 'medication-dysphagia-01');
+      expect(results.first.category, AshaKnowledgeCategory.medicationSafety);
+    });
+
+    test('retrieves mental health empathy protocol for fear and anxiety', () {
+      final results = retriever.retrieve('patient feels scared anxious lonely and isolated');
+      expect(results, isNotEmpty);
+      expect(results.first.documentId, 'mental-health-paralysis-01');
+      expect(results.first.category, AshaKnowledgeCategory.mentalHealthEmpathy);
+    });
+
     test('returns empty for unrelated noise query', () {
       final results = retriever.retrieve('xyz abc 123456');
       expect(results, isEmpty);
+    });
+  });
+
+  group('AshaRagPipeline', () {
+    late AshaRagPipeline pipeline;
+
+    setUp(() {
+      pipeline = AshaRagPipeline();
+    });
+
+    test('buildsGroundedContext returns formatted clinical facts and instructions', () {
+      final rag = pipeline.buildGroundedContext('How to manage acute seizure convulsions?');
+      expect(rag.hasMatches, isTrue);
+      expect(rag.matches.first.category, AshaKnowledgeCategory.seizureFirstAid);
+      expect(rag.formattedContext, contains('CLINICAL KNOWLEDGE BASE (GROUND TRUTH):'));
+      expect(rag.formattedContext, contains('INSTRUCTIONS FOR ASHA:'));
+    });
+
+    test('augmentSystemInstruction appends clinical context when matches exist', () {
+      final rag = pipeline.buildGroundedContext('ALS fatigue micro gestures');
+      final base = 'You are Asha.';
+      final augmented = pipeline.augmentSystemInstruction(base, rag);
+      expect(augmented, startsWith(base));
+      expect(augmented, contains('CLINICAL KNOWLEDGE BASE'));
+    });
+
+    test('augmentSystemInstruction leaves base prompt untouched when no matches', () {
+      final rag = pipeline.buildGroundedContext('qwertyuiop 998877');
+      final base = 'You are Asha.';
+      final augmented = pipeline.augmentSystemInstruction(base, rag);
+      expect(augmented, equals(base));
     });
   });
 
@@ -105,6 +192,41 @@ void main() {
       expect(reply.text, contains('AUTONOMIC DYSREFLEXIA'));
       expect(reply.text.toLowerCase(), contains('upright'));
       expect(reply.actionsExecuted.any((a) => a.toolName == 'trigger_caregiver_alert'), isTrue);
+    });
+
+    test('handles pain discomfort with assessment tool and quick actions', () {
+      final reply = agent.process(
+        message: 'I am in severe pain and my back hurts',
+        locale: 'en-US',
+        role: UserRole.patient,
+      );
+
+      expect(reply.actionsExecuted.any((a) => a.toolName == 'assess_pain_level'), isTrue);
+      expect(reply.quickActions.any((q) => q.actionKey == 'rate_pain'), isTrue);
+      expect(reply.text.toLowerCase(), contains('pain'));
+    });
+
+    test('handles tracheostomy suction request with airway tool and action chip', () {
+      final reply = agent.process(
+        message: 'I need tracheostomy suction for mucus in my tube',
+        locale: 'en-US',
+        role: UserRole.patient,
+      );
+
+      expect(reply.actionsExecuted.any((a) => a.toolName == 'check_airway_patency'), isTrue);
+      expect(reply.quickActions.any((q) => q.actionKey == 'suction_help'), isTrue);
+      expect(reply.text.toLowerCase(), contains('suction'));
+    });
+
+    test('handles emotional anxiety with reassuring calm response', () {
+      final reply = agent.process(
+        message: 'I feel very scared and lonely today',
+        locale: 'en-US',
+        role: UserRole.patient,
+      );
+
+      expect(reply.actionsExecuted.any((a) => a.toolName == 'provide_emotional_support'), isTrue);
+      expect(reply.text.toLowerCase(), contains('safe'));
     });
 
     test('handles wheelchair companion screen caption request', () {

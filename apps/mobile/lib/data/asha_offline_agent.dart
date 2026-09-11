@@ -7,7 +7,7 @@ import 'package:fingerspeak_mobile/models/user_role.dart';
 class AshaOfflineAgent {
   AshaOfflineAgent({
     AshaLocalKnowledgeRetriever? retriever,
-  }) : _retriever = retriever ?? AshaLocalKnowledgeRetriever();
+  }) : _retriever = retriever ?? AshaLocalKnowledgeRetriever.instance;
 
   final AshaLocalKnowledgeRetriever _retriever;
 
@@ -34,7 +34,7 @@ class AshaOfflineAgent {
     // -------------------------------------------------------------
     // 1. Clinical RAG Retrieval
     // -------------------------------------------------------------
-    final ragResults = _retriever.retrieve(message, topK: 2);
+    final ragResults = _retriever.retrieve(message, topK: 2, minScore: 0.08);
     for (final r in ragResults) {
       citations.add(AshaCitation(title: r.title, sourceId: r.documentId));
     }
@@ -104,6 +104,37 @@ class AshaOfflineAgent {
         lower.contains('pressure') ||
         lower.contains('bed sore') ||
         lower.contains('sore');
+
+    // Intent: Pain / Discomfort
+    final isPain = lower.contains('pain') ||
+        lower.contains('hurt') ||
+        lower.contains('ache') ||
+        lower.contains('ব্যথা') ||
+        lower.contains('বেদনা') ||
+        lower.contains('কষ্ট');
+
+    // Intent: Suction / Ventilator / Tracheostomy
+    final isVentTrach = lower.contains('suction') ||
+        lower.contains('trach') ||
+        lower.contains('mucus') ||
+        lower.contains('ventilator') ||
+        lower.contains('phlegm') ||
+        lower.contains('কফ');
+
+    // Intent: Emotional Support / Anxiety / Loneliness
+    final isEmotional = lower.contains('scared') ||
+        lower.contains('anxious') ||
+        lower.contains('afraid') ||
+        lower.contains('lonely') ||
+        lower.contains('sad') ||
+        lower.contains('ভয়') ||
+        lower.contains('একা');
+
+    // Intent: Medication Inquiry
+    final isMedication = !isDisplay &&
+        (RegExp(r'\b(meds?|medication|pills?|dose|dosage|prescription)\b')
+                .hasMatch(lower) ||
+            lower.contains('ওষুধ'));
 
     // Intent: Device Telemetry
     final isTelemetry = lower.contains('battery') ||
@@ -313,6 +344,62 @@ class AshaOfflineAgent {
       ));
     }
 
+    if (isPain) {
+      plan.add(AshaPlanStep(
+        stepNumber: stepIndex++,
+        toolName: 'assess_pain_level',
+        purpose: 'Non-verbal pain assessment & caregiver alert',
+        status: 'completed',
+      ));
+      executions.add(const AshaToolExecution(
+        toolName: 'assess_pain_level',
+        summary: 'Logged pain discomfort alert and requested caregiver comfort check',
+        success: true,
+      ));
+    }
+
+    if (isVentTrach) {
+      plan.add(AshaPlanStep(
+        stepNumber: stepIndex++,
+        toolName: 'check_airway_patency',
+        purpose: 'Tracheostomy suction & secretion management check',
+        status: 'completed',
+      ));
+      executions.add(const AshaToolExecution(
+        toolName: 'check_airway_patency',
+        summary: 'Alerted caregiver for urgent airway suctioning support',
+        success: true,
+      ));
+    }
+
+    if (isEmotional) {
+      plan.add(AshaPlanStep(
+        stepNumber: stepIndex++,
+        toolName: 'provide_emotional_support',
+        purpose: 'Reassurance, calm pacing, and bedside comfort',
+        status: 'completed',
+      ));
+      executions.add(const AshaToolExecution(
+        toolName: 'provide_emotional_support',
+        summary: 'Delivered calm empathetic reassurance to reduce distress',
+        success: true,
+      ));
+    }
+
+    if (isMedication) {
+      plan.add(AshaPlanStep(
+        stepNumber: stepIndex++,
+        toolName: 'check_medication_routine',
+        purpose: 'Review scheduled medication dose time',
+        status: 'completed',
+      ));
+      executions.add(const AshaToolExecution(
+        toolName: 'check_medication_routine',
+        summary: 'Alerted caregiver to verify medication administration schedule',
+        success: true,
+      ));
+    }
+
     if (isTelemetry) {
       plan.add(AshaPlanStep(
         stepNumber: stepIndex++,
@@ -329,7 +416,17 @@ class AshaOfflineAgent {
 
     // Synthesize spoken text based on actions and RAG
     String spokenText;
-    if (isHydration && isAlert) {
+    if (isVentTrach) {
+      spokenText = '${greeting}I have notified your caregiver for tracheostomy airway suctioning. Take slow, gentle breaths.';
+    } else if (isPain) {
+      spokenText = '${greeting}I have recorded your pain alert and notified your caregiver. Please stay still and comfortable while help arrives.';
+    } else if (isDisplay) {
+      spokenText = '${greeting}I have updated your wheelchair companion screen with your message.';
+    } else if (isEmotional) {
+      spokenText = '${greeting}Take a slow, gentle breath. You are safe, and I am right here with you. I have let your caregiver know as well.';
+    } else if (isMedication) {
+      spokenText = '${greeting}I have notified your caregiver to check your medication schedule.';
+    } else if (isHydration && isAlert) {
       spokenText = '${greeting}I have alerted your caregiver for fresh water. '
           'Please stay seated upright at 90 degrees while drinking.';
     } else if (isHydration) {
@@ -341,7 +438,7 @@ class AshaOfflineAgent {
       spokenText = '${greeting}I have logged your repositioning request to relieve pressure and protect your skin.';
     } else if (isTelemetry) {
       spokenText = '${greeting}Your wheelchair telemetry is active. Battery is healthy and camera tracking is running normally.';
-    } else if (ragResults.isNotEmpty && ragResults.first.score >= 0.12) {
+    } else if (ragResults.isNotEmpty && ragResults.first.score >= 0.08) {
       // Clinical Knowledge Query
       final topDoc = ragResults.first;
       plan.add(AshaPlanStep(
@@ -356,8 +453,6 @@ class AshaOfflineAgent {
         success: true,
       ));
       spokenText = '$greeting${topDoc.snippet}';
-    } else if (isDisplay) {
-      spokenText = '${greeting}I have updated your wheelchair companion screen with your message.';
     } else {
       // Warm bedside conversational fallback
       if (role == UserRole.caregiver) {
@@ -369,7 +464,17 @@ class AshaOfflineAgent {
     }
 
     final quickActions = <AshaQuickAction>[];
-    if (!isAlert) {
+    if (isPain) {
+      quickActions.add(const AshaQuickAction(label: 'Pain Level (1-10)', actionKey: 'rate_pain'));
+      quickActions.add(const AshaQuickAction(label: 'Reposition Body', actionKey: 'reposition'));
+    }
+    if (isVentTrach) {
+      quickActions.add(const AshaQuickAction(label: 'Suction Help', actionKey: 'suction_help'));
+    }
+    if (isEmotional) {
+      quickActions.add(const AshaQuickAction(label: 'Call Loved One', actionKey: 'call_loved_one'));
+    }
+    if (!isAlert && !isPain && !isVentTrach) {
       quickActions.add(const AshaQuickAction(label: 'Call Caregiver', actionKey: 'alert_caregiver'));
     }
     if (!isHydration) {
