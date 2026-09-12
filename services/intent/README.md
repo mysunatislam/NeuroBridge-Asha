@@ -38,7 +38,8 @@ python -m pip install -e "services/intent[tensorflow,onnx]"     # temporal CNN t
 ```bash
 neurobridge-intent train --output models/intent_bundle_v1            # bootstrap models + export
 neurobridge-intent verify models/intent_bundle_v1                     # checksums + schema
-neurobridge-intent export-app --bundle models/intent_bundle_v1 \n    --output ../../apps/mobile/assets/models/intent_bundle_v1     # JSON-only copy for the app
+neurobridge-intent export-app --bundle models/intent_bundle_v1 \
+    --output ../../apps/mobile/assets/models/intent_bundle_v1      # JSON-only copy for the app
 neurobridge-intent models fetch                                       # MediaPipe .task files (once)
 neurobridge-intent calibrate --patient-id p1 --output patient_profile.json --camera 0
 neurobridge-intent run --bundle models/intent_bundle_v1 --profile patient_profile.json --camera 0

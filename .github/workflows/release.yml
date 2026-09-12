@@ -7,6 +7,11 @@ name: Release patient and caregiver apps
 #   ios-caregiver-v*      Asha Caregiver unsigned IPA for sideloading
 #
 # APKs are debug-signed evaluation builds (no store signing material in CI).
+#
+# Publishing uses RELEASE_TOKEN (a fine-grained PAT with "contents: write" on this
+# repository) when that secret exists, otherwise the workflow's GITHUB_TOKEN. The
+# built APKs/IPAs are always uploaded as run artifacts as well, so a release can be
+# created manually with `gh release create` if publishing is refused.
 # IPAs are unsigned; install with Sideloadly / AltStore or sign with your own
 # Apple developer profile.
 
@@ -101,8 +106,10 @@ jobs:
       - name: Publish release android-${{ matrix.app }}-v${{ needs.version.outputs.version }}
         uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         with:
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          fail_on_unmatched_files: true
           tag_name: android-${{ matrix.app }}-v${{ needs.version.outputs.version }}
           name: "NeuroBridge Asha ${{ matrix.app == 'patient' && 'Patient' || 'Caregiver' }} - Android v${{ needs.version.outputs.version }}"
           target_commitish: ${{ github.sha }}
@@ -168,8 +175,10 @@ jobs:
       - name: Publish release ios-patient-v${{ needs.version.outputs.version }}
         uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         with:
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          fail_on_unmatched_files: true
           tag_name: ios-patient-v${{ needs.version.outputs.version }}
           name: "NeuroBridge Asha Patient - iOS v${{ needs.version.outputs.version }}"
           target_commitish: ${{ github.sha }}
@@ -184,8 +193,10 @@ jobs:
       - name: Publish release ios-caregiver-v${{ needs.version.outputs.version }}
         uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         with:
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          fail_on_unmatched_files: true
           tag_name: ios-caregiver-v${{ needs.version.outputs.version }}
           name: "NeuroBridge Asha Caregiver - iOS v${{ needs.version.outputs.version }}"
           target_commitish: ${{ github.sha }}
