@@ -11,20 +11,19 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 import httpx
 
-from fingerspeak_api.services.agent.memory import MemoryFact, PatientMemoryEngine
+from fingerspeak_api.services.agent.memory import PatientMemoryEngine
 from fingerspeak_api.services.agent.planner import PlanStep, TaskPlanner
 from fingerspeak_api.services.agent.tools import (
     TOOL_DEFINITIONS,
     AgentToolRegistry,
     ToolExecution,
 )
-from fingerspeak_api.services.agent.verifier import VerificationEngine, VerificationResult
+from fingerspeak_api.services.agent.verifier import VerificationEngine
 
 MAX_TOOL_ROUNDS = 3
 MAX_CORRECTION_ROUNDS = 2
@@ -37,10 +36,10 @@ def _offline_select_tools(message: str) -> list[tuple[str, dict[str, Any]]]:
     return [(s.tool_name, s.parameters) for s in steps]
 
 
-
 # ---------------------------------------------------------------------------
 # Output Schema
 # ---------------------------------------------------------------------------
+
 
 @dataclass(slots=True)
 class AgentOutput:
@@ -58,6 +57,7 @@ class AgentOutput:
 # ---------------------------------------------------------------------------
 # Agent Runner with Closed-Loop PEEC
 # ---------------------------------------------------------------------------
+
 
 class AgentRunner:
     """Orchestrates multi-step planning, tool calling, evaluation, and self-correction."""
@@ -93,9 +93,7 @@ class AgentRunner:
         self._max_tokens = max_output_tokens
         self._locale = locale
 
-    async def run(
-        self, message: str, patient_context: dict[str, Any] | None = None
-    ) -> AgentOutput:
+    async def run(self, message: str, patient_context: dict[str, Any] | None = None) -> AgentOutput:
         context = dict(patient_context or {})
         profile_id = str(context.get("profile_id") or "default_patient")
 
@@ -175,7 +173,10 @@ class AgentRunner:
                     if missing_tool == "trigger_caregiver_alert":
                         await self._tools.call(
                             "trigger_caregiver_alert",
-                            {"severity": "urgent", "message": f"Assistance required: {message[:90]}"},
+                            {
+                                "severity": "urgent",
+                                "message": f"Assistance required: {message[:90]}",
+                            },
                         )
                     elif missing_tool == "manage_care_routine":
                         await self._tools.call(
@@ -215,8 +216,7 @@ class AgentRunner:
         final_output.plan = [step.to_dict() for step in plan_steps]
         final_output.verification = verification.to_dict()
         final_output.memory_recalled = [
-            {"category": m.category, "key": m.key, "value": m.value}
-            for m in recalled_memories
+            {"category": m.category, "key": m.key, "value": m.value} for m in recalled_memories
         ]
         return final_output
 
@@ -257,7 +257,9 @@ class AgentRunner:
                     f"https://generativelanguage.googleapis.com/v1beta/models/"
                     f"{self._gemini_model}:generateContent?key={self._gemini_key}"
                 )
-                resp = await client.post(url, headers={"Content-Type": "application/json"}, json=payload)
+                resp = await client.post(
+                    url, headers={"Content-Type": "application/json"}, json=payload
+                )
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -282,12 +284,14 @@ class AgentRunner:
                     tool_name = fc["name"]
                     tool_args = fc.get("args", {})
                     result_json = await self._tools.call(tool_name, tool_args)
-                    function_responses.append({
-                        "functionResponse": {
-                            "name": tool_name,
-                            "response": json.loads(result_json),
+                    function_responses.append(
+                        {
+                            "functionResponse": {
+                                "name": tool_name,
+                                "response": json.loads(result_json),
+                            }
                         }
-                    })
+                    )
 
                 contents.append({"role": "model", "parts": parts})
                 contents.append({"role": "user", "parts": function_responses})
@@ -310,7 +314,9 @@ class AgentRunner:
         tool_rounds = 0
 
         base_url = (self._openai_base_url or "https://api.openai.com/v1").rstrip("/")
-        endpoint = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+        endpoint = (
+            base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+        )
         headers = {"Content-Type": "application/json"}
         if self._openai_key:
             headers["Authorization"] = f"Bearer {self._openai_key}"
@@ -347,11 +353,13 @@ class AgentRunner:
                     tool_name = tc["function"]["name"]
                     tool_args = json.loads(tc["function"]["arguments"])
                     result_json = await self._tools.call(tool_name, tool_args)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": result_json,
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": result_json,
+                        }
+                    )
                 tool_rounds += 1
 
         raise RuntimeError("OpenAI agent loop exceeded maximum tool rounds")
@@ -406,7 +414,9 @@ class AgentRunner:
     # ------------------------------------------------------------------
 
     def _system_prompt(self, context: dict[str, Any], plan: list[PlanStep]) -> str:
-        name_clause = f" Patient name: {context['preferred_name']}." if context.get("preferred_name") else ""
+        name_clause = (
+            f" Patient name: {context['preferred_name']}." if context.get("preferred_name") else ""
+        )
         care_mode = context.get("care_mode", "continuous")
         locale = context.get("locale", self._locale)
 
@@ -460,11 +470,19 @@ class AgentRunner:
 
         tool_names = {ex.tool_name for ex in executions}
         if "trigger_caregiver_alert" not in tool_names:
-            quick_actions.append({"label": "Alert Caregiver", "action_key": "alert_caregiver", "payload": "urgent"})
+            quick_actions.append(
+                {"label": "Alert Caregiver", "action_key": "alert_caregiver", "payload": "urgent"}
+            )
         if "check_device_telemetry" not in tool_names:
-            quick_actions.append({"label": "Check Device", "action_key": "check_device", "payload": ""})
-        quick_actions.append({"label": "I need water", "action_key": "request_water", "payload": "hydration"})
-        quick_actions.append({"label": "I need help", "action_key": "need_help", "payload": "urgent"})
+            quick_actions.append(
+                {"label": "Check Device", "action_key": "check_device", "payload": ""}
+            )
+        quick_actions.append(
+            {"label": "I need water", "action_key": "request_water", "payload": "hydration"}
+        )
+        quick_actions.append(
+            {"label": "I need help", "action_key": "need_help", "payload": "urgent"}
+        )
 
         return AgentOutput(
             reply=reply[:4000],

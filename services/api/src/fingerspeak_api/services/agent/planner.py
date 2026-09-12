@@ -6,11 +6,11 @@ for patient requests, routine management, and clinical emergency coordination.
 
 from __future__ import annotations
 
-import json
 import re
 import unicodedata
-from dataclasses import asdict, dataclass, field
-from typing import Any, Sequence
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
+from typing import Any
 
 from fingerspeak_api.services.agent.memory import MemoryFact
 
@@ -45,9 +45,15 @@ _PLAN_RULES: list[tuple[re.Pattern[str], str, dict[str, Any], str]] = [
     ),
     # Autonomic Dysreflexia / Spinal Cord Injury
     (
-        re.compile(r"\b(autonomic dysreflexia|dysreflexia|pounding head|face flushing|sweating above lesion)\b", re.I),
+        re.compile(
+            r"\b(autonomic dysreflexia|dysreflexia|pounding head|face flushing|sweating above lesion)\b",
+            re.I,
+        ),
         "lookup_clinical_guidance",
-        {"query": "spinal cord injury autonomic dysreflexia checklist", "category": "spinal_cord_injury"},
+        {
+            "query": "spinal cord injury autonomic dysreflexia checklist",
+            "category": "spinal_cord_injury",
+        },
         "Look up autonomic dysreflexia blood pressure and trigger protocol",
     ),
     # ALS / Motor Fatigue / Micro-gestures
@@ -147,10 +153,18 @@ class TaskPlanner:
 
                 # Custom caregiver alert severity detection
                 if tool_name == "trigger_caregiver_alert":
-                    if any(w in normalized.lower() for w in ("emergency", "danger", "dying", "severe")):
-                        params = {"severity": "emergency", "message": "EMERGENCY: Patient urgently needs immediate help"}
+                    if any(
+                        w in normalized.lower() for w in ("emergency", "danger", "dying", "severe")
+                    ):
+                        params = {
+                            "severity": "emergency",
+                            "message": "EMERGENCY: Patient urgently needs immediate help",
+                        }
                     elif any(w in normalized.lower() for w in ("routine", "when you can", "later")):
-                        params = {"severity": "routine", "message": "Routine check-in requested by patient"}
+                        params = {
+                            "severity": "routine",
+                            "message": "Routine check-in requested by patient",
+                        }
 
                 steps.append(
                     PlanStep(

@@ -17,7 +17,15 @@ def test_rag_seizure_triage_query(rag_retriever: EmbeddedRAGRetriever) -> None:
     assert "seizure" in top.title.lower()
     assert top.category == "seizure_first_aid"
     # Accept any content from the seizure document
-    seizure_terms = {"seizure", "convulsion", "airway", "recovery position", "emergency", "breathing", "jerking"}
+    seizure_terms = {
+        "seizure",
+        "convulsion",
+        "airway",
+        "recovery position",
+        "emergency",
+        "breathing",
+        "jerking",
+    }
     assert any(term in top.snippet.lower() for term in seizure_terms)
 
 
@@ -30,7 +38,9 @@ def test_rag_als_fatigue_pacing(rag_retriever: EmbeddedRAGRetriever) -> None:
 
 
 def test_rag_sci_autonomic_dysreflexia(rag_retriever: EmbeddedRAGRetriever) -> None:
-    results = rag_retriever.retrieve("What is autonomic dysreflexia pounding headache in quadriplegia?")
+    results = rag_retriever.retrieve(
+        "What is autonomic dysreflexia pounding headache in quadriplegia?"
+    )
     assert len(results) > 0
     top = results[0]
     assert "spinal cord" in top.title.lower()

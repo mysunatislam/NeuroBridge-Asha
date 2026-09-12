@@ -56,7 +56,9 @@ jobs:
             --tree-shake-icons \
             --optimization-level 4 \
             -t lib/main_${{ matrix.app }}.dart \
-            --base-href "/${{ matrix.repo }}/"
+            --base-href "/${{ matrix.repo }}/" \
+            --dart-define=FINGERSPEAK_API_BASE_URL=https://replace-with-your-backend.example/v1 \
+            --dart-define=FINGERSPEAK_PI_WS_URL=wss://replace-with-your-pi-gateway.example/v1/device/ws
           mkdir -p build/web/assets/web
           cp -r build/web/assets/assets/web/* build/web/assets/web/ 2>/dev/null || true
           cp build/web/index.html build/web/404.html

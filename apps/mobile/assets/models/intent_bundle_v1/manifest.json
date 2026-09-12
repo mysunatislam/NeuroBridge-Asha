@@ -252,21 +252,23 @@
   },
   "files": {
     "intent_json": "intent_rf.json",
+    "temporal_json": "temporal_cnn.json",
+    "abnormal_json": "abnormal_rf.json"
+  },
+  "checksums": {
+    "intent_rf.json": "6d4128d93a509b86a7f50fd47e0e10bd3f5f07a16025926b83de804e7308c5f4",
+    "temporal_cnn.json": "09bad60e56bfe9043d569ccaa3360e1417fee8a43521637a88aea29f1c6bb269",
+    "abnormal_rf.json": "79efa58c0bd0d292aef1678dac0e4063cd79c6047f15ba56c27de480d29b64db"
+  },
+  "safety": {
+    "note": "Bootstrap models trained on physiologically-motivated synthetic data plus calibration recordings. They gate commands; they do not diagnose. Validate per patient before care use."
+  },
+  "full_bundle_files": {
+    "intent_json": "intent_rf.json",
     "intent_onnx": "intent_rf.onnx",
     "abnormal_json": "abnormal_rf.json",
     "abnormal_onnx": "abnormal_rf.onnx",
     "temporal_json": "temporal_cnn.json",
     "temporal_tflite": "temporal_cnn.tflite"
-  },
-  "checksums": {
-    "intent_rf.json": "6d4128d93a509b86a7f50fd47e0e10bd3f5f07a16025926b83de804e7308c5f4",
-    "intent_rf.onnx": "442b15514135ef2f0d64f5b36f1902f2a16cd01b0fe54fdaaab0d8e42ddef85b",
-    "abnormal_rf.json": "79efa58c0bd0d292aef1678dac0e4063cd79c6047f15ba56c27de480d29b64db",
-    "abnormal_rf.onnx": "3104ae6c7f67096e4459499fb4b32b189d8bfaa63b0f86e835aef377fa542963",
-    "temporal_cnn.json": "09bad60e56bfe9043d569ccaa3360e1417fee8a43521637a88aea29f1c6bb269",
-    "temporal_cnn.tflite": "9444f6b6be60f986eec0fd3e030511d150c46e889460d075440f3ac6e5bdb645"
-  },
-  "safety": {
-    "note": "Bootstrap models trained on physiologically-motivated synthetic data plus calibration recordings. They gate commands; they do not diagnose. Validate per patient before care use."
   }
 }

@@ -11,14 +11,16 @@ import time
 import unicodedata
 import uuid
 from dataclasses import asdict, dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 
 @dataclass(slots=True)
 class MemoryFact:
     id: str
     profile_id: str
-    category: str  # "preference", "clinical_profile", "caregiver_info", "routine_history", "general"
+    category: (
+        str  # "preference", "clinical_profile", "caregiver_info", "routine_history", "general"
+    )
     key: str
     value: str
     confidence: float = 1.0
@@ -154,6 +156,8 @@ class PatientMemoryEngine:
             self.store(profile_id, "preference", "preferred_name", preferred_name)
         self.store(profile_id, "clinical_profile", "care_mode", care_mode)
         self.store(profile_id, "preference", "communication_locale", locale)
-        self.store(profile_id, "preference", "drinking_preference", "room temperature water with straw")
+        self.store(
+            profile_id, "preference", "drinking_preference", "room temperature water with straw"
+        )
         self.store(profile_id, "routine_history", "hydration_target_ml", "1500")
         self.store(profile_id, "routine_history", "reposition_interval_minutes", "120")

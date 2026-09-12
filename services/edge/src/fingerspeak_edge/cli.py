@@ -34,7 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
         dest="adapter",
         choices=("simulated", "picamera", "picamera2"),
         default="simulated",
-        help="Camera adapter. --camera is an equivalent, more explicit alias. 'picamera' is for legacy Pi (Model B/B+/2/3).",
+        help=(
+            "Camera adapter. --camera is an equivalent, more explicit alias. "
+            "'picamera' is for legacy Pi (Model B/B+/2/3)."
+        ),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -198,9 +201,7 @@ def resolve_face_model_path(configured: str | None) -> Path:
     return path
 
 
-def build_cloud_relay(
-    args: argparse.Namespace, runtime: EdgeRuntime
-) -> CloudDeviceRelay | None:
+def build_cloud_relay(args: argparse.Namespace, runtime: EdgeRuntime) -> CloudDeviceRelay | None:
     token = os.getenv("FINGERSPEAK_EDGE_CLOUD_DEVICE_TOKEN")
     configured = any((args.cloud_device_ws_url, args.cloud_origin, token))
     if not configured:
@@ -236,8 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.reset_pairing:
         if credential_store is None:
             raise SystemExit(
-                "--reset-pairing requires --credential-store or "
-                "FINGERSPEAK_EDGE_CREDENTIAL_STORE."
+                "--reset-pairing requires --credential-store or FINGERSPEAK_EDGE_CREDENTIAL_STORE."
             )
         try:
             removed = credential_store.reset()

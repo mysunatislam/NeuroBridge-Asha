@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import pytest
+
 from fingerspeak_edge.adapters.picamera_legacy_camera import PicameraLegacyCamera
 
 

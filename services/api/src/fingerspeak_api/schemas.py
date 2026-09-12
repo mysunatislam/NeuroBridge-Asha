@@ -319,11 +319,17 @@ class AshaChatResponse(StrictModel):
     mode: Literal["fallback", "llm", "safety", "gemini-agent", "openai-agent", "offline-agent"]
     previous_response_id: Annotated[str | None, Field(max_length=200)] = None
     citations: Annotated[list[AshaCitation], Field(max_length=12)] = Field(default_factory=list)
-    actions_executed: Annotated[list[AshaToolExecution], Field(max_length=8)] = Field(default_factory=list)
-    quick_actions: Annotated[list[AshaQuickAction], Field(max_length=6)] = Field(default_factory=list)
+    actions_executed: Annotated[list[AshaToolExecution], Field(max_length=8)] = Field(
+        default_factory=list
+    )
+    quick_actions: Annotated[list[AshaQuickAction], Field(max_length=6)] = Field(
+        default_factory=list
+    )
     plan: Annotated[list[AshaPlanStep], Field(max_length=10)] = Field(default_factory=list)
     verification: AshaVerificationResult | None = None
-    memory_recalled: Annotated[list[AshaMemoryFact], Field(max_length=8)] = Field(default_factory=list)
+    memory_recalled: Annotated[list[AshaMemoryFact], Field(max_length=8)] = Field(
+        default_factory=list
+    )
     urgent: bool = False
 
 

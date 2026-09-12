@@ -32,12 +32,14 @@ from fingerspeak_edge.protocol import (
     PairingAuthenticate,
     PairingAuthenticated,
     PairingAuthenticatedPayload,
-    PatientIntent as PatientIntentMessage,
     PatientIntentPayload,
     ProtocolError,
     ProtocolErrorPayload,
     ServerEnvelope,
     StatusGet,
+)
+from fingerspeak_edge.protocol import (
+    PatientIntent as PatientIntentMessage,
 )
 
 

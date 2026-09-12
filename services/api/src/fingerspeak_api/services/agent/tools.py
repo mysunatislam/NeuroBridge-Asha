@@ -168,7 +168,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "category": {
                         "type": "string",
-                        "enum": ["preference", "clinical_profile", "caregiver_info", "routine_history", "general"],
+                        "enum": [
+                            "preference",
+                            "clinical_profile",
+                            "caregiver_info",
+                            "routine_history",
+                            "general",
+                        ],
                         "description": "Optional category filter",
                     },
                 },
@@ -189,7 +195,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["preference", "clinical_profile", "caregiver_info", "routine_history", "general"],
+                        "enum": [
+                            "preference",
+                            "clinical_profile",
+                            "caregiver_info",
+                            "routine_history",
+                            "general",
+                        ],
                         "description": "Category for the memory fact",
                     },
                     "key": {
@@ -251,7 +263,7 @@ class AgentToolRegistry:
         rag_retriever: Any | None = None,
         patient_context: dict[str, Any] | None = None,
         device_telemetry: dict[str, Any] | None = None,
-        alert_hub: "AlertHub | None" = None,
+        alert_hub: AlertHub | None = None,
         memory_engine: Any | None = None,
     ) -> None:
         self._rag = rag_retriever
@@ -291,24 +303,28 @@ class AgentToolRegistry:
 
             success = "error" not in result
             summary = result.get("summary", result.get("error", name))
-            self._executions.append(ToolExecution(
-                tool_name=name,
-                parameters=arguments,
-                result=result,
-                summary=str(summary),
-                success=success,
-            ))
+            self._executions.append(
+                ToolExecution(
+                    tool_name=name,
+                    parameters=arguments,
+                    result=result,
+                    summary=str(summary),
+                    success=success,
+                )
+            )
             return json.dumps(result, ensure_ascii=False)
 
         except Exception as exc:
             err_result = {"error": f"Tool execution failed: {type(exc).__name__}"}
-            self._executions.append(ToolExecution(
-                tool_name=name,
-                parameters=arguments,
-                result=err_result,
-                summary=str(err_result["error"]),
-                success=False,
-            ))
+            self._executions.append(
+                ToolExecution(
+                    tool_name=name,
+                    parameters=arguments,
+                    result=err_result,
+                    summary=str(err_result["error"]),
+                    success=False,
+                )
+            )
             return json.dumps(err_result)
 
     async def _lookup_clinical_guidance(
@@ -355,9 +371,7 @@ class AgentToolRegistry:
             "current_activity": ctx.get("current_activity"),
         }
 
-    async def _trigger_caregiver_alert(
-        self, severity: str, message: str
-    ) -> dict[str, Any]:
+    async def _trigger_caregiver_alert(self, severity: str, message: str) -> dict[str, Any]:
         # Clamp message length for safety
         message = message.strip()[:120]
         valid_severities = {"routine", "urgent", "emergency"}
@@ -405,9 +419,7 @@ class AgentToolRegistry:
             "wheelchair_status": telemetry.get("wheelchair_status", "unknown"),
         }
 
-    async def _manage_care_routine(
-        self, action: str, category: str
-    ) -> dict[str, Any]:
+    async def _manage_care_routine(self, action: str, category: str) -> dict[str, Any]:
         category_labels = {
             "hydration": "Hydration reminder",
             "repositioning": "Repositioning check",
@@ -439,28 +451,25 @@ class AgentToolRegistry:
         else:
             return {"error": f"Unknown action: {action}"}
 
-    async def _recall_memory(
-        self, query: str, category: str | None = None
-    ) -> dict[str, Any]:
+    async def _recall_memory(self, query: str, category: str | None = None) -> dict[str, Any]:
         if self._memory is None:
             return {"found": False, "summary": "Memory engine is not configured.", "results": []}
         profile_id = str(self._patient_context.get("profile_id") or "default_patient")
         facts = self._memory.recall(query, profile_id=profile_id, category=category, top_k=3)
         if not facts:
-            return {"found": False, "summary": f"No memory facts found for query: '{query}'", "results": []}
-        results = [
-            {"category": f.category, "key": f.key, "value": f.value}
-            for f in facts
-        ]
+            return {
+                "found": False,
+                "summary": f"No memory facts found for query: '{query}'",
+                "results": [],
+            }
+        results = [{"category": f.category, "key": f.key, "value": f.value} for f in facts]
         return {
             "found": True,
             "summary": f"Recalled {len(facts)} memory fact(s): {', '.join(f.key for f in facts)}",
             "results": results,
         }
 
-    async def _record_memory(
-        self, category: str, key: str, value: str
-    ) -> dict[str, Any]:
+    async def _record_memory(self, category: str, key: str, value: str) -> dict[str, Any]:
         if self._memory is None:
             return {"recorded": False, "summary": "Memory engine is not configured."}
         profile_id = str(self._patient_context.get("profile_id") or "default_patient")
@@ -471,9 +480,7 @@ class AgentToolRegistry:
             "summary": f"Stored patient memory [{category}] {key} = {value}",
         }
 
-    async def _verify_action_safety(
-        self, action_name: str, action_payload: str
-    ) -> dict[str, Any]:
+    async def _verify_action_safety(self, action_name: str, action_payload: str) -> dict[str, Any]:
         safe = True
         reason = "Action adheres to clinical safety bounds."
         if "emergency" in action_payload.lower() and action_name != "trigger_caregiver_alert":
@@ -485,4 +492,3 @@ class AgentToolRegistry:
             "summary": f"Safety evaluation for {action_name}: {'APPROVED' if safe else 'REJECTED'}. {reason}",
             "reason": reason,
         }
-

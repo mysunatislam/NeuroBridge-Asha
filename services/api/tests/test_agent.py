@@ -1,10 +1,11 @@
 """Agent runner and tool tests for NeuroBridge Asha."""
+
 from __future__ import annotations
 
 import pytest
 
 from fingerspeak_api.services.agent.agent_runner import AgentRunner, _offline_select_tools
-from fingerspeak_api.services.agent.tools import AgentToolRegistry, TOOL_DEFINITIONS
+from fingerspeak_api.services.agent.tools import TOOL_DEFINITIONS, AgentToolRegistry
 from fingerspeak_api.services.rag.engine import EmbeddedRAGRetriever
 
 
@@ -27,6 +28,7 @@ def offline_runner(tool_registry: AgentToolRegistry) -> AgentRunner:
 
 
 # --- Offline semantic planner ---
+
 
 def test_offline_planner_seizure_intent() -> None:
     selected = _offline_select_tools("My patient is having a convulsion, what should I do?")
@@ -61,10 +63,12 @@ def test_offline_planner_unrecognized_returns_empty() -> None:
 
 # --- Tool registry tests ---
 
+
 @pytest.mark.asyncio
 async def test_tool_registry_lookup_clinical_guidance(tool_registry: AgentToolRegistry) -> None:
     result = await tool_registry.call("lookup_clinical_guidance", {"query": "seizure first aid"})
     import json
+
     data = json.loads(result)
     assert data["found"] is True
     assert len(data["results"]) > 0
@@ -76,6 +80,7 @@ async def test_tool_registry_lookup_clinical_guidance(tool_registry: AgentToolRe
 @pytest.mark.asyncio
 async def test_tool_registry_check_device_telemetry(tool_registry: AgentToolRegistry) -> None:
     import json
+
     result = await tool_registry.call("check_device_telemetry", {})
     data = json.loads(result)
     assert data["online"] is True
@@ -86,9 +91,10 @@ async def test_tool_registry_check_device_telemetry(tool_registry: AgentToolRegi
 @pytest.mark.asyncio
 async def test_tool_registry_caregiver_alert(tool_registry: AgentToolRegistry) -> None:
     import json
+
     result = await tool_registry.call(
         "trigger_caregiver_alert",
-        {"severity": "urgent", "message": "Patient needs immediate assistance"}
+        {"severity": "urgent", "message": "Patient needs immediate assistance"},
     )
     data = json.loads(result)
     assert data["dispatched"] is True
@@ -98,6 +104,7 @@ async def test_tool_registry_caregiver_alert(tool_registry: AgentToolRegistry) -
 @pytest.mark.asyncio
 async def test_tool_registry_caption(tool_registry: AgentToolRegistry) -> None:
     import json
+
     result = await tool_registry.call("send_wheelchair_caption", {"text": "Hello!"})
     data = json.loads(result)
     assert data["sent"] is True
@@ -106,6 +113,7 @@ async def test_tool_registry_caption(tool_registry: AgentToolRegistry) -> None:
 @pytest.mark.asyncio
 async def test_tool_registry_invalid_tool_is_handled(tool_registry: AgentToolRegistry) -> None:
     import json
+
     result = await tool_registry.call("nonexistent_tool", {})
     data = json.loads(result)
     assert "error" in data
@@ -114,11 +122,10 @@ async def test_tool_registry_invalid_tool_is_handled(tool_registry: AgentToolReg
 
 # --- Full offline agent runner integration ---
 
+
 @pytest.mark.asyncio
 async def test_offline_runner_seizure_scenario(offline_runner: AgentRunner) -> None:
-    output = await offline_runner.run(
-        "The patient just had a seizure. What do I do?"
-    )
+    output = await offline_runner.run("The patient just had a seizure. What do I do?")
     assert output.mode == "offline-agent"
     assert len(output.reply) > 20
     assert len(output.actions_executed) > 0
@@ -196,7 +203,9 @@ async def test_verification_engine_detects_prohibited_diagnosis() -> None:
     )
     assert result.is_verified is False
     assert result.safety_passed is False
-    assert "diagnosis" in result.critique_notes.lower() or "prescrib" in result.critique_notes.lower()
+    assert (
+        "diagnosis" in result.critique_notes.lower() or "prescrib" in result.critique_notes.lower()
+    )
 
 
 @pytest.mark.asyncio
@@ -232,5 +241,3 @@ def test_agent_runner_ollama_configuration(tool_registry: AgentToolRegistry) -> 
     assert runner._openai_base_url == "http://localhost:11434/v1"
     assert runner._openai_model == "llama3.2:3b"
     assert runner._llm_provider == "ollama"
-
-

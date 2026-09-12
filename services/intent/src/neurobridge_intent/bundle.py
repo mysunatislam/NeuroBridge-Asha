@@ -323,6 +323,35 @@ def _write_fallback_temporal(
     files["temporal_json"] = "temporal_cnn.json"
 
 
+APP_BUNDLE_KEYS = ("intent_json", "temporal_json", "abnormal_json")
+
+
+def export_app_bundle(source: str | Path, destination: str | Path) -> dict[str, Any]:
+    """Copy the JSON runtime files into the Flutter asset folder.
+
+    The app bundle carries only the files the Dart runtime reads, with a manifest
+    whose ``files``/``checksums`` are restricted to them so ``verify_bundle``
+    accepts the copy as-is (the TFLite/ONNX exports stay in the full bundle).
+    """
+
+    src = Path(source)
+    dst = Path(destination)
+    dst.mkdir(parents=True, exist_ok=True)
+    manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
+    files = {key: manifest["files"][key] for key in APP_BUNDLE_KEYS if key in manifest["files"]}
+    missing = [key for key in APP_BUNDLE_KEYS if key not in files]
+    if missing:
+        raise ValueError(f"source bundle lacks {missing}")
+    for name in files.values():
+        (dst / name).write_bytes((src / name).read_bytes())
+    app_manifest = dict(manifest)
+    app_manifest["files"] = files
+    app_manifest["checksums"] = {name: _sha256(dst / name) for name in files.values()}
+    app_manifest["full_bundle_files"] = manifest["files"]
+    (dst / "manifest.json").write_text(json.dumps(app_manifest, indent=2), encoding="utf-8")
+    return app_manifest
+
+
 def verify_bundle(directory: str | Path) -> list[str]:
     """Return a list of problems (empty when the bundle is intact)."""
 

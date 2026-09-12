@@ -204,15 +204,8 @@ class GeminiChatProvider:
             f"?key={self._api_key}"
         )
         payload = {
-            "system_instruction": {
-                "parts": [{"text": system_instruction}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": user_text}]
-                }
-            ],
+            "system_instruction": {"parts": [{"text": system_instruction}]},
+            "contents": [{"role": "user", "parts": [{"text": user_text}]}],
             "generationConfig": {
                 "temperature": 0.7,
                 "maxOutputTokens": self._max_output_tokens,

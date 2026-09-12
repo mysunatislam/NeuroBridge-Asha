@@ -47,6 +47,18 @@ def cmd_train(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export_app(args: argparse.Namespace) -> int:
+    from .bundle import export_app_bundle, verify_bundle
+
+    export_app_bundle(args.bundle, args.output)
+    problems = verify_bundle(args.output)
+    if problems:
+        print("\n".join(problems))
+        return 1
+    print(f"app bundle written to {args.output}")
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from .bundle import verify_bundle
 
@@ -203,6 +215,13 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--no-onnx", action="store_true")
     train.add_argument("--verbose", action="store_true")
     train.set_defaults(func=cmd_train)
+
+    export_app = sub.add_parser(
+        "export-app", help="copy the JSON runtime files into the Flutter asset folder"
+    )
+    export_app.add_argument("--bundle", default="models/intent_bundle_v1")
+    export_app.add_argument("--output", default="../../apps/mobile/assets/models/intent_bundle_v1")
+    export_app.set_defaults(func=cmd_export_app)
 
     verify = sub.add_parser("verify", help="check a bundle's checksums and schema")
     verify.add_argument("bundle")

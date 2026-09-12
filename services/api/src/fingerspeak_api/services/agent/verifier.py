@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 from fingerspeak_api.services.agent.tools import ToolExecution
 
@@ -101,7 +102,9 @@ class VerificationEngine:
         for pat in _DIAGNOSIS_PATTERNS:
             if pat.search(draft_reply):
                 safety_passed = False
-                critique_reasons.append("Draft contains prohibited medical diagnosis or prescription statement.")
+                critique_reasons.append(
+                    "Draft contains prohibited medical diagnosis or prescription statement."
+                )
                 break
 
         for pat in _FALSE_EMERGENCY_CLAIMS:
@@ -115,7 +118,9 @@ class VerificationEngine:
                 )
                 if not has_emergency_tool:
                     safety_passed = False
-                    critique_reasons.append("Draft falsely claims emergency services were contacted.")
+                    critique_reasons.append(
+                        "Draft falsely claims emergency services were contacted."
+                    )
                     break
 
         # Check emergency escalation if user message is urgent
@@ -127,11 +132,21 @@ class VerificationEngine:
             )
             advised_protocol = any(
                 kw in draft_reply.lower()
-                for kw in ("caregiver", "emergency", "ambulance", "911", "first aid", "airway", "side")
+                for kw in (
+                    "caregiver",
+                    "emergency",
+                    "ambulance",
+                    "911",
+                    "first aid",
+                    "airway",
+                    "side",
+                )
             )
             if not has_urgent_action and not advised_protocol:
                 safety_passed = False
-                critique_reasons.append("Urgent distress reported but emergency guidance or alert action was omitted.")
+                critique_reasons.append(
+                    "Urgent distress reported but emergency guidance or alert action was omitted."
+                )
                 missing_actions.append("trigger_caregiver_alert")
 
         # -------------------------------------------------------------
@@ -142,31 +157,50 @@ class VerificationEngine:
         executed_tool_names = {ex.tool_name for ex in actions_executed if ex.success}
 
         # Intent: Alert caregiver
-        if any(w in normalized_msg for w in ("call caregiver", "alert caregiver", "call nurse", "tell caregiver")):
+        if any(
+            w in normalized_msg
+            for w in ("call caregiver", "alert caregiver", "call nurse", "tell caregiver")
+        ):
             if "trigger_caregiver_alert" not in executed_tool_names:
                 goal_fulfilled = False
-                critique_reasons.append("User requested caregiver contact, but 'trigger_caregiver_alert' was not executed.")
+                critique_reasons.append(
+                    "User requested caregiver contact, but 'trigger_caregiver_alert' was not executed."
+                )
                 missing_actions.append("trigger_caregiver_alert")
 
         # Intent: Wheelchair screen display
-        if any(w in normalized_msg for w in ("show on screen", "display on wheelchair", "write to display")):
+        if any(
+            w in normalized_msg
+            for w in ("show on screen", "display on wheelchair", "write to display")
+        ):
             if "send_wheelchair_caption" not in executed_tool_names:
                 goal_fulfilled = False
-                critique_reasons.append("User requested screen display update, but 'send_wheelchair_caption' was not executed.")
+                critique_reasons.append(
+                    "User requested screen display update, but 'send_wheelchair_caption' was not executed."
+                )
                 missing_actions.append("send_wheelchair_caption")
 
         # Intent: Battery / Hardware check
-        if any(w in normalized_msg for w in ("battery", "camera status", "check pi", "check wheelchair")):
+        if any(
+            w in normalized_msg
+            for w in ("battery", "camera status", "check pi", "check wheelchair")
+        ):
             if "check_device_telemetry" not in executed_tool_names:
                 goal_fulfilled = False
-                critique_reasons.append("User asked about device/battery status, but 'check_device_telemetry' was not executed.")
+                critique_reasons.append(
+                    "User asked about device/battery status, but 'check_device_telemetry' was not executed."
+                )
                 missing_actions.append("check_device_telemetry")
 
         # Intent: Water / Hydration / Reposition
-        if any(w in normalized_msg for w in ("thirsty", "need water", "reposition", "pressure sore")):
+        if any(
+            w in normalized_msg for w in ("thirsty", "need water", "reposition", "pressure sore")
+        ):
             if "manage_care_routine" not in executed_tool_names:
                 goal_fulfilled = False
-                critique_reasons.append("User requested care routine action (water/repositioning), but 'manage_care_routine' was not executed.")
+                critique_reasons.append(
+                    "User requested care routine action (water/repositioning), but 'manage_care_routine' was not executed."
+                )
                 missing_actions.append("manage_care_routine")
 
         # -------------------------------------------------------------
@@ -183,22 +217,36 @@ class VerificationEngine:
                 grounding_score = len(supported_tokens) / max(len(reply_tokens), 1)
                 # Normal clinical grounding expectation is >= 0.20 overlap with snippet terminology
                 if grounding_score < 0.15 and len(reply_tokens) > 15:
-                    critique_reasons.append(f"Low factual grounding ({grounding_score:.2f}) with clinical knowledge.")
+                    critique_reasons.append(
+                        f"Low factual grounding ({grounding_score:.2f}) with clinical knowledge."
+                    )
 
         # -------------------------------------------------------------
         # 4. Spoken Voice Usability Check
         # -------------------------------------------------------------
         if len(draft_reply) > 800:
-            critique_reasons.append("Reply is too long for spoken AAC communication. Keep to 1-3 sentences.")
+            critique_reasons.append(
+                "Reply is too long for spoken AAC communication. Keep to 1-3 sentences."
+            )
 
-        is_verified = safety_passed and goal_fulfilled and (len(critique_reasons) == 0 or grounding_score >= 0.15)
-        critique_notes = "; ".join(critique_reasons) if critique_reasons else "All safety, goal fulfillment, and grounding checks passed."
+        is_verified = (
+            safety_passed
+            and goal_fulfilled
+            and (len(critique_reasons) == 0 or grounding_score >= 0.15)
+        )
+        critique_notes = (
+            "; ".join(critique_reasons)
+            if critique_reasons
+            else "All safety, goal fulfillment, and grounding checks passed."
+        )
 
         remediation = ""
         if not is_verified:
             steps = []
             if not safety_passed:
-                steps.append("Remove any diagnostic/prescriptive phrasing. Advise confirmed emergency path.")
+                steps.append(
+                    "Remove any diagnostic/prescriptive phrasing. Advise confirmed emergency path."
+                )
             if missing_actions:
                 steps.append(f"Execute required missing tool(s): {', '.join(missing_actions)}.")
             if len(draft_reply) > 800:
