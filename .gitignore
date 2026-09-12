@@ -36,3 +36,6 @@ apps/mobile/android/.kotlin/
 
 
 
+
+# Local web deployment builds (published to the public *-patient / *-caregiver repos)
+/build_web/

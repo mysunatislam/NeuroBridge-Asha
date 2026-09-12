@@ -1,0 +1,199 @@
+name: Release patient and caregiver apps
+
+# Produces four GitHub Releases from one version tag or a manual run:
+#   android-patient-v*    Asha Patient APK (org.fingerspeak.patient)
+#   android-caregiver-v*  Asha Caregiver APK (org.fingerspeak.caregiver)
+#   ios-patient-v*        Asha Patient unsigned IPA for sideloading
+#   ios-caregiver-v*      Asha Caregiver unsigned IPA for sideloading
+#
+# APKs are debug-signed evaluation builds (no store signing material in CI).
+# IPAs are unsigned; install with Sideloadly / AltStore or sign with your own
+# Apple developer profile.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (for example 3.0.0)
+        required: true
+        default: "3.0.0"
+        type: string
+      build_ios:
+        description: Also build the two iOS IPAs (macOS runner minutes)
+        required: false
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: 3.47.1
+  API_BASE_URL: https://replace-with-your-backend.example/v1
+  PI_WS_URL: wss://replace-with-your-pi-gateway.example/v1/device/ws
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+    steps:
+      - id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [patient, caregiver]
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+      - name: Build ${{ matrix.app }} APK
+        run: >-
+          flutter build apk --release
+          --flavor ${{ matrix.app }}
+          -t lib/main_${{ matrix.app }}.dart
+          --build-name=${{ needs.version.outputs.version }}
+          --dart-define=FINGERSPEAK_API_BASE_URL=${{ env.API_BASE_URL }}
+          --dart-define=FINGERSPEAK_PI_WS_URL=${{ env.PI_WS_URL }}
+      - name: Rename and checksum
+        run: |
+          out=build/app/outputs/flutter-apk
+          ls -la "$out"
+          cp "$out/app-${{ matrix.app }}-release.apk" "$out/NeuroBridge-Asha-${{ matrix.app }}-v${{ needs.version.outputs.version }}.apk"
+          (cd "$out" && sha256sum "NeuroBridge-Asha-${{ matrix.app }}-v${{ needs.version.outputs.version }}.apk" > "NeuroBridge-Asha-${{ matrix.app }}-v${{ needs.version.outputs.version }}.apk.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.app }}
+          path: |
+            apps/mobile/build/app/outputs/flutter-apk/NeuroBridge-Asha-${{ matrix.app }}-v${{ needs.version.outputs.version }}.apk
+            apps/mobile/build/app/outputs/flutter-apk/NeuroBridge-Asha-${{ matrix.app }}-v${{ needs.version.outputs.version }}.apk.sha256
+          if-no-files-found: error
+      - name: Publish release android-${{ matrix.app }}-v${{ needs.version.outputs.version }}
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: android-${{ matrix.app }}-v${{ needs.version.outputs.version }}
+          name: "NeuroBridge Asha ${{ matrix.app == 'patient' && 'Patient' || 'Caregiver' }} - Android v${{ needs.version.outputs.version }}"
+          target_commitish: ${{ github.sha }}
+          body: |
+            ### NeuroBridge Asha ${{ matrix.app == 'patient' && 'Patient' || 'Caregiver' }} app (Android)
+            Offline patient-adaptive intent recognition: MediaPipe/ML Kit landmarks are only a
+            feature source; commands require a 2-5 s movement pattern, a patient-calibrated
+            profile, an abnormal-movement veto and a 70/90 % confidence gate.
+
+            * Package: `org.fingerspeak.${{ matrix.app }}`
+            * Evaluation build with debug signing; enable "install unknown apps" to sideload.
+            * Backend/Pi endpoints are placeholders; local communication works fully offline.
+          files: |
+            apps/mobile/build/app/outputs/flutter-apk/NeuroBridge-Asha-${{ matrix.app }}-v${{ needs.version.outputs.version }}.apk
+            apps/mobile/build/app/outputs/flutter-apk/NeuroBridge-Asha-${{ matrix.app }}-v${{ needs.version.outputs.version }}.apk.sha256
+
+  ios:
+    needs: version
+    if: ${{ github.event_name == 'push' || inputs.build_ios }}
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: apps/mobile
+        run: |
+          flutter pub get
+          # Xcode 16 renamed the AVCaptureSession notification symbols used by camera_avfoundation.
+          find "$HOME/.pub-cache" -name "DefaultCamera.swift" -exec sed -i '' 's/AVCaptureSession\.wasInterruptedNotification/NSNotification.Name.AVCaptureSessionWasInterrupted/g' {} + || true
+          find "$HOME/.pub-cache" -name "DefaultCamera.swift" -exec sed -i '' 's/AVCaptureSession\.runtimeErrorNotification/NSNotification.Name.AVCaptureSessionRuntimeError/g' {} + || true
+      - name: Build both unsigned apps
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          for app in patient caregiver; do
+            if [ "$app" = patient ]; then label="Asha Patient"; else label="Asha Caregiver"; fi
+            flutter build ios --release --no-codesign \
+              -t "lib/main_${app}.dart" \
+              --build-name="${{ needs.version.outputs.version }}" \
+              --dart-define=FINGERSPEAK_API_BASE_URL="${API_BASE_URL}" \
+              --dart-define=FINGERSPEAK_PI_WS_URL="${PI_WS_URL}"
+            app_dir="build/ios/iphoneos/Runner.app"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier org.fingerspeak.${app}" "$app_dir/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${label}" "$app_dir/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleName ${label}" "$app_dir/Info.plist"
+            mkdir -p "../../build_output/${app}/Payload"
+            cp -R "$app_dir" "../../build_output/${app}/Payload/"
+            (cd "../../build_output/${app}" && zip -qr "../NeuroBridge-Asha-${app}-v${{ needs.version.outputs.version }}.ipa" Payload)
+            (cd ../../build_output && shasum -a 256 "NeuroBridge-Asha-${app}-v${{ needs.version.outputs.version }}.ipa" > "NeuroBridge-Asha-${app}-v${{ needs.version.outputs.version }}.ipa.sha256")
+          done
+          ls -la ../../build_output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipas
+          path: |
+            build_output/*.ipa
+            build_output/*.sha256
+          if-no-files-found: error
+      - name: Publish release ios-patient-v${{ needs.version.outputs.version }}
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ios-patient-v${{ needs.version.outputs.version }}
+          name: "NeuroBridge Asha Patient - iOS v${{ needs.version.outputs.version }}"
+          target_commitish: ${{ github.sha }}
+          body: |
+            ### NeuroBridge Asha Patient app (iOS, unsigned IPA)
+            Sideload with Sideloadly / AltStore, or re-sign with your Apple developer profile.
+            Bundle id `org.fingerspeak.patient`. Includes the offline intent recognition bundle
+            (temporal CNN, intent and abnormal-movement forests) and patient calibration.
+          files: |
+            build_output/NeuroBridge-Asha-patient-v${{ needs.version.outputs.version }}.ipa
+            build_output/NeuroBridge-Asha-patient-v${{ needs.version.outputs.version }}.ipa.sha256
+      - name: Publish release ios-caregiver-v${{ needs.version.outputs.version }}
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ios-caregiver-v${{ needs.version.outputs.version }}
+          name: "NeuroBridge Asha Caregiver - iOS v${{ needs.version.outputs.version }}"
+          target_commitish: ${{ github.sha }}
+          body: |
+            ### NeuroBridge Asha Caregiver app (iOS, unsigned IPA)
+            Sideload with Sideloadly / AltStore, or re-sign with your Apple developer profile.
+            Bundle id `org.fingerspeak.caregiver`. Multi-patient roster, offline peer discovery,
+            emergency alerts and the optional Gemini care summaries over structured events only.
+          files: |
+            build_output/NeuroBridge-Asha-caregiver-v${{ needs.version.outputs.version }}.ipa
+            build_output/NeuroBridge-Asha-caregiver-v${{ needs.version.outputs.version }}.ipa.sha256

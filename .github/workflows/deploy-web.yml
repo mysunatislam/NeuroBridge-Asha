@@ -1,0 +1,89 @@
+name: Deploy patient and caregiver web apps
+
+# Builds the Flutter web app twice (patient entry point, caregiver entry point)
+# and publishes each build to its own public GitHub Pages repository:
+#   https://mysunatislam.github.io/neurobridge-asha-patient/
+#   https://mysunatislam.github.io/neurobridge-asha-caregiver/
+#
+# This repository is private, so GitHub Pages cannot be served from it on the
+# current plan; the public build-only repositories hold compiled assets only.
+# Requires a repository secret PAGES_DEPLOY_TOKEN (fine-grained PAT with
+# "contents: write" on both deployment repositories).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/deploy-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: patient
+            repo: neurobridge-asha-patient
+          - app: caregiver
+            repo: neurobridge-asha-caregiver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - name: Build ${{ matrix.app }} web app
+        working-directory: apps/mobile
+        run: |
+          flutter pub get
+          flutter build web --release \
+            --no-wasm-dry-run \
+            --tree-shake-icons \
+            --optimization-level 4 \
+            -t lib/main_${{ matrix.app }}.dart \
+            --base-href "/${{ matrix.repo }}/"
+          mkdir -p build/web/assets/web
+          cp -r build/web/assets/assets/web/* build/web/assets/web/ 2>/dev/null || true
+          cp build/web/index.html build/web/404.html
+          touch build/web/.nojekyll
+          echo "${{ github.sha }}" > build/web/BUILD_SHA
+      - name: Publish to ${{ matrix.repo }}
+        if: ${{ env.PAGES_DEPLOY_TOKEN != '' }}
+        env:
+          PAGES_DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+        working-directory: apps/mobile/build/web
+        run: |
+          git init -q
+          git checkout -q -b main
+          git config user.name "neurobridge-deploy[bot]"
+          git config user.email "neurobridge-deploy@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy NeuroBridge Asha ${{ matrix.app }} web app (${{ github.sha }})"
+          git remote add origin "https://x-access-token:${PAGES_DEPLOY_TOKEN}@github.com/${{ github.repository_owner }}/${{ matrix.repo }}.git"
+          git push -q --force origin main
+          echo "Deployed https://${{ github.repository_owner }}.github.io/${{ matrix.repo }}/"
+      - name: Deployment skipped
+        if: ${{ env.PAGES_DEPLOY_TOKEN == '' }}
+        env:
+          PAGES_DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+        run: echo "PAGES_DEPLOY_TOKEN secret is not set; build succeeded but was not published."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ matrix.app }}
+          path: apps/mobile/build/web
+          retention-days: 7

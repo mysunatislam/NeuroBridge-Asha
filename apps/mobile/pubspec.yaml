@@ -1,7 +1,7 @@
 name: fingerspeak_mobile
 description: Mobile patient and caregiver companion for FingerSpeak Asha.
 publish_to: "none"
-version: 0.1.1+2
+version: 3.0.0+3
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -25,7 +25,10 @@ dependencies:
   uuid: ^4.5.1
   web_socket_channel: ^3.0.2
   permission_handler: ^11.3.1
-  flutter_inappwebview: ^6.1.5
+  # 6.2.0-beta.3 ships flutter_inappwebview_android 1.2.0-beta.3, whose Gradle
+  # script no longer calls getDefaultProguardFile('proguard-android.txt'); the
+  # stable 6.1.5 line fails to evaluate under AGP 9.x.
+  flutter_inappwebview: ^6.2.0-beta.3
   webview_flutter: ^4.10.0
   webview_flutter_android: ^4.3.0
 
@@ -42,3 +45,6 @@ flutter:
     - assets/web/fingerspeak_hand_runtime.js
     - assets/web/wasm/
     - assets/web/models/
+    # Offline intent recognition bundle (services/intent export): forests,
+    # temporal CNN weights and manifest. JSON only; no camera data.
+    - assets/models/intent_bundle_v1/

@@ -5,9 +5,16 @@ import 'package:fingerspeak_mobile/data/pi_device_client.dart';
 import 'package:fingerspeak_mobile/models/patient_access_method.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/services/voice_service.dart';
+import 'package:fingerspeak_mobile/ui/intent_calibration_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+String _percent(Map<String, dynamic> manifest, String metric) {
+  final metrics = manifest['metrics'];
+  final value = metrics is Map ? metrics[metric] : null;
+  return value is num ? '${(value * 100).round()} %' : 'n/a';
+}
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({required this.services, this.onRoleChanged, super.key});
@@ -306,6 +313,80 @@ class _SettingsPageState extends State<SettingsPage> {
               label: const Text('Replay'),
             ),
           ),
+        ),
+        const SizedBox(height: 16),
+
+        // Offline intent recognition: calibration + verification toggle.
+        ListenableBuilder(
+          listenable: widget.services.intentRecognition,
+          builder: (context, _) {
+            final intent = widget.services.intentRecognition;
+            final profile = intent.profile;
+            final blinkRate =
+                (profile.blink['rate_per_min'] ?? 0).toStringAsFixed(0);
+            return Card(
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFCCFBF1),
+                      child: Icon(Icons.psychology_alt_outlined,
+                          color: Color(0xFF0F766E)),
+                    ),
+                    title: const Text('Teach Asha your movements'),
+                    subtitle: Text(
+                      intent.isCalibrated
+                          ? 'Profile ${profile.patientId} · blink rate $blinkRate/min · '
+                              'saved ${profile.createdAt.split('T').first}'
+                          : 'Not calibrated yet. Five 30-second recordings build '
+                              'a personal movement profile.',
+                    ),
+                    trailing: FilledButton.tonalIcon(
+                      onPressed: () async {
+                        await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => IntentCalibrationPage(
+                                services: widget.services),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.fiber_manual_record),
+                      label: Text(intent.isCalibrated ? 'Redo' : 'Start'),
+                    ),
+                  ),
+                  SwitchListTile(
+                    value: intent.enabled,
+                    onChanged: (value) => unawaited(
+                        widget.services.setIntentRecognitionEnabled(value)),
+                    title: const Text('Movement is not a command'),
+                    subtitle: Text(
+                      intent.loadError ??
+                          'Commands need a 2-5 s movement pattern, your profile and '
+                              '70/90 % confidence verification. Involuntary movement '
+                              'is detected and never spoken.',
+                    ),
+                  ),
+                  if (intent.bundleManifest != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Text(
+                        'Models: ${intent.bundleManifest!['schema_version']} · '
+                        'intent ${_percent(intent.bundleManifest!, 'intent_accuracy')} · '
+                        'temporal ${_percent(intent.bundleManifest!, 'temporal_accuracy')} · '
+                        'abnormal ${_percent(intent.bundleManifest!, 'abnormal_accuracy')} '
+                        '(held-out bootstrap data)',
+                        style: const TextStyle(
+                            color: Color(0xFF64748B), fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
         ),
         const SizedBox(height: 16),
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
+import 'package:fingerspeak_mobile/intent/frame_builder.dart';
 import 'package:fingerspeak_mobile/models/patient_signal.dart';
 import 'package:fingerspeak_mobile/services/face_camera_frame.dart';
 import 'package:fingerspeak_mobile/services/respiration_rate_estimator.dart';
@@ -13,6 +14,10 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 abstract interface class PatientSignalMonitor {
   Stream<PatientSignal> get signals;
   Stream<MonitorStatus> get statuses;
+
+  /// Raw per-observation measurements for the intent recognition pipeline.
+  /// One event per processed camera frame; never contains image data.
+  Stream<IntentObservation> get observations;
   MonitorStatus get currentStatus;
   CameraController? get cameraController;
   Future<void> start();
@@ -422,7 +427,15 @@ class MlKitPatientSignalMonitor
   final FaceDetector _detector;
   final _signals = StreamController<PatientSignal>.broadcast();
   final _statuses = StreamController<MonitorStatus>.broadcast();
+  final _observations = StreamController<IntentObservation>.broadcast();
   MonitorStatus _currentStatus = const MonitorStatus.stopped();
+
+  // Latest contour-derived measurements shared with the intent pipeline.
+  Map<FaceContourType, Offset> _previousContourCentersAll = const {};
+  double _lastContourMotion = 0;
+  double _lastContourDirectionConsistency = 0;
+  double _lastLipMotion = 0;
+  double _lastMouthAsymmetry = 0;
   final Map<PatientSignalKind, double> _signalSensitivities = {};
   final RespirationRateEstimator _respirationEstimator =
       RespirationRateEstimator();
@@ -480,6 +493,13 @@ class MlKitPatientSignalMonitor
 
   @override
   Stream<MonitorStatus> get statuses => _statuses.stream;
+
+  @override
+  Stream<IntentObservation> get observations => _observations.stream;
+
+  void _publishObservation(IntentObservation observation) {
+    if (!_closed && !_observations.isClosed) _observations.add(observation);
+  }
 
   @override
   void setSignalSensitivities(
@@ -757,6 +777,9 @@ class MlKitPatientSignalMonitor
           lifecycle: MonitorLifecycle.active,
           message: 'Looking for the patient’s face…',
         ));
+        _publishObservation(
+          IntentObservation(observedAt: now, faceDetected: false),
+        );
         return;
       }
       final face = _selectPrimaryFace(faces);
@@ -858,6 +881,29 @@ class MlKitPatientSignalMonitor
         pitchOffset: pitch == null ? null : pitch - _restingHeadPitch,
         headVelocity: headVelocity,
       );
+      // Measurements only (no pixels) for the temporal intent pipeline. The
+      // pipeline decides over 2-5 s windows whether movement was a command.
+      final imageWidth = math.max(image.width, 1).toDouble();
+      final imageHeight = math.max(image.height, 1).toDouble();
+      _publishObservation(IntentObservation(
+        observedAt: now,
+        faceDetected: true,
+        leftEyeOpen: leftOpen,
+        rightEyeOpen: rightOpen,
+        mouthDistance: neutralMeasurements.mouthDistance,
+        smileProbability: smileProbability,
+        eyebrowDistance: neutralMeasurements.eyebrowDistance,
+        headYaw: yaw,
+        headPitch: pitch,
+        headRoll: face.headEulerAngleZ,
+        faceCenterX: face.boundingBox.center.dx / imageWidth,
+        faceCenterY: face.boundingBox.center.dy / imageHeight,
+        faceScale: face.boundingBox.width / imageWidth,
+        lipMotion: _lastLipMotion,
+        contourMotionEnergy: _lastContourMotion,
+        contourDirectionConsistency: _lastContourDirectionConsistency,
+        mouthAsymmetry: _lastMouthAsymmetry,
+      ));
     } on Object catch (error) {
       if (!_isCurrentSession(generation, controller)) return;
       _resetTemporalTracking();
@@ -1620,6 +1666,46 @@ class MlKitPatientSignalMonitor
         (y - face.boundingBox.top) / faceHeight,
       );
     }
+    // Pose-independent contour motion for the intent pipeline (energy,
+    // direction consistency, lip-specific motion). Unlike the experimental
+    // muscle-movement signal below this is never gated by sensitivities.
+    _lastMouthAsymmetry = cornerHeightDifference.abs();
+    if (_previousContourCentersAll.isNotEmpty && current.isNotEmpty) {
+      var movement = 0.0;
+      var lipMovement = 0.0;
+      var lipCount = 0;
+      var cosSum = 0.0;
+      var sinSum = 0.0;
+      var count = 0;
+      for (final entry in current.entries) {
+        final previous = _previousContourCentersAll[entry.key];
+        if (previous == null) continue;
+        final delta = entry.value - previous;
+        movement += delta.distance;
+        count++;
+        if (delta.distance > 1e-6) {
+          final angle = math.atan2(delta.dy, delta.dx);
+          cosSum += math.cos(angle);
+          sinSum += math.sin(angle);
+        }
+        if (entry.key == FaceContourType.upperLipTop ||
+            entry.key == FaceContourType.lowerLipBottom) {
+          lipMovement += delta.distance;
+          lipCount++;
+        }
+      }
+      _lastContourMotion = count == 0 ? 0.0 : movement / count;
+      _lastLipMotion = lipCount == 0 ? 0.0 : lipMovement / lipCount;
+      _lastContourDirectionConsistency = count == 0
+          ? 0.0
+          : math.sqrt(math.pow(cosSum / count, 2) + math.pow(sinSum / count, 2));
+    } else {
+      _lastContourMotion = 0.0;
+      _lastLipMotion = 0.0;
+      _lastContourDirectionConsistency = 0.0;
+    }
+    _previousContourCentersAll = current;
+
     var normalizedMovement = 0.0;
     if (poseStable &&
         _previousContourCenters.isNotEmpty &&
@@ -1690,6 +1776,11 @@ class MlKitPatientSignalMonitor
     _stabilityGate.clear();
     _headMotionFilter.clear();
     _previousContourCenters = const {};
+    _previousContourCentersAll = const {};
+    _lastContourMotion = 0;
+    _lastContourDirectionConsistency = 0;
+    _lastLipMotion = 0;
+    _lastMouthAsymmetry = 0;
     _lipDisplacements.clear();
     _eyeDisplacements.clear();
     _lipObservationTimes.clear();
@@ -1828,12 +1919,14 @@ class MlKitPatientSignalMonitor
     }
     await _signals.close();
     await _statuses.close();
+    await _observations.close();
   }
 }
 
 class NoOpPatientSignalMonitor implements PatientSignalMonitor {
   final _signals = StreamController<PatientSignal>.broadcast();
   final _statuses = StreamController<MonitorStatus>.broadcast();
+  final _observations = StreamController<IntentObservation>.broadcast();
   MonitorStatus _currentStatus = const MonitorStatus.stopped();
 
   @override
@@ -1847,6 +1940,14 @@ class NoOpPatientSignalMonitor implements PatientSignalMonitor {
 
   @override
   Stream<MonitorStatus> get statuses => _statuses.stream;
+
+  @override
+  Stream<IntentObservation> get observations => _observations.stream;
+
+  /// Tests and demos feed measurements directly.
+  void simulateObservation(IntentObservation observation) {
+    if (!_observations.isClosed) _observations.add(observation);
+  }
 
   @override
   void setNeutralBaseline({
@@ -1922,5 +2023,6 @@ class NoOpPatientSignalMonitor implements PatientSignalMonitor {
   Future<void> dispose() async {
     await _signals.close();
     await _statuses.close();
+    await _observations.close();
   }
 }

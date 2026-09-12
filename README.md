@@ -57,6 +57,15 @@ an OpenAI key in shipped code.
   conversation sheet; on-device face, blink, wink, head, and facial-contour signals; immediate TTS
   or exact caregiver-recorded phrase playback; water notifications; phone calls; protected Pi
   credentials; and the same bounded WebSocket caption protocol.
+- **Offline intent recognition (`services/intent` + `apps/mobile/lib/intent`):** MediaPipe/ML Kit
+  are feature extractors only. A 2.5 s feature window feeds an intentional-vs-accidental forest,
+  a temporal CNN over the last 3 s decides the command *pattern* (triple blink, held mouth open,
+  held brow raise, held head turn, hand raise), an abnormal-movement detector vetoes twitches,
+  tremor, spasms and seizure-like activity, a five-phase patient calibration builds
+  `patient_profile.json`, and a confidence verification engine ignores below 70 %, asks
+  "Did you mean ...?" between 70 and 90 %, and executes above 90 %. Everything runs on device;
+  Gemini is an optional reasoning layer over structured events only. See
+  [docs/INTENT_RECOGNITION.md](docs/INTENT_RECOGNITION.md).
 - **Asha companion boundary:** `POST /v1/asha/chat` accepts bounded text and optional patient-owned
   context. The API can use a server-only OpenAI Responses adapter and owner-scoped file search, or
   return a deterministic offline companion response when no provider is configured. No API key is

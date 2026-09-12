@@ -4,6 +4,8 @@ import 'package:fingerspeak_mobile/core/app_config.dart';
 import 'package:fingerspeak_mobile/data/asha_api_client.dart';
 import 'package:fingerspeak_mobile/data/cloud_api_client.dart';
 import 'package:fingerspeak_mobile/data/pi_device_client.dart';
+import 'package:fingerspeak_mobile/intent/intent_recognition_service.dart';
+import 'package:fingerspeak_mobile/intent/patient_profile.dart';
 import 'package:fingerspeak_mobile/models/patient_signal.dart';
 import 'package:fingerspeak_mobile/models/personal_access_profile_repository.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
@@ -45,8 +47,13 @@ class MobileServices {
     required this.ashaGuide,
     required this.localPeerSync,
     required this.patientRoster,
-  });
+    required this.intentRecognition,
+    required SharedPreferences preferences,
+  }) : _preferences = preferences;
 
+  static const intentEnabledKey = 'intent.enabled';
+
+  final SharedPreferences _preferences;
   final AppConfig config;
   final UserRoleRepository roleRepository;
   final PatientAccessMethodRepository patientAccessMethodRepository;
@@ -67,6 +74,11 @@ class MobileServices {
   final AshaGuideService ashaGuide;
   final LocalPeerSyncService localPeerSync;
   final PatientRosterService patientRoster;
+
+  /// Offline patient-adaptive intent recognition (movement != command).
+  /// While enabled, live face signals only reach speech after the temporal
+  /// pipeline, the patient profile and the confidence gate agree.
+  final IntentRecognitionService intentRecognition;
   StreamSubscription<Object?>? _signalSubscription;
   StreamSubscription<PiConnectionState>? _piStateSubscription;
   StreamSubscription<PatientSignal>? _piSignalSubscription;
@@ -174,8 +186,17 @@ class MobileServices {
       preferences: preferences,
       peerSync: localPeerSync,
     );
+    final intentRecognition = _buildIntentRecognition(
+      preferences: preferences,
+      monitor: monitor,
+      recognition: recognition,
+      voice: voice,
+      caregiverNotifications: caregiverNotifications,
+    );
 
     final result = MobileServices._(
+      preferences: preferences,
+      intentRecognition: intentRecognition,
       config: config,
       roleRepository: roleRepository,
       patientAccessMethodRepository: patientAccessMethodRepository,
@@ -198,12 +219,65 @@ class MobileServices {
       patientRoster: patientRoster,
     );
     result._signalSubscription = monitor.signals.listen((signal) {
-      unawaited(recognition.ingest(signal));
+      if (result.shouldBypassIntentPipeline(signal)) {
+        unawaited(recognition.ingest(signal));
+      }
     });
     result._piStateSubscription = pi.states.listen(result._handlePiState);
     final currentRole = roleRepository.load() ?? UserRole.patient;
     await companion.start(role: currentRole);
+    unawaited(intentRecognition.start());
     return result;
+  }
+
+  static IntentRecognitionService _buildIntentRecognition({
+    required SharedPreferences preferences,
+    required PatientSignalMonitor monitor,
+    required RecognitionTriggerController recognition,
+    required PatientVoiceService voice,
+    required CaregiverNotificationService? caregiverNotifications,
+  }) {
+    return IntentRecognitionService(
+      observations: monitor.observations,
+      profileRepository: PatientProfileRepository(preferences),
+      enabled: preferences.getBool(intentEnabledKey) ?? true,
+      onExecute: (signal, verdict) {
+        // Verified command: hand it to the existing phrase/caption/notify path.
+        unawaited(recognition.ingest(signal));
+      },
+      onConfirmationPrompt: (command, prompt, confidence) {
+        unawaited(voice.speakSystemPrompt(prompt));
+      },
+      onAlert: (label, probability) {
+        unawaited(caregiverNotifications?.notifyEmergency(
+          'Possible involuntary movement',
+          'On-device analysis flagged ${label.replaceAll('_', ' ')} '
+              '(${(probability * 100).round()}%). Commands are paused; please check the patient.',
+          signalKind: PatientSignalKind.seizureAlert,
+          urgency: AlertUrgency.emergency,
+        ));
+      },
+    );
+  }
+
+  /// Legacy single-signal triggers stay available for simulated/debug signals
+  /// and for the explicit seizure alert; live face movements go through the
+  /// intent pipeline whenever it is enabled.
+  bool shouldBypassIntentPipeline(PatientSignal signal) {
+    if (!intentRecognition.enabled) return true;
+    if (signal.kind == PatientSignalKind.seizureAlert) return true;
+    if (signal.sourceLabel == 'simulated') return true;
+    final category = signal.kind.category;
+    return category != SignalCategory.eyes &&
+        category != SignalCategory.face &&
+        category != SignalCategory.head;
+  }
+
+  bool get intentRecognitionEnabled => intentRecognition.enabled;
+
+  Future<void> setIntentRecognitionEnabled(bool enabled) async {
+    intentRecognition.setEnabled(enabled);
+    await _preferences.setBool(intentEnabledKey, enabled);
   }
 
   static Future<MobileServices> forTest({
@@ -257,7 +331,16 @@ class MobileServices {
       peerSync: localPeerSync,
       autoStartHeartbeat: false,
     );
+    final intentRecognition = _buildIntentRecognition(
+      preferences: prefs,
+      monitor: mon,
+      recognition: recognition,
+      voice: voice,
+      caregiverNotifications: notifications,
+    );
     return MobileServices._(
+      preferences: prefs,
+      intentRecognition: intentRecognition,
       config: cfg,
       roleRepository: roleRepo,
       patientAccessMethodRepository: patientAccessMethodRepository,
@@ -364,6 +447,7 @@ class MobileServices {
     await _signalSubscription?.cancel();
     await _piStateSubscription?.cancel();
     await _piSignalSubscription?.cancel();
+    intentRecognition.dispose();
     companion.dispose();
     await recognition.dispose();
     await monitor.dispose();

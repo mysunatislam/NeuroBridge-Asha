@@ -20,7 +20,7 @@ test("server-renders the finished FingerSpeak application", async () => {
   assert.match(html, /asha-avatar-face\.webp/);
   assert.match(html, /Pi Display/);
   assert.match(html, /Caregiver/);
-  assert.match(html, /Local-first communication/);
+  assert.match(html, /PATIENT COMPANION/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/);
   assert.match(response.headers.get("content-security-policy") ?? "", /default-src 'self'/);
   assert.equal(response.headers.get("permissions-policy"), "camera=(self), microphone=(self), geolocation=()");

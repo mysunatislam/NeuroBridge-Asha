@@ -26,15 +26,15 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
-      - name: Build local-development APK
+      - name: Build local-development APK (patient flavor)
         run: >-
-          flutter build apk --debug
+          flutter build apk --debug --flavor patient -t lib/main_patient.dart
           --dart-define=FINGERSPEAK_API_BASE_URL=http://10.0.2.2:8000/v1
           --dart-define=FINGERSPEAK_PI_WS_URL=ws://10.0.2.2:8765/v1/device/ws
       - uses: actions/upload-artifact@v4
         with:
           name: fingerspeak-mobile-debug-apk
-          path: apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-patient-debug.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -62,10 +62,40 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install -e "services/api[dev]" -e "services/ml[dev]" -e "services/edge[dev]"
-      - run: python -m pytest -q services/api/tests services/ml/tests services/edge/tests
-      - run: python -m ruff check services/api services/ml services/edge
-      - run: python -m compileall -q services/api/src services/ml/src services/edge/src
+      - run: python -m pip install -e "services/api[dev]" -e "services/ml[dev]" -e "services/edge[dev]" -e "services/intent[dev]"
+      # Each service owns a top-level `tests` package, so they must be collected
+      # in separate pytest invocations (a single run collides on `tests.*`).
+      - run: python -m pytest -q services/api/tests
+      - run: python -m pytest -q services/ml/tests
+      - run: python -m pytest -q services/edge/tests
+      - run: python -m pytest -q services/intent/tests
+      - run: python -m ruff check services/api services/ml services/edge services/intent
+      - run: python -m compileall -q services/api/src services/ml/src services/edge/src services/intent/src
+
+  intent-models:
+    # Offline deployment pipeline: trains the bootstrap intent, temporal and
+    # abnormal-movement models, exports TFLite/ONNX/JSON, checks NumPy parity and
+    # verifies the bundle that ships inside the mobile app.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/intent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev,tensorflow,onnx]"
+      - run: python -m neurobridge_intent.cli train --output /tmp/intent_bundle --per-class 40 --epochs 12
+      - run: python -m neurobridge_intent.cli verify /tmp/intent_bundle
+      - run: python -m neurobridge_intent.cli run --bundle /tmp/intent_bundle --synthetic
+      - name: Verify the bundle shipped in the app
+        run: python -m neurobridge_intent.cli verify ../../apps/mobile/assets/models/intent_bundle_v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intent-model-bundle
+          path: /tmp/intent_bundle
+          retention-days: 14
 
   compose:
     runs-on: ubuntu-latest

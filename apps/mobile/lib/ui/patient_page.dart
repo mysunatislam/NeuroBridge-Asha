@@ -13,6 +13,7 @@ import 'package:fingerspeak_mobile/services/asha_guide_service.dart';
 import 'package:fingerspeak_mobile/ui/ability_assessment_page.dart';
 import 'package:fingerspeak_mobile/ui/asha_chat_sheet.dart';
 import 'package:fingerspeak_mobile/ui/hand_calibration_page.dart';
+import 'package:fingerspeak_mobile/ui/intent_confirmation_banner.dart';
 import 'package:fingerspeak_mobile/ui/guide/asha_guide_host.dart';
 import 'package:fingerspeak_mobile/ui/single_switch_scanning_view.dart';
 import 'package:flutter/material.dart';
@@ -678,6 +679,7 @@ class _PatientPageState extends State<PatientPage> {
               const SizedBox(height: 12),
               _buildCaregiverIncomingAlerts(),
               const SizedBox(height: 12),
+              IntentConfirmationBanner(services: widget.services),
               _ReassuranceCard(
                 online: widget.services.companion.online,
                 onTap: () => showAshaChatSheet(

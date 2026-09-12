@@ -27,6 +27,10 @@ concurrency:
 jobs:
   android-apk:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [patient, caregiver]
     defaults:
       run:
         working-directory: apps/mobile
@@ -50,13 +54,14 @@ jobs:
           BUILD_PI_WEBSOCKET_URL: ${{ inputs.pi_websocket_url || 'wss://replace-with-your-pi-gateway.example/v1/device/ws' }}
         run: >-
           flutter build apk --release --split-per-abi
+          --flavor ${{ matrix.app }} -t lib/main_${{ matrix.app }}.dart
           --dart-define=FINGERSPEAK_API_BASE_URL=$BUILD_API_BASE_URL
           --dart-define=FINGERSPEAK_PI_WS_URL=$BUILD_PI_WEBSOCKET_URL
       - name: Write checksums
         run: sha256sum build/app/outputs/flutter-apk/*.apk > build/app/outputs/flutter-apk/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: fingerspeak-mobile-evaluation-apks
+          name: fingerspeak-mobile-evaluation-apks-${{ matrix.app }}
           path: |
             apps/mobile/build/app/outputs/flutter-apk/*.apk
             apps/mobile/build/app/outputs/flutter-apk/SHA256SUMS.txt

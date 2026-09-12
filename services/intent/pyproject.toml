@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "neurobridge-intent"
+version = "0.1.0"
+description = "Offline patient-adaptive intent recognition: MediaPipe features, temporal models, abnormal-movement detection, and confidence verification"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26,<3",
+  "scikit-learn>=1.4,<2",
+]
+
+[project.optional-dependencies]
+# Live camera feature extraction (MediaPipe Tasks + OpenCV optical flow).
+vision = [
+  "mediapipe>=0.10.14",
+  "opencv-python-headless>=4.9",
+]
+# Temporal CNN training and TensorFlow Lite export.
+tensorflow = [
+  "tensorflow>=2.16,<3",
+]
+# Optional gradient-boosted intent classifier.
+xgboost = [
+  "xgboost>=2.0,<4",
+]
+# ONNX Runtime Mobile export of the scikit-learn models.
+onnx = [
+  "onnx>=1.15",
+  "skl2onnx>=1.16",
+  "onnxruntime>=1.17",
+]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+neurobridge-intent = "neurobridge_intent.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/neurobridge_intent"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["neurobridge_intent", "tests"]
