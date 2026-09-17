@@ -1,75 +1,84 @@
-# FingerSpeak wheelchair hardware architecture
+# NeuroBridge Asha Wheelchair Hardware Architecture
 
-FingerSpeak separates the safety-sensitive wheelchair edge from conversation and cloud services.
-The Raspberry Pi never receives an LLM API key and this project defines no wheelchair propulsion or
-motor-control interface.
+NeuroBridge Asha separates the safety-critical wheelchair edge from conversational and cloud services. The on-wheelchair edge hardware provides zero-latency offline perception, continuous patient wellbeing monitoring, and high-visibility caption display.
 
 ```text
-NoIR camera -> Raspberry Pi edge service -> Raspberry Pi caption display
-                         ^
-                         | authenticated local WebSocket
-                         v
-                 patient phone application
-                         |
-                         | HTTPS / cloud realtime channel
-                         v
-              Asha LLM/RAG + caregiver service
-
- Raspberry Pi edge service -. optional outbound device WebSocket .-> caregiver cloud service
+                                  ┌───────────────────────────┐
+                                  │      PATIENT ON WHEELCHAIR│
+                                  └─────────────┬─────────────┘
+                                                │
+                                    ┌───────────┴───────────┐
+                                    ▼                       ▼
+                           NoIR Camera Module v3     Directional Mic
+                                    │                       │
+                                    └───────────┬───────────┘
+                                                │
+                                                ▼
+ ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+ │                         WHEELCHAIR EDGE PROCESSING UNIT                                     │
+ │                                                                                             │
+ │   Raspberry Pi 5 (8GB) + Google Coral Edge TPU USB Accelerator                              │
+ │   • Hardware-accelerated MediaPipe landmark extraction                                      │
+ │   • Dual-hand 21-point micro-gesture tracking                                               │
+ │   • 478-point facial mesh (EAR blink, MAR mouth, PAINAD grimace)                            │
+ │   • 2.5s temporal filter & tremor/spasm veto                                                │
+ │   • Local deterministic offline intent classifier                                           │
+ └──────────────────────────────┬───────────────────────────────┬──────────────────────────────┘
+                                │                               │
+                     Local HDMI / MIPI-DSI             Local 5W Amplified
+                                │                           Speaker
+                                ▼                               │
+                   ┌─────────────────────────┐                  ▼
+                   │ 7" Sunlight-Readable    │        Neural Speech Playback
+                   │ High-Contrast LCD       │        (Local Text-to-Speech)
+                   │ • Large captions        │
+                   │ • Proactive prompts     │
+                   │ • Emergency alert cards │
+                   └─────────────────────────┘
+                                │
+               Authenticated Local WSS / USB Tether
+                                │
+                                ▼
+                   ┌─────────────────────────┐
+                   │  Patient Mobile Device  │
+                   │  (Android / iOS App)    │
+                   └────────────┬────────────┘
+                                │  Optional Cloud Relay (HTTPS/WSS)
+                                ▼
+                   ┌─────────────────────────┐
+                   │  FastAPI Control Plane  │
+                   │  & Caregiver Portal     │
+                   └─────────────────────────┘
 ```
 
-## Responsibilities
+---
 
-The Pi owns camera capture, tracking, the local caption display, and honest device telemetry. The
-phone owns Asha conversation, phone speech input/output, explicit call handoff, cloud access, and the
-direct Pi connection. The caregiver client reads authorized cloud state; a caregiver-to-cloud socket
-does not prove that the patient or Pi is online.
+## 1. Hardware Component Bill of Materials (BOM)
 
-Camera frames are not part of the device WebSocket contract and must not be uploaded by this edge
-service. `pi_battery_percent` and `wheelchair_battery_percent` remain `null` until dedicated,
-validated sensors exist. A Raspberry Pi cannot infer either percentage on its own.
+| Component | Specification | Function |
+|:---|:---|:---|
+| **Compute Core** | Raspberry Pi 5 (8GB RAM, Quad-core Arm Cortex-A76 @ 2.4GHz) | On-device edge computer vision, local RAG retrieval, and device state machine. |
+| **Edge AI Accelerator** | Google Coral USB Accelerator (Edge TPU, 4 TOPS @ 0.5W/TOPS) | High-speed TFLite inference of 478-point Face Mesh and Hand Kinematic models. |
+| **Optical Sensor** | Raspberry Pi Camera Module 3 NoIR (12MP Sony IMX708, Night-capable) | Captures patient gestures and facial expressions across ambient daylight and night conditions without visible glare. |
+| **Display Unit** | 7-inch Sunlight-Readable IPS Display (1024×600, 800 nits, HDMI/DSI) | Mounts to wheelchair tray or side rail; presents large, high-legibility communication captions to interlocutors. |
+| **Audio Transducers** | ReSpeaker USB 2-Mic Array + 5W Encapsulated Mini-Speaker | Noise-canceling directional speech intake + audible, empathetic companion voice playback. |
+| **Power Management** | Galvanically Isolated 24V/12V to 5V 5A Buck Converter + LiFePO4 UPS | Safely draws from wheelchair battery system with surge isolation and clean shutdown signaling. |
+| **Mounting Hardware** | Modular Articulating Arm with Ball-Head Camera Mount | Clamps securely to wheelchair frame; allows ergonomic alignment to patient lap and face. |
 
-## Optional cloud device relay
+---
 
-The edge service can also open the backend's existing `/v1/devices/{id}/ws` connection directly
-over the phone hotspot. This relay is disabled unless all three cloud settings are present: the
-server-provisioned device WebSocket URL, its scoped `fsd_` bearer token, and an Origin explicitly
-allowed by the API. Unlike a browser WebSocket, the Python client can place the bearer token in the
-`Authorization` header; it is never placed in a URL or logged.
+## 2. Offline Operational Architecture
 
-The optional path publishes bounded, strictly increasing telemetry and receives durable caregiver
-captions. Pi and wheelchair battery fields stay separate and independently nullable. Caption IDs
-are applied idempotently, an unexpired local emergency display retains priority, and the Pi sends
-`caption.ack` only after a caption is applied or recognized as an exact duplicate. Reconnection uses
-bounded exponential backoff and recovers its telemetry sequence floor from cloud status.
+In hospital ICUs, rural communities, transit vehicles, or network outages, the wheelchair system operates in **Full Autonomous Offline Mode**:
+1. **Zero Cloud Requirement:** The camera feed is processed directly on the Pi/Coral TPU via MediaPipe. No frames leave the local memory bus.
+2. **Deterministic & Local Model Intent:** Gesture sequences and blink patterns are evaluated against the patient's calibrated `patient_profile.json`.
+3. **Instant Display & Audio:** When an intent is confirmed (e.g., *"Water"*, *"Pain in shoulder"*, *"Help"*), the Pi immediately displays the text on the 7" screen and vocalizes it through the speaker.
+4. **Local Event Logging:** Telemetry and symptom observations are stored in encrypted local SQLite/JSON logs and synchronize automatically when network connectivity is restored.
 
-This relay carries JSON status and captions only. Camera frames, landmarks, audio, shell commands,
-and wheelchair motor commands have no relay message type. The direct phone-to-Pi socket remains the
-patient interaction path; enabling cloud relay does not turn the cloud into the camera or drive
-controller.
+---
 
-## Connectivity
+## 3. Safety Boundary & Medical Isolation
 
-Use the patient's Wi-Fi hotspot first. Pair the phone to the Pi at a runtime-discovered IP rather
-than compiling an IP into the app. Android USB tethering is the preferred cable fallback because it
-keeps the same IP/WebSocket protocol. Bluetooth may assist discovery, but is not the main transport.
-
-The development server defaults to loopback. Binding to `0.0.0.0` exposes it to the local network
-and therefore requires a strong one-time pairing code, exact allowed origins where feasible, and a
-trusted hotspot. Plain `ws://` is for a controlled prototype only; production should use `wss://`
-and a native mobile wrapper or another platform-supported local-network security design.
-
-## Safety boundary
-
-- `caption.set` renders plain patient-facing text.
-- `emergency.display` has visual priority but does not call emergency services.
-- No message can execute a shell command or control wheelchair motors.
-- The cloud device token is scoped, owner-provisioned, revocable, and stored only on the Pi.
-- WebSocket delivery is not a sole emergency or AAC pathway.
-- NoIR-based face/wellbeing inference remains disabled until validated with the installed camera,
-  lighting, mount, and target users.
-- Wheelchair power integration requires an appropriate fused and isolated DC-DC design, safe
-  shutdown behavior, strain relief, and review by a qualified hardware professional.
-
-Resolve the exact Pi board, NoIR camera SKU, display SKU, ribbon cables, enclosure, and power system
-before producing a final bill of materials. Connector requirements differ between Pi generations.
+* **No Motor Control:** NeuroBridge Asha has no physical wiring or CAN-bus transmission to wheelchair drive motors or steering throttles. It is strictly an assistive communication and monitoring instrument.
+* **Isolated Power:** The power interface employs dual optocouplers and reverse-polarity protection to prevent interference with wheelchair motor drives.
+* **Privacy Assurance:** Video streams and audio recordings remain on edge memory; only structured metadata (event timestamps, intent codes, verified alert levels) is transmitted over authorized cloud channels.

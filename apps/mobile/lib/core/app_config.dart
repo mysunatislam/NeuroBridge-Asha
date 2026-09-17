@@ -9,7 +9,7 @@ class AppConfig {
     this.doctorPhone = '',
     this.ambulancePhone = '911',
     this.geminiApiKey = '',
-    this.geminiModel = 'gemini-flash-latest',
+    this.geminiModel = 'gemini-2.5-flash',
   });
 
   factory AppConfig.fromEnvironment() {
@@ -53,7 +53,7 @@ class AppConfig {
       ),
       geminiModel: String.fromEnvironment(
         'FINGERSPEAK_GEMINI_MODEL',
-        defaultValue: 'gemini-flash-latest',
+        defaultValue: 'gemini-2.5-flash',
       ),
     );
   }

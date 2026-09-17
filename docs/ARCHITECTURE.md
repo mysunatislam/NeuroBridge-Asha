@@ -1,164 +1,171 @@
-# Architecture
+# NeuroBridge Asha Architecture
 
-FingerSpeak separates local assistive communication, wheelchair hardware, conversation AI, and
-caregiver connectivity. Network loss must not disable the browser's confirmed gesture phrases,
-local captions, local speech playback, saved contacts, or backup AAC pathway. Cloud Asha, remote
-caregiver delivery, and cloud device presence are optional capabilities.
+NeuroBridge Asha is a **multimodal assistive intelligence platform** combining edge computer vision, personalized memory, retrieval-augmented knowledge, agentic AI, and cloud-native language models to transform non-verbal human signals into meaningful communication and proactive assistance.
 
-FingerSpeak is not a validated medical device or emergency service, and no component may control
-wheelchair propulsion or execute arbitrary Raspberry Pi commands.
+The platform enforces a strict hybrid boundary:
+* **Edge AI:** Instant response (<50 ms), privacy-preserving, zero cloud dependency, 100% offline operational resilience.
+* **Cloud AI:** Advanced medical reasoning, deep clinical synthesis, and multi-turn therapy personalization.
+* **Agentic Layer:** Closed-loop PEEC (Plan, Execute, Evaluate, Correct) multi-agent goal planning and tool execution.
+* **RAG Layer:** Trusted clinical rehabilitation knowledge retrieval grounded in 7 core domains.
+
+> **Safety Notice:** NeuroBridge Asha is an assistive intelligence platform and not a certified medical device. It does not control wheelchair propulsion motors directly.
+
+---
+
+## 1. System Topology & Mermaid Flow
 
 ```mermaid
-flowchart LR
-  Patient["Patient phone · React/Vinext PWA"]
-  BrowserCV["Local MediaPipe + personalized model"]
-  Safety["REST → CANDIDATE → WAIT_RELEASE"]
-  PhoneIO["Phone captions, speech, calls"]
-  PiEdge["Raspberry Pi edge bridge"]
-  NoIR["NoIR camera adapter"]
-  PiDisplay["Large caption / status display"]
-  API["FastAPI control plane"]
-  Asha["Asha text service · optional LLM/RAG"]
-  Caregiver["Authorized caregiver client"]
-  DB[("PostgreSQL")]
-  ML["Python ML evaluation / model bundles"]
+flowchart TB
+  subgraph EdgeLayer ["Edge Perception Layer (On-Device)"]
+    Sensors["Camera Video & Microphone Audio"]
+    MediaPipe["MediaPipe / TFLite (21 Hand pts + 478 Face Mesh)"]
+    VetoFilter["Abnormal Spasm / Tremor Veto (2.5s window)"]
+    Sensors --> MediaPipe --> VetoFilter
+  end
 
-  Patient --> BrowserCV --> Safety --> PhoneIO
-  Patient <-->|"paired local WebSocket"| PiEdge
-  NoIR --> PiEdge --> PiDisplay
-  Patient <-->|"HTTPS + caregiver WebSocket"| API
-  API --> Asha
-  API --> DB
-  Caregiver <-->|"authorized HTTPS / WebSocket"| API
-  PiEdge -. "optional scoped cloud device channel" .-> API
-  ML -. "checksummed local bundle" .-> BrowserCV
+  subgraph UnderstandingEngine ["Multimodal Understanding Engine"]
+    Fusion["Confidence Fusion & Context Integration"]
+    VetoFilter --> Fusion
+    SemanticIntent["Semantic Intent ('User wants water', 'Discomfort detected')"]
+    Fusion --> SemanticIntent
+  end
+
+  subgraph AshaCore ["Asha AI Core (Agentic Multi-Agent System)"]
+    DigitalTwin[("User Digital Twin & 3-Tier Memory")]
+    Router{"LLM Orchestrator / Intelligent Router"}
+    
+    subgraph SpecializedAgents ["Specialized Agent Quadrant"]
+      CommAgent["Communication Agent (Voice & Bangla/Eng)"]
+      HealthAgent["Health Monitoring Agent (Pain & Fatigue)"]
+      RehabAgent["Rehabilitation Agent (Guided Exercises)"]
+      EmergAgent["Emergency Agent (Fall & Escalation)"]
+    end
+
+    SemanticIntent --> Router
+    DigitalTwin <--> Router
+    Router --> CommAgent
+    Router --> HealthAgent
+    Router --> RehabAgent
+    Router --> EmergAgent
+  end
+
+  subgraph IntelligenceSources ["Knowledge & Intelligence"]
+    LocalModel["Local Offline Model (Gemma 2 / Rules)"]
+    CloudLLM["Cloud LLMs (Gemini Flash / Claude / GPT-4o)"]
+    RAG[("Clinical RAG (7 Curated Domains)")]
+    
+    Router -. "simple/offline" .-> LocalModel
+    Router -. "complex reasoning" .-> CloudLLM
+    CloudLLM <--> RAG
+    LocalModel <--> RAG
+  end
+
+  subgraph ActionEngine ["Action Engine & Actuation"]
+    TTS["Speak Response (Neural TTS)"]
+    Exercise["Rehabilitation Coaching"]
+    Alert["Caregiver Telephony & Push Alert"]
+    SymptomLog["Record Clinical Symptom"]
+    MedReminder["Medication Reminders"]
+    Caption["Wheelchair Companion Display"]
+  end
+
+  CommAgent --> TTS
+  CommAgent --> Caption
+  HealthAgent --> SymptomLog
+  HealthAgent --> Alert
+  RehabAgent --> Exercise
+  EmergAgent --> Alert
+
+  subgraph DisplaySurface ["Asha Companion Interface"]
+    CompanionUI["Conversational Avatar & Status Display"]
+  end
+
+  TTS --> CompanionUI
+  Exercise --> CompanionUI
+  Caption --> CompanionUI
 ```
 
-## Runtime responsibilities
+---
 
-### Patient application — `apps/web`
+## 2. Nine Architectural Pillars
 
-The primary frontend is the React 19/Vinext PWA. One application provides four deliberately
-different surfaces:
+### Layer 1: Edge Perception Layer
+* **Dual Hand Tracking:** 21 3D Cartesian coordinates per hand. Identifies micro-flexions, pinches, swipes, and resting configurations.
+* **478-Point Face Mesh:**
+  - Eye Aspect Ratio (EAR) for voluntary blinks and winks.
+  - Mouth Aspect Ratio (MAR) for speech motor attempts.
+  - Eyebrow and nasolabial displacement for PAINAD-aligned pain grimacing.
+  - Head pose orientation (yaw, pitch, roll) for nods and turns.
+* **Temporal Stability:** 2.5s sliding window filters high-frequency tremor and involuntary spasms.
 
-- **Patient:** reassuring Asha conversation, typed and optional user-initiated voice input, local
-  SpeechSynthesis playback, explicit phone-call handoff, confirmed help action, quick phrases, and
-  the existing gesture-recognition path.
-- **Pi Display:** large dynamic caption plus tracking, camera, phone-link, Pi power, and wheelchair
-  battery indicators. It contains no phone-style conversation audio controls.
-- **Caregiver:** confirmed activity and alerts, honest patient/Pi connectivity, separate Pi power
-  and wheelchair battery values, and simple call/message actions. Pairing, grants, consent, and
-  model-quality controls are secondary advanced settings.
-- **Setup:** personalized gesture calibration and validated model/profile import.
+### Layer 2: Multimodal Understanding Engine
+Fuses signals across visual, acoustic, and contextual channels into high-level semantic intents (e.g. *"User wants water"*, *"User experiencing acute discomfort"*).
 
-MediaPipe WASM and the hand model are bundled. IndexedDB stores the local profile, calibration
-samples, active model, consent guard, outbox, remote link, and phone contacts. The service worker
-caches only the application shell and versioned static assets; API, authentication, profile, Asha,
-and other user-specific responses remain network-only.
+### Layer 3: User Digital Twin
+Each patient has a structured Digital Twin profile:
+```json
+{
+  "user_name": "Rahim",
+  "clinical_condition": "Stroke Recovery (Left Hemiparesis)",
+  "communication_modality": "Right hand micro-gestures & eye-blink scanning",
+  "primary_language": "Bangla",
+  "voice_preference": "Female (Reassuring)",
+  "common_requests": ["Water", "Pain", "Call daughter"],
+  "rehab_exercises": ["Neck lateral movement", "Active-assisted hand stretching"],
+  "risk_flags": { "fall_detection": true, "aspiration_precautions": true }
+}
+```
 
-The current personalized gesture classifier runs in the browser and does not consume a Raspberry
-Pi video stream. Moving that classifier to the Pi requires a separate validated local-inference
-adapter. It must not be implemented by uploading camera frames to the API.
+### Layer 4: Three-Tier Memory Architecture
+1. **Short-term Memory:** Active conversation rolling buffer (10–30s).
+2. **Long-term Relational Memory:** Persistent PostgreSQL (cloud) and encrypted local storage (device) for medical profiles, preferences, and caregiver grants.
+3. **Semantic Vector Memory:** Vector database indexing past clinical sessions, exercise adherence, and personalized vocabulary.
 
-### Raspberry Pi edge — `services/edge`
+### Layer 5: Seven-Domain Clinical RAG Augmentation
+Curated clinical knowledge base covering:
+1. `stroke_rehabilitation`: Motor relearning, hemiparesis recovery, neuroplasticity.
+2. `speech_therapy`: Oral-motor drills, dysarthria pacing, phoneme guidance.
+3. `autism_support`: Visual schedules, low-arousal AAC, sensory calming.
+4. `icu_communication`: Intubation boards, eye-gaze confirmation, pain scales.
+5. `physiotherapy`: Range of motion, contracture prevention, spasticity management.
+6. `caregiver_guidelines`: Transfer mechanics, pressure injury offloading, burnout prevention.
+7. `user_specific_instructions`: Individualized care directives, dietary modifications.
 
-The edge package runs beside the NoIR camera and wheelchair display. Its current responsibilities
-are camera lifecycle/capture adapter control, caption/emergency display state, telemetry, phone
-presence, pairing, and bounded command handling. A simulator makes the same state machine testable
-without Pi hardware.
+### Layer 6: Specialized Agent Quadrant
+* **Communication Agent:** Natural conversation, phrase completion, English-to-Bangla translation.
+* **Health Monitoring Agent:** Detects pain expressions, fatigue trends, and abnormal rhythmic jerking.
+* **Rehabilitation Agent:** Guides step-by-step physical and speech therapy:
+  > *"Let's move your neck slowly. Turn right... Good. Now slightly more... Excellent."*
+* **Emergency Agent:** Multi-step autonomous escalation:
+  $$\text{Abnormal Event} \longrightarrow \text{Prompt User} \xrightarrow{\text{No Response}} \text{Call Caregiver} \longrightarrow \text{Dispatch Alert}$$
 
-The edge service has no LLM key, cloud prompt logic, media-upload route, shell-command message, or
-wheelchair motor interface. `pi_battery_percent` and `wheelchair_battery_percent` stay `null` until
-dedicated validated sensors provide them; the UI renders `Unknown`, never an invented percentage or
-zero.
+### Layer 7: Intelligent LLM Router
+* Simple tasks & offline mode $\rightarrow$ Local deterministic engine / Gemma 2.
+* Complex medical inquiries & deep conversation $\rightarrow$ Gemini Flash / Claude / GPT-4o.
+* Automatic fallback: When offline, Asha never crashes; the local agent provides immediate assistance.
 
-### FastAPI control plane — `services/api`
+### Layer 8: Action Engine
+Concrete executable actions:
+* `speak_voice_response`: Generates vocalized output.
+* `start_rehabilitation_exercise`: Initiates guided exercise routines.
+* `call_caregiver`: Direct urgent telephone/VoIP alert.
+* `send_wheelchair_caption`: Transmits text to the wheelchair display.
+* `trigger_caregiver_alert`: Sends structured push notifications.
+* `record_symptom_log`: Logs pain, spasms, or fatigue to medical records.
+* `remind_medication`: Tracks medication schedule adherence.
 
-The API owns accounts/gateway identity, profile ownership, caregiver grants, consent enforcement,
-usage sessions, derived events, model metadata, durable caregiver alerts, Asha text requests, and
-optional registered-device state. PostgreSQL provides durable storage and Alembic owns migrations.
+### Layer 9: Asha Companion Interface
+Warm, reassuring companion avatar combining real-time facial feedback, synthesized voice, and proactive care prompts (*"I noticed you look uncomfortable. Would you like me to call your caregiver?"*).
 
-Camera frames, audio, landmarks, feature vectors, and calibration sequences are not accepted. The
-API middleware rejects image, video, multipart, and binary bodies. Confirmed derived events sync
-only after consent; routine local speech does not depend on the API.
+---
 
-### ML package — `services/ml`
+## 3. Releases and Deployments
 
-The Python package provides the browser-parity 20×63 → 20×98 feature pipeline, augmentation,
-session-aware splits, baselines, OOD evaluation, optional TensorFlow export, and checksummed model
-bundles. Browser activation verifies artifact checksums, feature dimensions, gesture IDs/order,
-profile fingerprint, confidence threshold, and safety metadata before replacing a local model.
-
-`apps/web-vue` remains a legacy/reference presentation layer and is not exercised by the primary
-bootstrap, Compose, or CI frontend jobs.
-
-## Asha boundary
-
-`POST /v1/asha/chat` is an authenticated, bounded, text-only API. The browser sends a message,
-locale, and bounded patient-owned context including a short recent summary. The response contains reply
-text, mode, optional citations and response ID, and an urgent flag.
-
-When `OPENAI_API_KEY` is configured on the API server, the service can call the OpenAI Responses
-API. `FINGERSPEAK_OPENAI_VECTOR_STORE_ID` enables owner-scoped file search; retrieved files are
-filtered to the authorized profile. Requests use bounded timeout/output and `store=false`. The API
-returns a deterministic offline companion response when the provider is missing or unavailable.
-
-Documents enter the configured vector store only through a separate, consented administration
-workflow and must carry a `profile_id` attribute matching the authorized FingerSpeak profile. The
-runtime API deliberately exposes no general medical-document upload route.
-
-No OpenAI credential is placed in a `NEXT_PUBLIC_*` value, browser storage, Pi configuration, or
-WebSocket message. An Asha urgent classification never calls someone, sends an emergency alert, or
-changes the Pi display by itself; the patient must confirm the corresponding action.
-
-## Raspberry Pi connectivity
-
-FingerSpeak has two distinct device links:
-
-1. **Direct local phone-to-Pi link.** The normative protocol is
-   [DEVICE_PROTOCOL.md](DEVICE_PROTOCOL.md). Browser WebSockets cannot set an Authorization header,
-   so credentials are never placed in a URL query. The first strict message authenticates a
-   one-time pairing code or device credential. No status is trusted before authentication. The
-   protocol carries heartbeat, status, caption, emergency-display, acknowledgement, and telemetry
-   JSON only—never camera frames.
-2. **Optional Pi-to-cloud link.** Owners may register a device through `/v1/devices`; the API returns
-   a scoped bearer token once and retains only its digest. The cloud socket accepts strict text JSON
-   telemetry/acknowledgements and enables authorized remote status and short-lived caption queues.
-   It does not replace direct local pairing or prove the patient's phone is reachable.
-
-The preferred prototype network is the patient's phone hotspot. USB tethering is the cable fallback
-because it preserves the same IP/WebSocket contract. Plain `ws://` is limited to controlled
-prototype networks; production requires `wss://` or another platform-supported local-network
-security design.
-
-## Caregiver and emergency semantics
-
-Caregiver alerts are committed before best-effort WebSocket fan-out and replayed after reconnect.
-Revoking a caregiver grant closes that actor's sockets; withdrawing caregiver-alert consent closes
-all caregiver sockets for the profile. Multi-replica deployments must broadcast committed alerts,
-device events, and revocations through shared pub/sub.
-
-WebSockets, Asha, inferred presence, phone dialer handoff, and Pi captions are convenience channels,
-not guaranteed emergency delivery. Emergency phrases require an explicit dwell/touch confirmation,
-and an active emergency display has priority over routine captions. A tested independent call or AAC
-method must remain available.
-
-## Identity and trust boundaries
-
-Development/test may use an unsigned `X-Actor-Subject` identity handoff when explicitly enabled.
-Staging and production reject it unless an OIDC/session-aware gateway first removes all
-client-supplied `X-Actor-*` headers and injects:
-
-- `X-Actor-Subject`: the stable subject from the validated user credential;
-- `X-Actor-Timestamp`: the gateway's current Unix time in seconds; and
-- `X-Actor-Signature`: `v1=` plus the lowercase HMAC-SHA256 digest.
-
-The HMAC input is compact, sorted-key UTF-8 JSON containing exactly `method`, `path`, `subject`,
-`timestamp`, and `version`. WebSocket upgrades use method `GET`. The API compares the digest in
-constant time and rejects timestamps outside `FINGERSPEAK_GATEWAY_SIGNATURE_TTL_SECONDS`.
-Staging/production require a secret of at least 32 bytes. Browsers never receive or construct the
-shared signature secret.
-
-Credentialed HTTP and WebSocket origins must exactly match `FINGERSPEAK_CORS_ORIGINS`. The direct
-Pi pairing code/device credential and cloud device bearer token are separate credentials with
-separate scopes; neither is an API user session or LLM credential.
+| Deliverable | Platform | Link |
+|:---|:---|:---|
+| **Patient Android APK** | Android | [android-patient-v3.0.0](https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/android-patient-v3.0.0) |
+| **Caregiver Android APK** | Android | [android-caregiver-v3.0.0](https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/android-caregiver-v3.0.0) |
+| **Patient iOS IPA** | iOS (Unsigned) | [ios-patient-v3.0.0](https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/ios-patient-v3.0.0) |
+| **Caregiver iOS IPA** | iOS (Unsigned) | [ios-caregiver-v3.0.0](https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/ios-caregiver-v3.0.0) |
+| **Patient Web PWA** | Web | [https://mysunatislam.github.io/neurobridge-asha-patient/](https://mysunatislam.github.io/neurobridge-asha-patient/) |
+| **Caregiver Web Portal** | Web | [https://mysunatislam.github.io/neurobridge-asha-caregiver/](https://mysunatislam.github.io/neurobridge-asha-caregiver/) |

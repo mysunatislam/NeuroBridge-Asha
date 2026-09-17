@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:fingerspeak_mobile/core/mobile_services.dart';
 import 'package:fingerspeak_mobile/data/pi_device_client.dart';
 import 'package:fingerspeak_mobile/models/patient_access_method.dart';
+import 'package:fingerspeak_mobile/models/patient_record.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/services/voice_service.dart';
+import 'package:fingerspeak_mobile/ui/doctor_report_sheet.dart';
 import 'package:fingerspeak_mobile/ui/intent_calibration_page.dart';
+import 'package:fingerspeak_mobile/ui/patient_live_monitor_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,6 +40,18 @@ class _SettingsPageState extends State<SettingsPage> {
   final _customBaseUrlController = TextEditingController();
   final _customModelController = TextEditingController();
   final _customApiKeyController = TextEditingController();
+
+  String? _selectedPatientId;
+  final _patientNameController = TextEditingController();
+  final _patientAgeController = TextEditingController();
+  final _patientRoomController = TextEditingController();
+  final _patientConditionController = TextEditingController();
+  final _patientModalityController = TextEditingController();
+  final _patientDoctorNameController = TextEditingController();
+  final _patientDoctorPhoneController = TextEditingController();
+  final _patientDoctorEmailController = TextEditingController();
+  final _patientDirectivesController = TextEditingController();
+
   String _aiProvider = 'offline';
   bool _obscureGeminiKey = true;
   bool _obscureCustomKey = true;
@@ -72,6 +87,10 @@ class _SettingsPageState extends State<SettingsPage> {
     _patientPhoneController.text = config.patientPhone;
     _ambulancePhoneController.text = config.ambulancePhone;
     _piUrlController.text = widget.services.pi.endpoint.toString();
+
+    final activePatient = widget.services.patientRegistry.activePatient;
+    _loadPatientIntoForm(activePatient);
+    widget.services.patientRegistry.addListener(_onPatientRegistryUpdated);
 
     _piSubscription = widget.services.pi.states.listen((state) {
       if (!mounted) return;
@@ -136,6 +155,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
+    widget.services.patientRegistry
+        .removeListener(_onPatientRegistryUpdated);
     widget.services.patientAccessMethodRepository
         .removeListener(_onPatientAccessMethodChanged);
     unawaited(_piSubscription?.cancel());
@@ -149,7 +170,114 @@ class _SettingsPageState extends State<SettingsPage> {
     _customBaseUrlController.dispose();
     _customModelController.dispose();
     _customApiKeyController.dispose();
+    _patientNameController.dispose();
+    _patientAgeController.dispose();
+    _patientRoomController.dispose();
+    _patientConditionController.dispose();
+    _patientModalityController.dispose();
+    _patientDoctorNameController.dispose();
+    _patientDoctorPhoneController.dispose();
+    _patientDoctorEmailController.dispose();
+    _patientDirectivesController.dispose();
     super.dispose();
+  }
+
+  void _loadPatientIntoForm(PatientRecord p) {
+    _selectedPatientId = p.id;
+    _patientNameController.text = p.name;
+    _patientAgeController.text = '${p.age}';
+    _patientRoomController.text = p.roomNumber;
+    _patientConditionController.text = p.condition;
+    _patientModalityController.text = p.primaryModality;
+    _patientDoctorNameController.text = p.doctorName;
+    _patientDoctorPhoneController.text = p.doctorPhone;
+    _patientDoctorEmailController.text = p.doctorEmail;
+    _patientDirectivesController.text = p.doctorDirectives;
+  }
+
+  void _onPatientRegistryUpdated() {
+    if (!mounted) return;
+    final registry = widget.services.patientRegistry;
+    if (_selectedPatientId != null) {
+      final match = registry.patients.where((p) => p.id == _selectedPatientId);
+      if (match.isNotEmpty) {
+        _loadPatientIntoForm(match.first);
+      } else {
+        _loadPatientIntoForm(registry.activePatient);
+      }
+    }
+    setState(() {});
+  }
+
+  Future<void> _saveCurrentPatientProfile() async {
+    final registry = widget.services.patientRegistry;
+    final patientId = _selectedPatientId ?? registry.activePatient.id;
+    final existing = registry.patients.firstWhere(
+      (p) => p.id == patientId,
+      orElse: () => registry.activePatient,
+    );
+    final name = _patientNameController.text.trim();
+    if (name.isEmpty) return;
+
+    final updated = existing.copyWith(
+      name: name,
+      age: int.tryParse(_patientAgeController.text.trim()) ?? existing.age,
+      roomNumber: _patientRoomController.text.trim(),
+      condition: _patientConditionController.text.trim(),
+      primaryModality: _patientModalityController.text.trim(),
+      doctorName: _patientDoctorNameController.text.trim(),
+      doctorPhone: _patientDoctorPhoneController.text.trim(),
+      doctorEmail: _patientDoctorEmailController.text.trim(),
+      doctorDirectives: _patientDirectivesController.text.trim(),
+    );
+
+    await registry.updatePatient(updated);
+
+    if (updated.doctorPhone.isNotEmpty) {
+      _doctorPhoneController.text = updated.doctorPhone;
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved profile & clinical data for ${updated.name}.'),
+          backgroundColor: const Color(0xFF0B756A),
+        ),
+      );
+      setState(() {});
+    }
+  }
+
+  Future<void> _addNewPatientFromSettings() async {
+    final newId = 'patient-${DateTime.now().millisecondsSinceEpoch}';
+    final newRecord = PatientRecord(
+      id: newId,
+      name: 'New Patient',
+      age: 50,
+      condition: 'Post-Stroke / Neuro Recovery',
+      primaryModality: 'Micro-gestures & Eye Blink',
+      roomNumber: 'Room 101',
+      doctorName: 'Dr. Physician',
+      doctorPhone: '',
+      doctorEmail: '',
+      heartRate: 72,
+      respirationRate: 16,
+      painScore: 1,
+      gestureAccuracy: 90,
+      fatigueLevel: 'Low',
+      currentActivity: 'Newly registered patient',
+    );
+    await widget.services.patientRegistry.addPatient(newRecord);
+    _loadPatientIntoForm(newRecord);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Created new patient profile. Enter details below.'),
+          backgroundColor: Color(0xFF0B756A),
+        ),
+      );
+      setState(() {});
+    }
   }
 
   void _onPatientAccessMethodChanged() {
@@ -482,6 +610,268 @@ class _SettingsPageState extends State<SettingsPage> {
                     style: TextStyle(color: Color(0xFF556E68)),
                   ),
                 ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Individual Patient Records & Clinical Settings Card
+        Card(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xFF9DE0D5), width: 1.5),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const CircleAvatar(
+                      backgroundColor: Color(0xFFD9F1EC),
+                      child: Icon(Icons.people_alt, color: Color(0xFF0B756A)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Individual Patient Records',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF0B756A),
+                                ),
+                          ),
+                          const Text(
+                            'Select a patient to manage individual clinical data, doctor, and live actions.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF556E68)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                // Patient Switcher Chips
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      ...widget.services.patientRegistry.patients.asMap().entries.map((entry) {
+                        final idx = entry.key + 1;
+                        final p = entry.value;
+                        final isSel = p.id == (_selectedPatientId ?? widget.services.patientRegistry.activePatient.id);
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            avatar: CircleAvatar(
+                              backgroundColor: isSel ? const Color(0xFF0B756A) : Colors.grey.shade400,
+                              radius: 12,
+                              child: Text(
+                                '$idx',
+                                style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            label: Text(
+                              'Patient $idx: ${p.name.split(' ').first}',
+                              style: TextStyle(
+                                fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                                color: isSel ? const Color(0xFF0B756A) : Colors.black87,
+                              ),
+                            ),
+                            selected: isSel,
+                            selectedColor: const Color(0xFFD9F1EC),
+                            onSelected: (selected) {
+                              if (selected) {
+                                widget.services.patientRegistry.selectPatient(p.id);
+                                _loadPatientIntoForm(p);
+                                setState(() {});
+                              }
+                            },
+                          ),
+                        );
+                      }),
+                      ActionChip(
+                        avatar: const Icon(Icons.add, size: 16, color: Color(0xFF0B756A)),
+                        label: const Text('Add Patient', style: TextStyle(color: Color(0xFF0B756A), fontWeight: FontWeight.bold)),
+                        backgroundColor: const Color(0xFFE8F6F3),
+                        onPressed: _addNewPatientFromSettings,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 12),
+
+                // Form fields for selected patient
+                TextField(
+                  controller: _patientNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Patient Full Name',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 1,
+                      child: TextField(
+                        controller: _patientAgeController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Age',
+                          prefixIcon: Icon(Icons.cake_outlined),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: _patientRoomController,
+                        decoration: const InputDecoration(
+                          labelText: 'Room / Bed Location',
+                          prefixIcon: Icon(Icons.bed),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _patientConditionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Clinical Diagnosis / Medical Condition',
+                    prefixIcon: Icon(Icons.local_hospital_outlined),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _patientModalityController,
+                  decoration: const InputDecoration(
+                    labelText: 'Communication & Input Modality',
+                    prefixIcon: Icon(Icons.accessibility_new),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _patientDoctorNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Assigned Physician / Doctor Name',
+                    prefixIcon: Icon(Icons.medical_services_outlined),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _patientDoctorPhoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Doctor Phone (Auto-syncs to Emergency)',
+                    prefixIcon: Icon(Icons.phone),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _patientDoctorEmailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Doctor Email for Progress Reports',
+                    prefixIcon: Icon(Icons.email_outlined),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _patientDirectivesController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Doctor Directives / Rehabilitation Plan',
+                    prefixIcon: Icon(Icons.assignment),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // Quick actions for this patient in Settings
+                Builder(builder: (context) {
+                  final registry = widget.services.patientRegistry;
+                  final patientId = _selectedPatientId ?? registry.activePatient.id;
+                  final curPatient = registry.patients.firstWhere(
+                    (p) => p.id == patientId,
+                    orElse: () => registry.activePatient,
+                  );
+                  return Column(
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ActionChip(
+                            avatar: const Icon(Icons.videocam, size: 16, color: Color(0xFF0B756A)),
+                            label: const Text('Live Camera Feed'),
+                            onPressed: () => showPatientLiveMonitorSheet(
+                              context: context,
+                              services: widget.services,
+                              patient: curPatient,
+                            ),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.assignment, size: 16, color: Color(0xFFB45309)),
+                            label: const Text('Report to Doctor'),
+                            onPressed: () => showDoctorReportSheet(
+                              context: context,
+                              services: widget.services,
+                              patient: curPatient,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          if (registry.patients.length > 1)
+                            Expanded(
+                              flex: 1,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFFB42318),
+                                  side: const BorderSide(color: Color(0xFFFECDCA)),
+                                ),
+                                onPressed: () async {
+                                  await registry.deletePatient(curPatient.id);
+                                  _loadPatientIntoForm(registry.activePatient);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Removed ${curPatient.name}.')),
+                                    );
+                                  }
+                                },
+                                icon: const Icon(Icons.delete_outline, size: 18),
+                                label: const Text('Delete'),
+                              ),
+                            ),
+                          if (registry.patients.length > 1) const SizedBox(width: 8),
+                          Expanded(
+                            flex: 2,
+                            child: FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF0B756A),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                              onPressed: _saveCurrentPatientProfile,
+                              icon: const Icon(Icons.save),
+                              label: const Text('Save Patient Profile'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                }),
               ],
             ),
           ),

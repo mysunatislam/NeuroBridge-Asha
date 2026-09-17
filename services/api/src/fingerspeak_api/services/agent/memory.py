@@ -1,7 +1,9 @@
 """Patient Memory Engine for NeuroBridge Asha.
 
-Provides short-term working scratchpad and long-term episodic & semantic memory
-for patient preferences, clinical profiles, routines, and caregiver context.
+Provides three-tier memory:
+1. Short-term working scratchpad (dialogue context, recent observations).
+2. Long-term episodic memory (patient preferences, clinical profile, caregiver contacts).
+3. Semantic / Digital Twin memory (individual recovery baselines, rehabilitation routines, risk factors).
 """
 
 from __future__ import annotations
@@ -18,9 +20,7 @@ from typing import Any
 class MemoryFact:
     id: str
     profile_id: str
-    category: (
-        str  # "preference", "clinical_profile", "caregiver_info", "routine_history", "general"
-    )
+    category: str  # "preference", "clinical_profile", "caregiver_info", "routine_history", "digital_twin", "general"
     key: str
     value: str
     confidence: float = 1.0
@@ -31,8 +31,28 @@ class MemoryFact:
         return asdict(self)
 
 
+@dataclass(slots=True)
+class DigitalTwinProfile:
+    user_name: str = "Rahim"
+    condition: str = "Stroke Recovery (Left Hemiparesis)"
+    communication_modality: str = "Right hand micro-gestures & eye-blink scanning"
+    language: str = "Bangla / English"
+    voice_preference: str = "Female (Warm & Reassuring)"
+    common_requests: list[str] = field(
+        default_factory=lambda: ["Water", "Pain", "Call daughter"]
+    )
+    prescribed_exercises: list[str] = field(
+        default_factory=lambda: ["Neck lateral movement", "Active-assisted hand stretching"]
+    )
+    fall_detection_enabled: bool = True
+    aspiration_precautions_active: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def _tokenize(text: str) -> set[str]:
-    normalized = unicodedata.normalize("NFKC", text).lower()
+    normalized = unicodedata.normalize("NFKC", text).lower().replace("_", " ")
     return set(re.findall(r"\w{2,}", normalized))
 
 
@@ -54,7 +74,6 @@ class PatientMemoryEngine:
         """Upsert a memory fact for a given profile."""
         profile_facts = self._store.setdefault(profile_id, [])
 
-        # Check for existing key in the same category
         normalized_key = key.strip().lower()
         for fact in profile_facts:
             if fact.category == category and fact.key.strip().lower() == normalized_key:
@@ -63,7 +82,6 @@ class PatientMemoryEngine:
                 fact.last_accessed_at = time.time()
                 return fact
 
-        # Create new fact
         fact = MemoryFact(
             id=f"mem_{uuid.uuid4().hex[:12]}",
             profile_id=profile_id,
@@ -125,7 +143,6 @@ class PatientMemoryEngine:
         facts = self._store.get(profile_id, [])
         if not facts:
             return ""
-        # Group by category
         lines = []
         for f in facts[:max_facts]:
             lines.append(f"• {f.category.replace('_', ' ').capitalize()}: {f.key} = {f.value}")
@@ -141,6 +158,24 @@ class PatientMemoryEngine:
         self._store.clear()
         return total
 
+    def seed_digital_twin_profile(
+        self,
+        profile_id: str,
+        digital_twin: DigitalTwinProfile | None = None,
+    ) -> DigitalTwinProfile:
+        """Seed a complete User Digital Twin profile into memory."""
+        dt = digital_twin or DigitalTwinProfile()
+        self.store(profile_id, "digital_twin", "user_name", dt.user_name)
+        self.store(profile_id, "digital_twin", "condition", dt.condition)
+        self.store(profile_id, "digital_twin", "communication_modality", dt.communication_modality)
+        self.store(profile_id, "digital_twin", "language", dt.language)
+        self.store(profile_id, "digital_twin", "voice_preference", dt.voice_preference)
+        self.store(profile_id, "digital_twin", "common_requests", ", ".join(dt.common_requests))
+        self.store(profile_id, "digital_twin", "prescribed_exercises", ", ".join(dt.prescribed_exercises))
+        self.store(profile_id, "digital_twin", "fall_detection", str(dt.fall_detection_enabled))
+        self.store(profile_id, "digital_twin", "aspiration_precautions", str(dt.aspiration_precautions_active))
+        return dt
+
     def seed_initial_profile(
         self,
         profile_id: str,
@@ -152,8 +187,8 @@ class PatientMemoryEngine:
         if profile_id in self._store and self._store[profile_id]:
             return
 
-        if preferred_name:
-            self.store(profile_id, "preference", "preferred_name", preferred_name)
+        name = preferred_name or "Rahim"
+        self.store(profile_id, "preference", "preferred_name", name)
         self.store(profile_id, "clinical_profile", "care_mode", care_mode)
         self.store(profile_id, "preference", "communication_locale", locale)
         self.store(
@@ -161,3 +196,4 @@ class PatientMemoryEngine:
         )
         self.store(profile_id, "routine_history", "hydration_target_ml", "1500")
         self.store(profile_id, "routine_history", "reposition_interval_minutes", "120")
+        self.seed_digital_twin_profile(profile_id)

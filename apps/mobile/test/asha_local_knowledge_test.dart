@@ -250,5 +250,117 @@ void main() {
       expect(reply.actionsExecuted.any((a) => a.toolName == 'trigger_caregiver_alert'), isTrue);
       expect(reply.text.toLowerCase(), anyOf(contains('notified your caregiver'), contains('help is on the way')));
     });
+
+    test('AshaOfflineAgent guides stroke rehabilitation exercise with turn-by-turn pacing', () {
+      final reply = agent.process(
+        message: 'Let us start my stroke rehab exercise routine',
+        locale: 'en-US',
+        role: UserRole.patient,
+      );
+
+      expect(reply.actionsExecuted.any((a) => a.toolName == 'start_rehabilitation_exercise'), isTrue);
+      expect(reply.text, contains("move your neck slowly"));
+      expect(reply.text, contains("Turn right"));
+      expect(reply.quickActions.any((a) => a.actionKey == 'next_stretch'), isTrue);
+    });
+
+    test('AshaOfflineAgent responds with proactive empathy to uncomfortable prompt', () {
+      final reply = agent.process(
+        message: 'I feel very uncomfortable in my chair',
+        locale: 'en-US',
+        role: UserRole.patient,
+      );
+
+      expect(reply.text, contains('I noticed you look uncomfortable. Would you like me to call your caregiver?'));
+      expect(reply.quickActions.any((a) => a.actionKey == 'alert_caregiver'), isTrue);
+      expect(reply.quickActions.any((a) => a.actionKey == 'reposition'), isTrue);
+    });
+
+    test('AshaOfflineAgent handles direct voice call to caregiver and daughter', () {
+      final reply = agent.process(
+        message: 'Please place a phone call to my daughter',
+        locale: 'en-US',
+        role: UserRole.patient,
+      );
+
+      expect(reply.actionsExecuted.any((a) => a.toolName == 'call_caregiver'), isTrue);
+      expect(reply.text.toLowerCase(), contains('calling your caregiver'));
+    });
+
+    test('AshaOfflineAgent recalls User Digital Twin profile for Rahim', () {
+      final reply = agent.process(
+        message: 'Show me my digital twin profile for Rahim',
+        locale: 'en-US',
+        role: UserRole.patient,
+      );
+
+      expect(reply.actionsExecuted.any((a) => a.toolName == 'recall_memory'), isTrue);
+      expect(reply.text, contains('Rahim'));
+      expect(reply.text.toLowerCase(), contains('stroke'));
+      expect(reply.memoryRecalled.any((m) => m.key == 'user_name' && m.value == 'Rahim'), isTrue);
+    });
+  });
+
+  group('Asha 7 Clinical Domains Retrieval', () {
+    late AshaLocalKnowledgeRetriever retriever;
+
+    setUp(() {
+      retriever = AshaLocalKnowledgeRetriever();
+    });
+
+    test('retrieves stroke rehabilitation and motor recovery protocol', () {
+      final results = retriever.retrieve('stroke rehabilitation motor relearning neuroplasticity');
+      expect(results, isNotEmpty);
+      expect(results.first.category, AshaKnowledgeCategory.strokeRehabilitation);
+      expect(results.first.documentId, 'stroke-rehab-01');
+    });
+
+    test('retrieves speech therapy articulation and dysarthria protocol', () {
+      final results = retriever.retrieve('speech therapy articulation dysarthria phoneme pacing');
+      expect(results, isNotEmpty);
+      expect(results.first.category, AshaKnowledgeCategory.speechTherapy);
+      expect(results.first.documentId, 'speech-therapy-01');
+    });
+
+    test('retrieves autism support sensory regulation protocol', () {
+      final results = retriever.retrieve('autism sensory overload visual schedule calming');
+      expect(results, isNotEmpty);
+      expect(results.first.category, AshaKnowledgeCategory.autismSupport);
+      expect(results.first.documentId, 'autism-support-01');
+    });
+
+    test('retrieves ICU communication board intubation protocol', () {
+      final results = retriever.retrieve('icu intubation ventilator eye blink communication');
+      expect(results, isNotEmpty);
+      expect(results.first.category, AshaKnowledgeCategory.icuCommunication);
+      expect(results.first.documentId, 'icu-comm-01');
+    });
+
+    test('retrieves neurological physiotherapy range of motion protocol', () {
+      final results = retriever.retrieve('physiotherapy range of motion neck stretching spasticity');
+      expect(results, isNotEmpty);
+      expect(results.first.category, AshaKnowledgeCategory.physiotherapy);
+      expect(results.first.documentId, 'physiotherapy-01');
+    });
+
+    test('retrieves caregiver guidelines safe transfer protocol', () {
+      final results = retriever.retrieve('caregiver guidelines transfer safety ergonomics burnout');
+      expect(results, isNotEmpty);
+      expect(results.first.category, AshaKnowledgeCategory.caregiverGuidelines);
+      expect(results.first.documentId, 'caregiver-guidelines-01');
+    });
+
+    test('retrieves patient digital twin personalized care directives for Rahim', () {
+      final results = retriever.retrieve('patient digital twin rahim profile preferences call daughter');
+      expect(results, isNotEmpty);
+      expect(results.first.category, AshaKnowledgeCategory.userSpecificInstructions);
+      expect(results.first.documentId, 'user-specific-instructions-01');
+    });
+
+    test('supports Bengali clinical query for ব্যায়াম and স্ট্রোক', () {
+      final results = retriever.retrieve('স্ট্রোক রোগীর ব্যায়াম');
+      expect(results, isNotEmpty);
+      expect(results.any((r) => r.category == AshaKnowledgeCategory.strokeRehabilitation || r.category == AshaKnowledgeCategory.bilingualGuidance), isTrue);
+    });
   });
 }

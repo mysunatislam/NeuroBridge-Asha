@@ -13,7 +13,6 @@ from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from fingerspeak_api.schemas import AshaCitation, AshaPatientContext
 from fingerspeak_api.services.rag.knowledge_base import (
     CLINICAL_KNOWLEDGE_DOCUMENTS,
     KnowledgeDocument,

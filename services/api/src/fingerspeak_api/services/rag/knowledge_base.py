@@ -13,6 +13,13 @@ KnowledgeCategory = Literal[
     "device_operations",
     "care_routine",
     "bilingual_guidance",
+    "stroke_rehabilitation",
+    "speech_therapy",
+    "autism_support",
+    "icu_communication",
+    "physiotherapy",
+    "caregiver_guidelines",
+    "user_specific_instructions",
 ]
 
 
@@ -101,92 +108,86 @@ CLINICAL_KNOWLEDGE_DOCUMENTS: tuple[KnowledgeDocument, ...] = (
             "seizure",
             "convulsion",
             "epilepsy",
-            "tremor",
-            "first aid",
-            "post-ictal",
+            "jerking",
+            "tonic-clonic",
             "airway",
             "recovery position",
             "emergency",
-            "choking",
+            "first aid",
+            "postictal",
         ),
-        summary="Emergency response, airway safety, and triage protocols during and immediately following a seizure.",
+        summary="Evidence-based acute seizure safety guidelines and emergency alert criteria.",
         content=(
-            "Acute Seizure Response Protocol for Caregivers:\n"
-            "1. Immediate Safety First: Ease the person to the floor or flat supported surface. Clear sharp or hard objects. "
-            "Place a soft folded towel or cushion beneath the head.\n"
-            "2. Lateral Recovery Position: Gently roll the patient onto their side to keep the airway clear and allow saliva "
-            "or vomit to drain naturally, preventing asphyxiation.\n"
-            "3. What NEVER to do: NEVER place anything inside the patient's mouth (no spoons, fingers, or medication). "
-            "NEVER forcibly restrain shaking limbs or hold the patient down.\n"
-            "4. Timing & Emergency Thresholds: Note the exact start time. Call Emergency Medical Services (911 / 999 / 112) immediately if: "
-            "(a) The active convulsion lasts longer than 5 minutes; (b) A second seizure follows without full consciousness regained; "
-            "(c) Breathing is labored or compromised after jerking stops; (d) The seizure occurs in water; (e) Patient is injured or pregnant.\n"
-            "5. Post-Ictal Care: Expect confusion, drowsiness, and temporary speech loss for 10-30 minutes. Speak in a quiet, reassuring "
-            "voice. Do not offer food or drink until the patient is alert and fully conscious."
+            "Acute Seizure Action Protocol:\n"
+            "1. Immediate Safety: Clear hard, sharp, or hot objects from the immediate environment. Cushion the patient's head "
+            "with a soft garment or pillow. Loosen tight neckwear.\n"
+            "2. Airway & Posture: Do NOT insert any objects, spoons, or fingers into the mouth. Do NOT restrain limbs during rhythmic contractions. "
+            "As convulsions subside, immediately roll the patient onto their side into the recovery position to keep airway clear of saliva or vomitus.\n"
+            "3. Timing & Emergency Thresholds: Track duration immediately. Dispatch emergency medical services (911 / 999) if:\n"
+            "   a. The active convulsion lasts longer than 5 minutes;\n"
+            "   b. A second seizure begins before consciousness is fully regained;\n"
+            "   c. Breathing difficulty or cyanosis (blue lips) persists after jerking ceases;\n"
+            "   d. The patient sustains significant trauma during the event.\n"
+            "4. Reassurance: Speak softly and calmly as the patient awakens from the postictal state. State location, caregiver presence, "
+            "and safety."
         ),
         locale="en-US",
     ),
     KnowledgeDocument(
-        id="sci-tetraplegia-01",
-        title="Spinal Cord Injury (C1-C5 Tetraplegia) Access & Autonomic Dysreflexia Alert",
+        id="sci-dysreflexia-01",
+        title="Spinal Cord Injury & Autonomic Dysreflexia Safety",
         category="spinal_cord_injury",
         keywords=(
             "spinal cord",
             "sci",
             "tetraplegia",
             "quadriplegia",
-            "c1",
-            "c2",
-            "c3",
-            "c4",
-            "c5",
-            "switch",
-            "dysreflexia",
-            "head tilt",
-            "environmental",
+            "autonomic dysreflexia",
+            "hypertension",
+            "headache",
+            "sweating",
+            "flushing",
+            "catheter",
+            "bladder",
         ),
-        summary="Switch scanning, head motion controls, and Autonomic Dysreflexia warning indicators for high-level SCI.",
+        summary="Clinical identification and urgent counteraction for Autonomic Dysreflexia in T6 or higher SCI.",
         content=(
-            "For individuals with high cervical spinal cord injury (C1-C5 tetraplegia) who lack distal finger dexterity:\n"
-            "1. Alternative Modalities: Transition input mode from Hand Studio to Head-Motion/Gaze or Single-Switch Scanning. "
-            "A micro-head nod, cheek twitch, or mechanical headrest switch allows full AAC navigation.\n"
-            "2. Autonomic Dysreflexia (AD) Critical Safety Alert: In lesions at or above T6, an uninhibited sympathetic response "
-            "to painful stimuli below the injury (e.g. full bladder, blocked catheter, bowel impaction, skin pressure) can cause "
-            "life-threatening hypertension. Symptoms include sudden pounding headache, profuse sweating above lesion, facial flushing, "
-            "and severe goosebumps. Protocol: Immediately sit the patient fully upright (90 degrees), loosen tight clothing or abdominal binders, "
-            "check urinary drainage bag/tubing, and summon immediate medical assistance.\n"
-            "3. Wheelchair Mount Alignment: Ensure camera and tablet mount are rigidly secured to the wheelchair frame so travel vibrations "
-            "do not disrupt computer vision tracking."
+            "Autonomic Dysreflexia (AD) is an acute medical emergency affecting individuals with spinal cord lesions at or above T6:\n"
+            "1. Classic Symptom Triad: Pounding headache, sudden hypertensive spike (systolic > 20-40 mmHg above baseline), profuse sweating "
+            "and skin blotching above the injury level, with cold/pale skin below.\n"
+            "2. Immediate Postural Action: Sit the patient upright immediately (at 90 degrees) and lower the legs. This initiates orthostatic "
+            "pooling of blood to help reduce intracranial pressure. NEVER lay the patient flat.\n"
+            "3. Identify Noxious Stimulus: The primary cause (>80%) is bladder distension or catheter kink. Immediately check for catheter bag "
+            "kinks, overfilled drainage bags, or blocked tubing. Secondarily inspect bowel impaction, tight clothing, or pressure spots.\n"
+            "4. Caregiver Escalation: If blood pressure remains elevated after sitting upright and clearing tubing, notify emergency clinical personnel immediately."
         ),
         locale="en-US",
     ),
     KnowledgeDocument(
         id="device-ops-01",
-        title="NeuroBridge Wheelchair Mount, Raspberry Pi & Camera Calibration",
+        title="Wheelchair Raspberry Pi & NoIR Camera System Operations",
         category="device_operations",
         keywords=(
             "raspberry pi",
-            "pi",
-            "wheelchair",
             "camera",
-            "mediapipe",
-            "lighting",
-            "latency",
-            "pairing",
-            "wifi",
-            "hotspot",
-            "mount",
+            "noir",
+            "wheelchair",
+            "display",
+            "caption",
             "battery",
+            "calibration",
+            "lighting",
+            "tethering",
         ),
-        summary="Hardware setup, lighting conditions, optimal camera distance, and edge connectivity troubleshooting.",
+        summary="Optimal positioning, ambient lighting, and hardware setup for the wheelchair companion system.",
         content=(
-            "Optimizing NeuroBridge Asha Computer Vision & IoT Edge Operations:\n"
-            "1. Distance & Framing: The camera should be positioned 40cm to 65cm from the patient's hand or face. The hand should occupy "
-            "approximately 25% to 50% of the active video frame for reliable landmark tracking.\n"
-            "2. Lighting Conditions: Provide diffuse, front-facing ambient light. Avoid strong backlight (e.g., direct window behind patient) "
-            "which causes underexposure and silhouette artifacts where MediaPipe loses finger joint coordinates.\n"
-            "3. Raspberry Pi Display Companion: The Pi companion runs a local WebSocket server (port 8765) driving an outward-facing e-Paper "
-            "or 7-inch LCD. Ensure both phone and Pi are joined to the same wheelchair local hotspot or ad-hoc WiFi network.\n"
+            "Wheelchair Companion Hardware Optimization:\n"
+            "1. Camera Alignment: Mount the NoIR camera approximately 45-60 cm from the patient's face and lap plane at a 30-degree downward angle. "
+            "Ensure the patient's dominant hand rest position remains centered within the 640x480 video frame.\n"
+            "2. Lighting Conditions: The NoIR camera utilizes ambient daylight or infrared illumination. Avoid strong backlighting (such as sitting "
+            "directly in front of an unshaded window), which casts deep shadows across finger contours and facial landmarks.\n"
+            "3. Caption Display: The 7-inch wheelchair display presents confirmed phrases in high-contrast (amber on black or white on deep navy) "
+            "with minimum 32pt font for effortless readability by conversational partners standing 1.5 to 2 meters away.\n"
             "4. Battery Conservation: The edge service reports battery status every 30 seconds. When wheelchair or Pi battery drops below 20%, "
             "Asha triggers a low-power prompt to recharge."
         ),
@@ -247,5 +248,182 @@ CLINICAL_KNOWLEDGE_DOCUMENTS: tuple[KnowledgeDocument, ...] = (
             "৪. পানি ও খাবার গ্রহণ: রোগীর শোয়া অবস্থায় পানি পান করাবেন না। গলায় খাবার বা পানি আটকে কাশি হলে রোগীকে ঝুঁকিয়ে পিঠে আলতো চাপ দিন।"
         ),
         locale="bn-BD",
+    ),
+    KnowledgeDocument(
+        id="stroke-rehab-01",
+        title="Stroke Rehabilitation & Neuroplastic Motor Relearning",
+        category="stroke_rehabilitation",
+        keywords=(
+            "stroke rehabilitation",
+            "hemiparesis",
+            "motor relearning",
+            "neuroplasticity",
+            "rehab",
+            "exercise",
+            "arm recovery",
+            "paretic limb",
+            "constraint",
+            "repetition",
+        ),
+        summary="Clinical guidelines for stroke motor rehabilitation, neuroplasticity pacing, and bilateral limb guidance.",
+        content=(
+            "Stroke Motor Recovery & Rehabilitation Principles:\n"
+            "1. Repetitive Task-Oriented Training: Neuroplastic cortical reorganization occurs through focused, purposeful repetitions. "
+            "Encourage 10 to 15 deliberate reaching or finger flexion movements per session rather than fatigue-inducing bursts.\n"
+            "2. Bilateral Arm Training: Mirroring healthy hand movements with the paretic hand stimulates homologous motor cortex networks.\n"
+            "3. Gradual Pacing: Stop immediately if joint pain occurs. Compensatory shoulder hiking should be discouraged in favor of neutral alignment.\n"
+            "4. Asha Coaching Loop: Asha initiates gentle prompts: 'Let's move your neck slowly. Turn right... Good. Now slightly more... Excellent.'"
+        ),
+        locale="en-US",
+    ),
+    KnowledgeDocument(
+        id="speech-therapy-01",
+        title="Speech Therapy, Dysarthria Pacing & Articulation Exercises",
+        category="speech_therapy",
+        keywords=(
+            "speech therapy",
+            "dysarthria",
+            "aphasia",
+            "articulation",
+            "phoneme",
+            "pacing",
+            "vocal fatigue",
+            "speech",
+            "voice",
+            "swallowing",
+        ),
+        summary="Evidence-based speech therapy strategies, oral-motor drills, and dysarthria compensatory pacing.",
+        content=(
+            "Clinical Speech-Language Pathology Guidelines:\n"
+            "1. Pacing & Rate Reduction: In flaccid or spastic dysarthria, slowing syllable production improves consonant intelligibility by 40%.\n"
+            "2. Phoneme Shaping Drills: Focus on bilabial (/p/, /b/, /m/) and alveolar (/t/, /d/, /n/) sounds with high visual contrast.\n"
+            "3. Vocal Fatigue Management: Schedule high-demand conversational exercises after morning rest periods. Provide instant AAC text when vocal cord fatigue sets in.\n"
+            "4. Respiratory-Phonatory Coordination: Instruct patient to inhale comfortably through diaphragm before initiating short 2-3 word utterances."
+        ),
+        locale="en-US",
+    ),
+    KnowledgeDocument(
+        id="autism-support-01",
+        title="Autism Spectrum Support, Sensory Regulation & Low-Cognitive AAC",
+        category="autism_support",
+        keywords=(
+            "autism",
+            "asd",
+            "sensory overload",
+            "regulation",
+            "visual schedule",
+            "low cognitive load",
+            "stimming",
+            "meltdown",
+            "aac",
+        ),
+        summary="Sensory regulation protocols, predictable visual AAC scheduling, and de-escalation for neurodivergent users.",
+        content=(
+            "Autism Assistive Support Protocol:\n"
+            "1. Sensory Predictability: Minimize sudden audio or visual animations. Use consistent muted colors and predictable screen layouts.\n"
+            "2. Visual Scheduling: Provide chronological step-by-step cue cards ('First water, then rest, then exercise') to reduce transition anxiety.\n"
+            "3. Overload De-escalation: If rapid involuntary movements or distress signals are detected, reduce companion audio volume, dim lighting, and present calming breathing prompts.\n"
+            "4. Communication Respect: Recognize non-speaking does not mean non-understanding. Keep tone respectful, calm, and direct."
+        ),
+        locale="en-US",
+    ),
+    KnowledgeDocument(
+        id="icu-comm-01",
+        title="ICU Communication Boards & Acute Intubation AAC Protocols",
+        category="icu_communication",
+        keywords=(
+            "icu",
+            "intensive care",
+            "intubation",
+            "endotracheal",
+            "ventilator",
+            "pain scale",
+            "eye blink",
+            "critical care",
+            "non-verbal",
+        ),
+        summary="Fast-path communication boards, binary eye-blink confirmation, and acute pain scales for intubated patients.",
+        content=(
+            "Intensive Care Unit (ICU) Communication Standard:\n"
+            "1. Binary Eye-Blink Protocol: Two blinks = 'YES', prolonged eye closure (1.5s) = 'NO'. Allows intubated patients to verify biological needs without vocal cords.\n"
+            "2. Priority Biological Grid: Immediate 1-tap access to 'Pain', 'Suction airway', 'Reposition bed', 'Cold/Hot', 'Family member'.\n"
+            "3. PAINAD / CPOT Non-Verbal Scoring: Asha observes facial muscle furrowing and brow tension to estimate pain score (0 to 10) even when patient cannot speak.\n"
+            "4. Nurse Call Integration: Urgent ICU requests trigger immediate dual alerts on both bedside display and nurse station webhook."
+        ),
+        locale="en-US",
+    ),
+    KnowledgeDocument(
+        id="physiotherapy-01",
+        title="Neurological Physiotherapy, Range of Motion & Spasticity Management",
+        category="physiotherapy",
+        keywords=(
+            "physiotherapy",
+            "physical therapy",
+            "range of motion",
+            "spasticity",
+            "contracture",
+            "neck movement",
+            "hand stretch",
+            "joint mobility",
+        ),
+        summary="Bedside and wheelchair range of motion exercises, contracture prevention, and gentle stretching protocols.",
+        content=(
+            "Assistive Physiotherapy & Movement Guidelines:\n"
+            "1. Cervical & Neck Range of Motion: Gentle lateral rotation (ear toward shoulder) held for 5 seconds improves carotid circulation and reduces cervical tension.\n"
+            "2. Passive Wrist & Hand Stretching: Slowly extend fingers using opposite hand or armrest wedge to counteract flexor spasticity common in hemiplegia.\n"
+            "3. Postural Alignment: Verify wheelchair pelvis position is seated deep against backrest. Avoid sacral sitting which exacerbates spinal deformities.\n"
+            "4. Asha Feedback Loop: Track execution smoothness. Provide positive reinforcement: 'Good, you completed 5 gentle repetitions today.'"
+        ),
+        locale="en-US",
+    ),
+    KnowledgeDocument(
+        id="caregiver-guidelines-01",
+        title="Clinical Caregiver Guidelines, Safe Transfers & Burnout Mitigation",
+        category="caregiver_guidelines",
+        keywords=(
+            "caregiver guidelines",
+            "transfer safety",
+            "body mechanics",
+            "pressure relief",
+            "burnout",
+            "respite",
+            "ergonomics",
+            "care plan",
+        ),
+        summary="Ergonomic patient transfer guidelines, pressure relief schedules, and caregiver wellbeing protocols.",
+        content=(
+            "Clinical Guidelines for Caregivers:\n"
+            "1. Transfer Safety: Maintain wide base of support, keep knees bent, and bring patient close to body center of gravity before standing transfer.\n"
+            "2. Offloading Routine: Set automated reminder every 2 hours for bedbound patients and every 30 minutes for wheelchair sitting to offload sacrum and ischial tuberosities.\n"
+            "3. Notification Triage: Use Asha's green/yellow/red priority triage to address critical needs without experiencing constant alarm anxiety.\n"
+            "4. Caregiver Self-Care: Ensure regular respite breaks and sleep rotation to prevent chronic physical strain and empathetic exhaustion."
+        ),
+        locale="en-US",
+    ),
+    KnowledgeDocument(
+        id="user-specific-instructions-01",
+        title="Patient Digital Twin Personalized Care Directives (Rahim Profile)",
+        category="user_specific_instructions",
+        keywords=(
+            "user specific",
+            "digital twin",
+            "rahim",
+            "profile",
+            "preference",
+            "bangla",
+            "hydration schedule",
+            "call daughter",
+            "emergency contacts",
+        ),
+        summary="User Digital Twin profile parameters, personal communication preferences, and individualized routines.",
+        content=(
+            "Personalized Digital Twin Care Directives:\n"
+            "1. Patient Profile: Rahim, 64 years old, recovering from ischemic stroke with right-sided partial motor recovery.\n"
+            "2. Preferred Communication: Right hand micro-gestures and eye-blink scanning. Primary language: Bangla, secondary: English.\n"
+            "3. Core Routine Requests: Morning water (room temperature), pain relief check at 2 PM, evening video call with daughter (Fatima).\n"
+            "4. Active Safety Flags: Fall detection enabled on wheelchair accelerometer. Dysphagia aspiration precautions active (thickened liquids only).\n"
+            "5. Prescribed Exercises: Daily 10-minute neck lateral stretches and right-hand finger extension drills guided by Asha."
+        ),
+        locale="en-US",
     ),
 )

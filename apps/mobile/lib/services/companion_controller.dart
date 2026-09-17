@@ -88,6 +88,9 @@ class CompanionController extends ChangeNotifier {
     String rawMessage, {
     String? preferredName,
     UserRole role = UserRole.patient,
+    String? gestureModality,
+    double? gestureConfidence,
+    bool physicalEffortObserved = false,
   }) async {
     final message = rawMessage.trim();
     if (message.isEmpty || _sending) return;
@@ -95,6 +98,9 @@ class CompanionController extends ChangeNotifier {
       role: AshaMessageRole.patient,
       text: message,
       sentAt: DateTime.now(),
+      gestureModality: gestureModality,
+      gestureConfidence: gestureConfidence,
+      physicalEffortObserved: physicalEffortObserved,
     ));
     _sending = true;
     notifyListeners();
@@ -104,9 +110,14 @@ class CompanionController extends ChangeNotifier {
       reply = await _api.chat(
         message: message,
         locale: locale,
+        history: _messages,
         previousResponseId: _previousResponseId,
         preferredName: preferredName,
         careMode: role == UserRole.caregiver ? 'caregiver_emergency' : 'continuous',
+        role: role,
+        gestureModality: gestureModality,
+        gestureConfidence: gestureConfidence,
+        physicalEffortObserved: physicalEffortObserved,
       );
       _online = reply.isOnline;
       _previousResponseId = reply.previousResponseId;
@@ -116,6 +127,9 @@ class CompanionController extends ChangeNotifier {
         message,
         role: role,
         preferredName: preferredName,
+        gestureModality: gestureModality,
+        gestureConfidence: gestureConfidence,
+        physicalEffortObserved: physicalEffortObserved,
       );
     }
     _messages.add(AshaMessage(
@@ -129,22 +143,49 @@ class CompanionController extends ChangeNotifier {
       plan: reply.plan,
       verification: reply.verification,
       memoryRecalled: reply.memoryRecalled,
+      gestureModality: gestureModality,
+      gestureConfidence: gestureConfidence,
+      physicalEffortObserved: physicalEffortObserved,
     ));
     _sending = false;
     notifyListeners();
     await _voice.speakAsha(reply.text, force: reply.urgent);
   }
 
+  /// Empathetic handling when a patient executes a gesture phrase.
+  Future<void> notifyGestureFired(
+    String phrase, {
+    required String modality,
+    double? confidence,
+    String? preferredName,
+    UserRole role = UserRole.patient,
+  }) async {
+    await send(
+      phrase,
+      preferredName: preferredName,
+      role: role,
+      gestureModality: modality,
+      gestureConfidence: confidence,
+      physicalEffortObserved: true,
+    );
+  }
+
   AshaReply _fallbackResponseFor(
     String query, {
     required UserRole role,
     String? preferredName,
+    String? gestureModality,
+    double? gestureConfidence,
+    bool physicalEffortObserved = false,
   }) {
     return _offlineAgent.process(
       message: query,
       locale: locale,
       preferredName: preferredName,
       role: role,
+      gestureModality: gestureModality,
+      gestureConfidence: gestureConfidence,
+      physicalEffortObserved: physicalEffortObserved,
     );
   }
 

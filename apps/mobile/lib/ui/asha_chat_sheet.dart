@@ -59,15 +59,24 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
   final _scrollController = ScrollController();
 
   static const _patientPrompts = [
-    'How are you feeling?',
-    'Tell me something encouraging',
-    'Help me relax with breathing',
+    'My hands feel fatigued',
+    'I can only blink right now',
+    'Explain why my muscles spasm',
+    'Start neck & arm rehab exercise',
+    'I feel uncomfortable',
+    'Check my Digital Twin profile',
     'I would like some water',
     'Call my caregiver',
-    'Check wheelchair status',
+    'Help me relax with breathing',
+    'Log my pain level',
+    'বাংলায় কথা বলুন',
   ];
 
   static const _caregiverPrompts = [
+    'Review stroke rehab protocol',
+    'Safe transfer & body mechanics',
+    'ICU communication board',
+    'Autism sensory schedule',
     'Seizure first-aid steps',
     'How to calm breathing distress',
     'Wheelchair camera alignment',
@@ -294,9 +303,9 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                         } else if (lastMode.contains('groq')) {
                           modeIcon = Icons.speed;
                           modeLabel = 'Groq Cloud • \$0 Free Tier';
-                        } else if (lastMode.contains('openrouter')) {
-                          modeIcon = Icons.cloud_done;
-                          modeLabel = 'OpenRouter Gemma • \$0 Free';
+                        } else if (lastMode.contains('gemini-fallback')) {
+                          modeIcon = Icons.cloud_off;
+                          modeLabel = 'Gemini Fallback • Offline RAG';
                         } else if (lastMode.contains('gemini')) {
                           modeIcon = Icons.auto_awesome;
                           modeLabel = 'Gemini AI • answers spoken';
@@ -384,6 +393,27 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (!fromAsha && (message.gestureModality != null || message.physicalEffortObserved))
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.touch_app, size: 12, color: Color(0xFFA6E3D9)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  message.gestureModality != null
+                                      ? '${message.gestureModality}${message.gestureConfidence != null ? " (${(message.gestureConfidence! * 100).round()}%)" : ""}'
+                                      : 'Somatic gesture',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Color(0xFFA6E3D9),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         Text(
                           message.text,
                           style: TextStyle(

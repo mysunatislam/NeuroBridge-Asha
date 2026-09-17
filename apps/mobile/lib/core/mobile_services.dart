@@ -7,6 +7,7 @@ import 'package:fingerspeak_mobile/data/pi_device_client.dart';
 import 'package:fingerspeak_mobile/intent/intent_recognition_service.dart';
 import 'package:fingerspeak_mobile/intent/patient_profile.dart';
 import 'package:fingerspeak_mobile/models/patient_signal.dart';
+import 'package:fingerspeak_mobile/models/patient_registry_repository.dart';
 import 'package:fingerspeak_mobile/models/personal_access_profile_repository.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/models/patient_access_method.dart';
@@ -47,6 +48,7 @@ class MobileServices {
     required this.ashaGuide,
     required this.localPeerSync,
     required this.patientRoster,
+    required this.patientRegistry,
     required this.intentRecognition,
     required SharedPreferences preferences,
   }) : _preferences = preferences;
@@ -58,6 +60,7 @@ class MobileServices {
   final UserRoleRepository roleRepository;
   final PatientAccessMethodRepository patientAccessMethodRepository;
   final PersonalAccessProfileRepository accessProfileRepository;
+  final PatientRegistryRepository patientRegistry;
   final PatientVoiceService voice;
   final LocalReminderService reminders;
   final CaregiverNotificationService caregiverNotifications;
@@ -186,6 +189,7 @@ class MobileServices {
       preferences: preferences,
       peerSync: localPeerSync,
     );
+    final patientRegistry = PatientRegistryRepository(preferences);
     final intentRecognition = _buildIntentRecognition(
       preferences: preferences,
       monitor: monitor,
@@ -217,6 +221,7 @@ class MobileServices {
       ashaGuide: ashaGuide,
       localPeerSync: localPeerSync,
       patientRoster: patientRoster,
+      patientRegistry: patientRegistry,
     );
     result._signalSubscription = monitor.signals.listen((signal) {
       if (result.shouldBypassIntentPipeline(signal)) {
@@ -331,6 +336,7 @@ class MobileServices {
       peerSync: localPeerSync,
       autoStartHeartbeat: false,
     );
+    final patientRegistry = PatientRegistryRepository(prefs);
     final intentRecognition = _buildIntentRecognition(
       preferences: prefs,
       monitor: mon,
@@ -361,6 +367,7 @@ class MobileServices {
       ashaGuide: ashaGuide,
       localPeerSync: localPeerSync,
       patientRoster: patientRoster,
+      patientRegistry: patientRegistry,
     );
   }
 

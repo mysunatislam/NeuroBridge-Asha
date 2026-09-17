@@ -1,7 +1,7 @@
 """Task Planner for NeuroBridge Asha.
 
 Performs goal decomposition and structured multi-step execution planning
-for patient requests, routine management, and clinical emergency coordination.
+for patient requests, routine management, rehabilitation guidance, and clinical emergency coordination.
 """
 
 from __future__ import annotations
@@ -27,18 +27,18 @@ class PlanStep:
         return asdict(self)
 
 
-# Multi-intent decomposition rules
+# Multi-intent decomposition rules across all 7 clinical RAG domains & Action Engine
 _PLAN_RULES: list[tuple[re.Pattern[str], str, dict[str, Any], str]] = [
     # Seizure emergency
     (
-        re.compile(r"\b(seizure|convuls\w*|jerking fit)\b", re.I),
+        re.compile(r"\b(seizure|convuls\w*|jerking fit|খিঁচুনি|কাঁপুনি)\b", re.I),
         "lookup_clinical_guidance",
         {"query": "seizure first aid emergency protocol", "category": "seizure_first_aid"},
         "Retrieve immediate seizure positioning and airway protocols",
     ),
     # Choking / Breathing distress
     (
-        re.compile(r"\b(chok\w*|can.?t breathe|cannot breathe|strangl\w*)\b", re.I),
+        re.compile(r"\b(chok\w*|can.?t breathe|cannot breathe|strangl\w*|শ্বাসকষ্ট)\b", re.I),
         "lookup_clinical_guidance",
         {"query": "choking airway obstruction acute distress", "category": "seizure_first_aid"},
         "Retrieve acute choking and breathing distress protocol",
@@ -56,19 +56,75 @@ _PLAN_RULES: list[tuple[re.Pattern[str], str, dict[str, Any], str]] = [
         },
         "Look up autonomic dysreflexia blood pressure and trigger protocol",
     ),
-    # ALS / Motor Fatigue / Micro-gestures
+    # Stroke Rehabilitation / Exercise Coaching
     (
-        re.compile(r"\b(als|mnd|fatigue|muscle tire|weakness|tremor|dwell)\b", re.I),
-        "lookup_clinical_guidance",
-        {"query": "ALS MND micro-gesture fatigue management", "category": "als_mnd"},
-        "Check fatigue thresholds and assistive gesture calibrations",
+        re.compile(r"\b(rehab\w*|exercise|motor recovery|stroke rehab|স্ট্রেচ|ব্যায়াম)\b", re.I),
+        "start_rehabilitation_exercise",
+        {"exercise_name": "neck_mobility", "repetitions": 5},
+        "Launch interactive step-by-step rehabilitation coaching",
     ),
-    # Stroke / Aphasia AAC
+    # Stroke / Aphasia Clinical RAG
     (
-        re.compile(r"\b(stroke|aphasia|trouble speaking|dysarthria)\b", re.I),
+        re.compile(r"\b(stroke|aphasia|trouble speaking|dysarthria|স্ট্রোক)\b", re.I),
         "lookup_clinical_guidance",
-        {"query": "stroke aphasia AAC communication strategies", "category": "stroke_aphasia"},
-        "Review visual and phrase-paired aphasia communication strategies",
+        {"query": "stroke motor recovery neuroplasticity", "category": "stroke_rehabilitation"},
+        "Review stroke rehabilitation and neuroplasticity motor protocols",
+    ),
+    # Speech Therapy
+    (
+        re.compile(r"\b(speech therapy|pronunciation|articulation|phoneme|oral motor)\b", re.I),
+        "lookup_clinical_guidance",
+        {"query": "speech therapy articulation pacing dysarthria", "category": "speech_therapy"},
+        "Retrieve speech therapy and dysarthria pacing guidance",
+    ),
+    # Autism Support / Sensory
+    (
+        re.compile(r"\b(autism|sensory overload|overwhelm|meltdown|visual schedule)\b", re.I),
+        "lookup_clinical_guidance",
+        {"query": "autism sensory regulation visual schedules", "category": "autism_support"},
+        "Retrieve autism sensory calming and visual schedule protocol",
+    ),
+    # ICU Communication
+    (
+        re.compile(r"\b(icu|intubat\w*|ventilator|suction|trach\w*)\b", re.I),
+        "lookup_clinical_guidance",
+        {"query": "icu acute communication intubation eye blink", "category": "icu_communication"},
+        "Retrieve ICU non-verbal eye-blink communication board",
+    ),
+    # Physiotherapy & Range of Motion
+    (
+        re.compile(r"\b(physiotherapy|neck movement|stiff neck|hand stretch|range of motion)\b", re.I),
+        "lookup_clinical_guidance",
+        {"query": "physiotherapy range of motion spasticity", "category": "physiotherapy"},
+        "Retrieve physiotherapy joint mobilization and stretching guidelines",
+    ),
+    # Caregiver Guidelines
+    (
+        re.compile(r"\b(caregiver guideline|transfer safety|burnout|body mechanics|lift patient)\b", re.I),
+        "lookup_clinical_guidance",
+        {"query": "caregiver transfer safety ergonomics offloading", "category": "caregiver_guidelines"},
+        "Retrieve clinical caregiver safety and ergonomic transfer guidelines",
+    ),
+    # User Specific / Digital Twin
+    (
+        re.compile(r"\b(my profile|digital twin|rahim|who am i|my routine|my doctor)\b", re.I),
+        "recall_memory",
+        {"query": "digital twin clinical profile preferences", "category": "digital_twin"},
+        "Recall personalized User Digital Twin profile and directives",
+    ),
+    # Symptom Logging (Pain, Tremor, Spasm, Fatigue)
+    (
+        re.compile(r"\b(pain|hurts|ache|spasm|cramp|tremor|shaking|ব্যথা|কষ্ট)\b", re.I),
+        "record_symptom_log",
+        {"symptom_type": "pain", "severity": 6, "notes": "Patient reported pain or discomfort."},
+        "Record clinical symptom observation in patient history",
+    ),
+    # Medication Reminder
+    (
+        re.compile(r"\b(medication|medicine|pill|dose|প্রেসক্রিপশন|ওষুধ)\b", re.I),
+        "remind_medication",
+        {"medication_name": "Scheduled prescription", "time_label": "routine"},
+        "Schedule or verify patient medication adherence reminder",
     ),
     # Device / Hardware / Battery / Camera
     (
@@ -79,7 +135,7 @@ _PLAN_RULES: list[tuple[re.Pattern[str], str, dict[str, Any], str]] = [
     ),
     # Hydration / Water
     (
-        re.compile(r"\b(water|drink|hydrat\w*|thirsty|গলা শুকিয়ে গেছে)\b", re.I),
+        re.compile(r"\b(water|drink|hydrat\w*|thirsty|পানি|জল)\b", re.I),
         "manage_care_routine",
         {"action": "check", "category": "hydration"},
         "Check hydration schedule and record routine request",
@@ -98,10 +154,17 @@ _PLAN_RULES: list[tuple[re.Pattern[str], str, dict[str, Any], str]] = [
         {"text": "Patient requests assistance. Please attend bedside."},
         "Broadcast visual caption on wheelchair companion display",
     ),
+    # Direct Voice Call to Caregiver
+    (
+        re.compile(r"\b(call daughter|call family|phone call|ring caregiver)\b", re.I),
+        "call_caregiver",
+        {"urgent": True, "reason": "Patient requested direct voice call to caregiver."},
+        "Initiate direct telephone/VoIP voice call to caregiver",
+    ),
     # Caregiver / Nurse Alert
     (
         re.compile(
-            r"\b(?:call|alert|contact|notify|message)(?:\s+(?:the|my|an?))?\s*(?:caregiver|nurse|doctor)\b|\b(?:help(?:\s+me)?|need\s+help|urgent\w*|emergency)\b",
+            r"\b(?:call|alert|contact|notify|message)(?:\s+(?:the|my|an?))?\s*(?:caregiver|nurse|doctor)\b|\b(?:help(?:\s+me)?|need\s+help|urgent\w*|emergency|সাহায্য|জরুরি)\b",
             re.I,
         ),
         "trigger_caregiver_alert",
@@ -127,7 +190,7 @@ class TaskPlanner:
         step_counter = 1
 
         # Check if recalled memory specifies preferred drinking style
-        has_water_query = bool(re.search(r"\b(water|drink|thirsty)\b", normalized, re.I))
+        has_water_query = bool(re.search(r"\b(water|drink|thirsty|পানি|জল)\b", normalized, re.I))
         if has_water_query:
             drinking_pref = next(
                 (m.value for m in recalled_memories if m.key == "drinking_preference"), None
@@ -154,7 +217,7 @@ class TaskPlanner:
                 # Custom caregiver alert severity detection
                 if tool_name == "trigger_caregiver_alert":
                     if any(
-                        w in normalized.lower() for w in ("emergency", "danger", "dying", "severe")
+                        w in normalized.lower() for w in ("emergency", "danger", "dying", "severe", "জরুরি")
                     ):
                         params = {
                             "severity": "emergency",
@@ -177,7 +240,7 @@ class TaskPlanner:
                 seen_tools.add(tool_name)
                 step_counter += 1
 
-            if len(steps) >= 4:
+            if len(steps) >= 5:
                 break
 
         return steps

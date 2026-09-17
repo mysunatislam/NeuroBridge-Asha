@@ -17,6 +17,13 @@ enum AshaKnowledgeCategory {
   bowelBladderCrisis,
   medicationSafety,
   mentalHealthEmpathy,
+  strokeRehabilitation,
+  speechTherapy,
+  autismSupport,
+  icuCommunication,
+  physiotherapy,
+  caregiverGuidelines,
+  userSpecificInstructions,
 }
 
 /// A structured knowledge document in Asha's embedded clinical repository.
@@ -131,6 +138,16 @@ const Map<String, List<String>> _kSynonyms = {
   'lonely': ['isolation', 'empathy', 'companion', 'support'],
   'ঘুম': ['sleep', 'night', 'bed', 'elevation'],
   'sleep': ['night', 'elevation', 'aspiration', 'turning', 'position'],
+  'rehab': ['stroke', 'exercise', 'motor', 'recovery', 'physiotherapy', 'rehabilitation'],
+  'exercise': ['rehab', 'stretching', 'movement', 'physiotherapy', 'mobility'],
+  'ব্যায়াম': ['rehab', 'exercise', 'stretching', 'movement', 'physiotherapy'],
+  'স্ট্রোক': ['stroke', 'hemiparesis', 'paralysis', 'rehab'],
+  'speech': ['articulation', 'phoneme', 'dysarthria', 'pacing', 'therapy'],
+  'autism': ['sensory', 'schedule', 'regulation', 'visual', 'overload'],
+  'icu': ['intubation', 'ventilator', 'suction', 'tracheostomy', 'blink'],
+  'physiotherapy': ['stretch', 'range', 'motion', 'neck', 'spasticity', 'mobility'],
+  'rahim': ['profile', 'twin', 'bangla', 'patient'],
+  'caregiver': ['transfer', 'ergonomics', 'burnout', 'nurse', 'alert'],
 };
 
 /// Embedded clinical documents for NeuroBridge Asha.
@@ -463,6 +480,113 @@ const List<AshaKnowledgeDocument> kClinicalKnowledgeDocuments = [
         '3. Physical Positioning: Sit Up -> সোজা করে বসিয়ে দিন | Lie Down -> শুইয়ে দিন | Turn Left/Right -> পাশ ফিরিয়ে দিন | Fix Pillow -> বালিশ ঠিক করুন\n'
         '4. Personnel & Care: Call Doctor -> ডাক্তার ডাকুন | Call Nurse -> নার্স ডাকুন | Family -> পরিবারের সদস্য | Medication -> সময়মতো ওষুধ দিন',
   ),
+  AshaKnowledgeDocument(
+    id: 'stroke-rehab-01',
+    title: 'Stroke Rehabilitation & Neuroplastic Motor Relearning',
+    category: AshaKnowledgeCategory.strokeRehabilitation,
+    keywords: [
+      'stroke rehabilitation', 'hemiparesis', 'motor relearning', 'neuroplasticity',
+      'rehab', 'exercise', 'arm recovery', 'paretic limb', 'constraint', 'repetition'
+    ],
+    summary: 'Clinical guidelines for stroke motor rehabilitation, neuroplasticity pacing, and bilateral limb guidance.',
+    content: 'Stroke Motor Recovery & Rehabilitation Principles:\n'
+        '1. Repetitive Task-Oriented Training: Neuroplastic cortical reorganization occurs through focused, purposeful repetitions. '
+        'Encourage 10 to 15 deliberate reaching or finger flexion movements per session rather than fatigue-inducing bursts.\n'
+        '2. Bilateral Arm Training: Mirroring healthy hand movements with the paretic hand stimulates homologous motor cortex networks.\n'
+        '3. Gradual Pacing: Stop immediately if joint pain occurs. Compensatory shoulder hiking should be discouraged in favor of neutral alignment.\n'
+        '4. Asha Coaching Loop: Asha initiates gentle prompts: Let us move your neck slowly. Turn right... Good. Now slightly more... Excellent.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'speech-therapy-01',
+    title: 'Speech Therapy, Dysarthria Pacing & Articulation Exercises',
+    category: AshaKnowledgeCategory.speechTherapy,
+    keywords: [
+      'speech therapy', 'dysarthria', 'aphasia', 'articulation', 'phoneme',
+      'pacing', 'vocal fatigue', 'speech', 'voice', 'swallowing'
+    ],
+    summary: 'Evidence-based speech therapy strategies, oral-motor drills, and dysarthria compensatory pacing.',
+    content: 'Clinical Speech-Language Pathology Guidelines:\n'
+        '1. Pacing & Rate Reduction: In flaccid or spastic dysarthria, slowing syllable production improves consonant intelligibility by 40%.\n'
+        '2. Phoneme Shaping Drills: Focus on bilabial (/p/, /b/, /m/) and alveolar (/t/, /d/, /n/) sounds with high visual contrast.\n'
+        '3. Vocal Fatigue Management: Schedule high-demand conversational exercises after morning rest periods. Provide instant AAC text when vocal cord fatigue sets in.\n'
+        '4. Respiratory-Phonatory Coordination: Instruct patient to inhale comfortably through diaphragm before initiating short 2-3 word utterances.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'autism-support-01',
+    title: 'Autism Spectrum Support, Sensory Regulation & Low-Cognitive AAC',
+    category: AshaKnowledgeCategory.autismSupport,
+    keywords: [
+      'autism', 'asd', 'sensory overload', 'regulation', 'visual schedule',
+      'low cognitive load', 'stimming', 'meltdown', 'aac'
+    ],
+    summary: 'Sensory regulation protocols, predictable visual AAC scheduling, and de-escalation for neurodivergent users.',
+    content: 'Autism Assistive Support Protocol:\n'
+        '1. Sensory Predictability: Minimize sudden audio or visual animations. Use consistent muted colors and predictable screen layouts.\n'
+        '2. Visual Scheduling: Provide chronological step-by-step cue cards (First water, then rest, then exercise) to reduce transition anxiety.\n'
+        '3. Overload De-escalation: If rapid involuntary movements or distress signals are detected, reduce companion audio volume, dim lighting, and present calming breathing prompts.\n'
+        '4. Communication Respect: Recognize non-speaking does not mean non-understanding. Keep tone respectful, calm, and direct.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'icu-comm-01',
+    title: 'ICU Communication Boards & Acute Intubation AAC Protocols',
+    category: AshaKnowledgeCategory.icuCommunication,
+    keywords: [
+      'icu', 'intensive care', 'intubation', 'endotracheal', 'ventilator',
+      'pain scale', 'eye blink', 'critical care', 'non-verbal'
+    ],
+    summary: 'Fast-path communication boards, binary eye-blink confirmation, and acute pain scales for intubated patients.',
+    content: 'Intensive Care Unit (ICU) Communication Standard:\n'
+        '1. Binary Eye-Blink Protocol: Two blinks = YES, prolonged eye closure (1.5s) = NO. Allows intubated patients to verify biological needs without vocal cords.\n'
+        '2. Priority Biological Grid: Immediate 1-tap access to Pain, Suction airway, Reposition bed, Cold/Hot, Family member.\n'
+        '3. PAINAD / CPOT Non-Verbal Scoring: Asha observes facial muscle furrowing and brow tension to estimate pain score (0 to 10) even when patient cannot speak.\n'
+        '4. Nurse Call Integration: Urgent ICU requests trigger immediate dual alerts on both bedside display and nurse station webhook.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'physiotherapy-01',
+    title: 'Neurological Physiotherapy, Range of Motion & Spasticity Management',
+    category: AshaKnowledgeCategory.physiotherapy,
+    keywords: [
+      'physiotherapy', 'physical therapy', 'range of motion', 'spasticity',
+      'contracture', 'neck movement', 'hand stretch', 'joint mobility'
+    ],
+    summary: 'Bedside and wheelchair range of motion exercises, contracture prevention, and gentle stretching protocols.',
+    content: 'Assistive Physiotherapy & Movement Guidelines:\n'
+        '1. Cervical & Neck Range of Motion: Gentle lateral rotation (ear toward shoulder) held for 5 seconds improves carotid circulation and reduces cervical tension.\n'
+        '2. Passive Wrist & Hand Stretching: Slowly extend fingers using opposite hand or armrest wedge to counteract flexor spasticity common in hemiplegia.\n'
+        '3. Postural Alignment: Verify wheelchair pelvis position is seated deep against backrest. Avoid sacral sitting which exacerbates spinal deformities.\n'
+        '4. Asha Feedback Loop: Track execution smoothness. Provide positive reinforcement: Good, you completed 5 gentle repetitions today.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'caregiver-guidelines-01',
+    title: 'Clinical Caregiver Guidelines, Safe Transfers & Burnout Mitigation',
+    category: AshaKnowledgeCategory.caregiverGuidelines,
+    keywords: [
+      'caregiver guidelines', 'transfer safety', 'body mechanics', 'pressure relief',
+      'burnout', 'respite', 'ergonomics', 'care plan'
+    ],
+    summary: 'Ergonomic patient transfer guidelines, pressure relief schedules, and caregiver wellbeing protocols.',
+    content: 'Clinical Guidelines for Caregivers:\n'
+        '1. Transfer Safety: Maintain wide base of support, keep knees bent, and bring patient close to body center of gravity before standing transfer.\n'
+        '2. Offloading Routine: Set automated reminder every 2 hours for bedbound patients and every 30 minutes for wheelchair sitting to offload sacrum and ischial tuberosities.\n'
+        '3. Notification Triage: Use Ashas green/yellow/red priority triage to address critical needs without experiencing constant alarm anxiety.\n'
+        '4. Caregiver Self-Care: Ensure regular respite breaks and sleep rotation to prevent chronic physical strain and empathetic exhaustion.',
+  ),
+  AshaKnowledgeDocument(
+    id: 'user-specific-instructions-01',
+    title: 'Patient Digital Twin Personalized Care Directives (Rahim Profile)',
+    category: AshaKnowledgeCategory.userSpecificInstructions,
+    keywords: [
+      'user specific', 'digital twin', 'rahim', 'profile', 'preference',
+      'bangla', 'hydration schedule', 'call daughter', 'emergency contacts'
+    ],
+    summary: 'User Digital Twin profile parameters, personal communication preferences, and individualized routines.',
+    content: 'Personalized Digital Twin Care Directives:\n'
+        '1. Patient Profile: Rahim, 64 years old, recovering from ischemic stroke with right-sided partial motor recovery.\n'
+        '2. Preferred Communication: Right hand micro-gestures and eye-blink scanning. Primary language: Bangla, secondary: English.\n'
+        '3. Core Routine Requests: Morning water (room temperature), pain relief check at 2 PM, evening video call with daughter (Fatima).\n'
+        '4. Active Safety Flags: Fall detection enabled on wheelchair accelerometer. Dysphagia aspiration precautions active (thickened liquids only).\n'
+        '5. Prescribed Exercises: Daily 10-minute neck lateral stretches and right-hand finger extension drills guided by Asha.',
+  ),
 ];
 
 /// Fast client-side hybrid TF-IDF & keyword retriever.
@@ -524,7 +648,7 @@ class AshaLocalKnowledgeRetriever {
   /// Tokenizes raw string into lowercase words without punctuation or stopwords.
   static List<String> tokenize(String text) {
     final lower = text.toLowerCase();
-    final matches = RegExp(r'[\p{L}\p{N}-]+', unicode: true).allMatches(lower);
+    final matches = RegExp(r'[\p{L}\p{M}\p{N}-]+', unicode: true).allMatches(lower);
     final tokens = <String>[];
     for (final m in matches) {
       final t = m.group(0)!;

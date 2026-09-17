@@ -1,169 +1,378 @@
-# FingerSpeak
+# NeuroBridge Asha: Multimodal Assistive Intelligence Platform
 
-FingerSpeak is a local-first assistive communication prototype for a wheelchair-mounted Raspberry
-Pi, a patient phone, and a caregiver client. The primary React/Vinext application keeps gesture
-recognition, captions, local speech, and explicit safety confirmation available without depending
-on Asha or the cloud. When connectivity is available, the phone can use the Asha text companion,
-authorized caregiver alerts, and optional cloud device status.
+> **"NeuroBridge Asha is a multimodal assistive intelligence platform combining edge computer vision, personalized memory, retrieval-augmented knowledge, agentic AI, and cloud-native language models to transform non-verbal human signals into meaningful communication and proactive assistance."**
 
-> FingerSpeak is not a validated medical device or emergency service. Do not use this prototype as
-> a person's only communication, monitoring, or emergency pathway. It has no wheelchair propulsion
-> or motor-control interface.
+---
 
-## System shape
+## Releases and Deployments
+
+| Deliverable | Link |
+|:---|:---|
+| **Patient Android APK** | [https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/android-patient-v3.0.0](https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/android-patient-v3.0.0) |
+| **Caregiver Android APK** | [https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/android-caregiver-v3.0.0](https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/android-caregiver-v3.0.0) |
+| **Patient iOS IPA (unsigned)** | [https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/ios-patient-v3.0.0](https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/ios-patient-v3.0.0) |
+| **Caregiver iOS IPA (unsigned)** | [https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/ios-caregiver-v3.0.0](https://github.com/mysunatislam/NeuroBridge-Asha/releases/tag/ios-caregiver-v3.0.0) |
+| **Patient Web App** | [https://mysunatislam.github.io/neurobridge-asha-patient/](https://mysunatislam.github.io/neurobridge-asha-patient/) |
+| **Caregiver Web App** | [https://mysunatislam.github.io/neurobridge-asha-caregiver/](https://mysunatislam.github.io/neurobridge-asha-caregiver/) |
+
+---
+
+## Architectural Vision: Hybrid Multimodal Assistive Intelligence
+
+NeuroBridge Asha is not designed as "just an AI chatbot". Asha is a **multimodal assistive intelligence platform**.
+
+**The Core Goal:**
+> Asha should see, hear, understand, remember, reason, and take safe actions — while remaining affordable, privacy-aware, and capable of offline operation.
+
+The architecture is built on **Hybrid AI**:
+* **Edge AI** → Instant response (<50 ms), strict privacy, zero cloud dependency, works 100% offline.
+* **Cloud AI** → Advanced medical reasoning, deep clinical synthesis, multi-turn therapy personalization.
+* **Agentic Layer** → Multi-agent goal planning, tool execution, safety verification, and proactive care actions.
+* **RAG Layer** → Trusted, clinical rehabilitation knowledge retrieval grounded in evidence-based medicine.
+
+---
+
+# NeuroBridge Asha Complete System Architecture
 
 ```text
-Raspberry Pi NoIR camera ─> Pi edge bridge ─> Raspberry Pi caption display
-                                  ^
-                                  | authenticated local WebSocket
-                                  v
-                        patient React/Vinext app
-                           |               |
-                 phone voice/calls        | HTTPS
-                                           v
-                              FastAPI control plane
-                                  |               |
-                         Asha LLM/RAG       caregiver client
+                         USER
+                          |
+        ---------------------------------
+        |                               |
+   Camera Sensors                  Voice Input
+        |                               |
+        ▼                               ▼
+
+┌────────────────────────────────────────────┐
+│              PERCEPTION LAYER              │
+│              (Edge AI)                     │
+│                                            │
+│  MediaPipe / TensorFlow Lite               │
+│                                            │
+│  • Hand tracking                           │
+│  • Finger landmarks                        │
+│  • Face landmarks (478 points)             │
+│  • Eye movement                            │
+│  • Blink detection                         │
+│  • Smile detection                         │
+│  • Pain expression                         │
+│  • Head movement                           │
+│  • Body posture                            │
+│                                            │
+└────────────────────────────────────────────┘
+
+                     |
+                     ▼
+
+┌────────────────────────────────────────────┐
+│        MULTIMODAL UNDERSTANDING ENGINE      │
+│                                            │
+│  Converts human signals into meaning       │
+│                                            │
+│  Input:                                    │
+│  - Gesture                                 │
+│  - Facial expression                       │
+│  - Voice                                   │
+│  - Context                                 │
+│                                            │
+│  Output:                                   │
+│  "User wants water"                        │
+│  "User experiencing discomfort"            │
+│                                            │
+└────────────────────────────────────────────┘
+
+                     |
+                     ▼
+
+┌────────────────────────────────────────────┐
+│              ASHA AI CORE                  │
+│                                            │
+│              Agentic AI                    │
+│                                            │
+│  ┌────────────────────────────────────┐    │
+│  │ Personal Memory Agent              │    │
+│  │                                    │    │
+│  │ User profile                       │    │
+│  │ Medical history                    │    │
+│  │ Preferences                        │    │
+│  │ Communication style                │    │
+│  └────────────────────────────────────┘    │
+│                                            │
+│  ┌────────────────────────────────────┐    │
+│  │ Reasoning Agent                    │    │
+│  │                                    │    │
+│  │ Understand situation               │    │
+│  │ Decide next step                   │    │
+│  │ Generate response                  │    │
+│  └────────────────────────────────────┘    │
+│                                            │
+│  ┌────────────────────────────────────┐    │
+│  │ Safety Agent                       │    │
+│  │                                    │    │
+│  │ Emergency detection                │    │
+│  │ Risk assessment                    │    │
+│  │ Permission checking                │    │
+│  └────────────────────────────────────┘    │
+│                                            │
+└────────────────────────────────────────────┘
+
+                     |
+                     ▼
+
+┌────────────────────────────────────────────┐
+│                 RAG SYSTEM                 │
+│          Knowledge Augmentation            │
+│                                            │
+│ Vector Database                            │
+│                                            │
+│ Stores:                                    │
+│                                            │
+│ • Stroke rehabilitation                    │
+│ • Speech therapy                           │
+│ • Autism support                           │
+│ • ICU communication                        │
+│ • Physiotherapy                            │
+│ • Caregiver guidelines                     │
+│ • User-specific instructions               │
+│                                            │
+└────────────────────────────────────────────┘
+
+                     |
+                     ▼
+
+┌────────────────────────────────────────────┐
+│              LLM ORCHESTRATOR              │
+│                                            │
+│ Selects intelligence source                │
+│                                            │
+│ Simple task:                               │
+│ Local model (Ollama / Gemma 2 / Rule AI)   │
+│                                            │
+│ Complex reasoning:                         │
+│ GPT-4o / Gemini Flash / Claude / Llama     │
+│                                            │
+└────────────────────────────────────────────┘
+
+                     |
+                     ▼
+
+┌────────────────────────────────────────────┐
+│              ACTION ENGINE                 │
+│                                            │
+│ Asha can perform actions                   │
+│                                            │
+│ Examples:                                  │
+│                                            │
+│ ✓ Speak response (TTS)                     │
+│ ✓ Start exercise                           │
+│ ✓ Call caregiver                           │
+│ ✓ Send alert                               │
+│ ✓ Record symptoms                          │
+│ ✓ Remind medication                        │
+│ ✓ Guide rehabilitation                     │
+│                                            │
+└────────────────────────────────────────────┘
+
+                     |
+                     ▼
+
+             ASHA COMPANION
+
+        Avatar + Voice + Interface
+
+        "I noticed you look uncomfortable.
+         Would you like me to call your caregiver?"
 ```
 
-The phone is the conversational surface: Asha replies, optional press-to-talk input, local speech
-playback, and phone calls stay there. The Pi display is deliberately simpler and shows large
-captions plus camera, tracking, phone-link, and power telemetry. Battery values remain `Unknown`
-until a real Pi power monitor or wheelchair/BMS integration reports them.
+---
 
-## Phone application
+# Detailed Component Design
 
-FingerSpeak now ships both an installable PWA in `apps/web` and a native Flutter client in
-`apps/mobile`. Both include patient and caregiver views, a corner Asha avatar that opens the
-conversation, large phone controls, online-first backend chat with local fallback, immediate local
-speech, continuous movement monitoring, water/check-in routines, Pi captions, and phone calls.
-Asha's portrait is bundled for offline use in both clients.
+## 1. Edge AI Layer (Runs locally)
 
-The direct phone-to-Pi WebSocket waits for a matching command acknowledgement before reporting a
-display message as delivered. Confirmed help receives priority over routine captions on the Pi.
-The Flutter client adds protected credential storage, native front-camera processing, direct
-caregiver phrase recordings, local notifications, and Android phone handoffs. Neither client puts
-an OpenAI key in shipped code.
+**Purpose:** Sub-50ms deterministic response with 100% privacy and zero cloud dependency.
 
-## What is included
+### Vision Pipeline:
+* **Hand Tracking (21 points):** Real-time tracking of both hands, finger articulatory movement, pinch, swipe, pointing, thumbs up/down.
+* **Face Mesh (478 landmarks):** Real-time gaze tracking, blink duration and rate, smile detection, pain grimacing, head pose orientation, and subtle discomfort indicators.
+* **Movement Normalization & Veto:** 2.5s sliding window filters tremor, spasticity, and involuntary twitches to distinguish intentional AAC commands from baseline movement.
 
-- **Primary React/Vinext PWA (`apps/web`):** patient, Pi Display, caregiver, and calibration views;
-  bundled MediaPipe hand plus calibrated face/eye movement recognition; personalized
-  nearest-prototype classification;
-  out-of-distribution rejection; `REST → CANDIDATE → WAIT_RELEASE`; local SpeechSynthesis; optional,
-  user-initiated browser speech recognition with a typed fallback; IndexedDB; PWA caching; explicit
-  emergency confirmation; and honest offline/demo device states.
-- **Native Flutter app (`apps/mobile`):** mobile-first patient/caregiver/setup shell; corner Asha
-  conversation sheet; on-device face, blink, wink, head, and facial-contour signals; immediate TTS
-  or exact caregiver-recorded phrase playback; water notifications; phone calls; protected Pi
-  credentials; and the same bounded WebSocket caption protocol.
-- **Offline intent recognition (`services/intent` + `apps/mobile/lib/intent`):** MediaPipe/ML Kit
-  are feature extractors only. A 2.5 s feature window feeds an intentional-vs-accidental forest,
-  a temporal CNN over the last 3 s decides the command *pattern* (triple blink, held mouth open,
-  held brow raise, held head turn, hand raise), an abnormal-movement detector vetoes twitches,
-  tremor, spasms and seizure-like activity, a five-phase patient calibration builds
-  `patient_profile.json`, and a confidence verification engine ignores below 70 %, asks
-  "Did you mean ...?" between 70 and 90 %, and executes above 90 %. Everything runs on device;
-  Gemini is an optional reasoning layer over structured events only. See
-  [docs/INTENT_RECOGNITION.md](docs/INTENT_RECOGNITION.md).
-- **Asha companion boundary:** `POST /v1/asha/chat` accepts bounded text and optional patient-owned
-  context. The API can use a server-only OpenAI Responses adapter and owner-scoped file search, or
-  return a deterministic offline companion response when no provider is configured. No API key is
-  stored in browser or Raspberry Pi code.
-- **Raspberry Pi edge service (`services/edge`):** hardware-free simulator, Picamera2 camera
-  lifecycle adapter, caption/emergency display state, telemetry, strict bounded messages,
-  one-time-code pairing, heartbeat presence, and idempotent commands. It exposes no shell, media
-  upload, cloud-AI, or wheelchair-control capability.
-- **FastAPI control plane (`services/api`):** PostgreSQL/Alembic, ownership and caregiver grants,
-  consent enforcement, session/event metadata, model registry, durable caregiver alerts,
-  authenticated WebSocket replay, Asha chat, and optional scoped cloud device connections.
-- **Python ML package (`services/ml`):** browser-parity 20×63 → 20×98 features, augmentation,
-  session-aware evaluation, DTW and prototype baselines, optional TensorFlow export, and checksummed
-  model bundles with safety metadata.
-- **Legacy/reference surfaces:** `apps/web-vue` and `legacy/` are retained for provenance and
-  comparison; neither is the primary application or Compose web service.
+---
 
-## Connectivity
+## 2. User Digital Twin
 
-For the wheelchair prototype, connect the Pi to the patient's phone hotspot and pair at runtime.
-The direct local protocol keeps pairing credentials out of query strings and does not expose camera
-frames. USB tethering can use the same IP/WebSocket protocol as a cable fallback. Production local
-networking requires `wss://` or an equivalent native-wrapper security design; plain `ws://` is only
-for a controlled prototype network.
+Every patient is modeled as an individualized Digital Twin that preserves identity, care routines, and adaptive baseline parameters.
 
-The separate cloud device channel uses owner-created scoped credentials so authorized caregivers
-can see durable status and captions when the Pi has internet access. A cloud socket by itself does
-not prove the patient or local Pi is online.
-
-## Fastest start
-
-From the repository root in PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-.\scripts\dev.ps1
+**Example Digital Twin Profile:**
+```yaml
+User: Rahim
+Condition: Stroke Recovery (Left Hemiparesis)
+Communication Modality: Right hand micro-gestures & eye-blink scanning
+Language: Bangla / English bilingual
+Voice Preference: Female, warm & reassuring tone
+Common Requests:
+  - Water (Hydration assistance)
+  - Pain relief / repositioning
+  - Call daughter (Caregiver contact)
+Prescribed Exercises:
+  - Gentle neck lateral flexion
+  - Active-assisted right hand stretching
+Risk Monitors:
+  - Fall detection: Enabled
+  - Dysphagia aspiration precautions: Active
 ```
 
-Then open `http://localhost:3000`. Development API documentation is at
-`http://localhost:8000/docs`. With `OPENAI_API_KEY` blank, Asha uses the safe offline response;
-local communication and the Pi demo preview remain available.
+This Digital Twin forms Asha's active episodic memory and context lattice.
 
-For non-container frontend development:
+---
 
+## 3. Three-Tier Memory Architecture
+
+* **Short-Term Working Memory:** Active conversation window, immediate sensor buffers, and recent pain/discomfort observations (10–30s scratchpad).
+* **Long-Term Relational Memory (PostgreSQL / IndexedDB):** Verified patient preferences, medical diagnosis history, caregiver grants, medication schedules, and clinical logs.
+* **Semantic Vector Memory (Vector Store / ChromaDB):** Dense semantic embeddings indexing clinical rehabilitation protocols, therapist progress notes, and prior recovery milestones.
+
+---
+
+## 4. RAG Knowledge Pipeline (7 Core Domains)
+
+Asha augments generative reasoning with clinical retrieval across 7 essential domains:
+1. **Stroke Rehabilitation:** Hemiparesis motor relearning, neuroplasticity exercises, and fatigue pacing.
+2. **Speech Therapy:** Dysarthria oral motor drills, phoneme shaping, and pacing board techniques.
+3. **Autism Support:** Sensory regulation routines, visual schedules, and low-cognitive-load communication cards.
+4. **ICU Communication:** Intubation communication boards, eye-blink binary confirmations, and pain assessment scales.
+5. **Physiotherapy:** Range-of-motion routines, spasticity management, and joint preservation guidelines.
+6. **Caregiver Guidelines:** Safe patient transfers, pressure sore prevention, and caregiver burnout mitigation.
+7. **User-Specific Instructions:** Patient-defined personal care routines, dietary restrictions, and emergency contact hierarchy.
+
+---
+
+## 5. Agentic AI Multi-Agent Architecture
+
+Instead of a monolithic language model, Asha coordinates specialized autonomous agents:
+
+```text
+               ┌──────────────────────────────┐
+               │         ASHA AI CORE         │
+               │   (Memory, Reasoner, Safety) │
+               └──────────────┬───────────────┘
+                              │
+         ┌────────────┬───────┴────────┬────────────┐
+         ▼            ▼                ▼            ▼
+   Communication    Health         Rehabilitation  Emergency
+      Agent       Monitoring          Agent         Agent
+                    Agent
+```
+
+* **Communication Agent:** Manages natural dialogue, real-time English/Bangla translation, and AAC phrase completion.
+* **Health Monitoring Agent:** Continuously screens movement kinematics, pain indicators, fatigue, and vitals.
+* **Rehabilitation Agent:** Guides step-by-step physical and speech therapy exercises:
+  > *"Let's move your neck slowly. Turn right... Good. Now slightly more... Excellent."*
+* **Emergency Agent:** Multi-step autonomous escalation:
+  $$\text{Fall / Spasm Detected} \longrightarrow \text{Ask Patient} \xrightarrow{\text{No response}} \text{Call Caregiver} \longrightarrow \text{Dispatch Priority Alert}$$
+
+---
+
+## 6. Intelligent LLM Routing Strategy
+
+To keep the platform cost-effective, low-latency, and resilient, queries are routed dynamically:
+
+```text
+                     User Request
+                          │
+                          ▼
+                  Intelligent Router
+                     /          \
+                    /            \
+             Simple Task      Complex Clinical
+             & Offline        Reasoning
+                  │                  │
+                  ▼                  ▼
+             Local Model         Cloud LLM
+          (Gemma 2 / Rules)   (Gemini / Claude / GPT)
+```
+
+---
+
+## 7. Action Engine
+
+Asha directly triggers safe, verified actuators:
+* ✓ **Speak Response:** Neural TTS with empathetic prosody.
+* ✓ **Start Exercise:** Launches interactive rehab guidance.
+* ✓ **Call Caregiver:** Automated emergency telephony/VoIP trigger.
+* ✓ **Send Alert:** High-priority caregiver notifications.
+* ✓ **Record Symptoms:** Logs pain, tremors, or fatigue in clinical history.
+* ✓ **Remind Medication:** Scheduled alerts with dosage and ingestion confirmation.
+* ✓ **Guide Rehabilitation:** Interactive feedback loop tracking repetition and form.
+
+---
+
+## 8. Hardware Architecture (Wheelchair Integration)
+
+Designed for wheelchair deployment and bedside hospital care:
+
+```text
+              Raspberry Pi 5 / 4B
+                       │
+        ───────────────┼───────────────
+        │              │              │
+  Camera Module    Coral TPU      Sunlight-Readable
+   (NoIR/RGB)     Accelerator      Caption Display
+        │              │              │
+        ▼              ▼              ▼
+  Sub-50ms CV    TFLite Edge     Idempotent
+   Landmarks      Inference       Captions
+                       │
+        ───────────────┼───────────────
+        │                             │
+    Directional Microphone       Isolated BMS /
+    & Amplified Speaker        Wheelchair Telemetry
+```
+
+---
+
+## 9. Offline Resilience Mode
+
+In clinical wards, rural environments, or during transit where internet access is unavailable:
+* MediaPipe vision + local gesture classifiers run entirely on device.
+* The local RAG engine retrieves embedded clinical protocols with zero latency.
+* Basic Asha companion interacts with full conversational empathy.
+* When internet returns, all offline symptom logs and events sync seamlessly to the cloud control plane.
+
+---
+
+## 4-Phase Roadmap
+
+* **Phase 1 (Current):** Flutter + MediaPipe Edge Vision + Asha Companion Avatar + Voice Synthesis + Intent Pipeline.
+* **Phase 2:** Multi-tier Memory + 7-Domain Clinical RAG + User Digital Twin Engine.
+* **Phase 3:** Autonomous Multi-Agent Actions + Caregiver Web/Mobile Portal Integration + Real-time Telemetry.
+* **Phase 4:** Raspberry Pi Wheelchair Hardware Bundle + Offline Coral TPU Acceleration + Hospital Clinical Deployment.
+
+---
+
+## Quick Start & Verification
+
+### Web PWA (`apps/web`):
 ```powershell
 .\scripts\bootstrap.ps1
 Set-Location .\apps\web
 npm.cmd run dev
 ```
 
-For the native Android client, install Flutter and an Android SDK, then follow
-[apps/mobile/README.md](apps/mobile/README.md). GitHub Actions runs analysis/tests and produces a
-downloadable evaluation APK artifact without storing an API key in the app.
-
-PostgreSQL is required for the full API, but the browser's local communication path works when the
-API is unavailable. Direct development may use the configured `local-user` identity. Staging and
-production must set a 32-byte-or-longer `FINGERSPEAK_GATEWAY_HMAC_SECRET` and use a trusted gateway
-that strips client `X-Actor-*` headers before injecting signed identity assertions. Browsers never
-receive that shared secret.
-
-## Raspberry Pi simulator
-
-After bootstrapping, run the edge service without Raspberry Pi hardware:
-
+### Native Flutter Client (`apps/mobile`):
 ```powershell
-$env:FINGERSPEAK_EDGE_PAIRING_CODE = "replace-with-at-least-24-random-characters"
-.\.venv\Scripts\python.exe -m fingerspeak_edge --adapter simulated
+Set-Location .\apps\mobile
+flutter.bat run
 ```
 
-The service defaults to loopback. Binding to `0.0.0.0` exposes it to the LAN and must be an explicit
-choice with a strong one-time code and trusted network. On Raspberry Pi OS, install Picamera2 from
-the operating system and follow [docs/RASPBERRY_PI_SETUP.md](docs/RASPBERRY_PI_SETUP.md).
-
-## Checks
-
+### Run Automated Tests:
 ```powershell
-.\scripts\test.ps1
+Set-Location .\apps\mobile
+flutter.bat test
 ```
 
-The script validates the React/Vinext frontend and rendered worker, API, ML package, Raspberry Pi
-edge simulator/protocol, Python lint/compilation, and Compose configuration when Docker is present.
-
-## Key directories
-
-```text
-apps/web          Primary React/Vinext patient, Pi Display, caregiver, and setup PWA
-apps/mobile       Native Flutter patient, caregiver, Asha, camera, voice, reminder, and Pi client
-apps/web-vue      Legacy Vue presentation retained as a reference
-services/api      FastAPI/PostgreSQL control plane, Asha, alerts, cloud device channel
-services/edge     Authenticated Raspberry Pi bridge, adapters, simulator, and tests
-services/ml       Training, evaluation, and model export package
-contracts         Bounded browser, model, and device protocol schemas
-docs              Architecture, device protocol, hardware, privacy, and safety notes
-infra             Docker Compose development stack
-scripts           Windows bootstrap, development, and verification workflows
-legacy            Supplied archive provenance and original static prototype
-```
-
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-[docs/PRIVACY_AND_SAFETY.md](docs/PRIVACY_AND_SAFETY.md), and
-[docs/DEVICE_PROTOCOL.md](docs/DEVICE_PROTOCOL.md) before extending a trust boundary.
+For in-depth architectural contracts and clinical defense specifications, see:
+* [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+* [docs/MULTIMODAL_ASSISTIVE_INTELLIGENCE_PLATFORM.md](docs/MULTIMODAL_ASSISTIVE_INTELLIGENCE_PLATFORM.md)
+* [docs/HARDWARE_ARCHITECTURE.md](docs/HARDWARE_ARCHITECTURE.md)
+* [docs/INTENT_RECOGNITION.md](docs/INTENT_RECOGNITION.md)

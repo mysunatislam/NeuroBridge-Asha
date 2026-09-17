@@ -133,6 +133,9 @@ class AshaMessage {
     this.plan = const [],
     this.verification,
     this.memoryRecalled = const [],
+    this.gestureModality,
+    this.gestureConfidence,
+    this.physicalEffortObserved = false,
   });
 
   final AshaMessageRole role;
@@ -145,6 +148,9 @@ class AshaMessage {
   final List<AshaPlanStep> plan;
   final AshaVerificationResult? verification;
   final List<AshaMemoryFact> memoryRecalled;
+  final String? gestureModality;
+  final double? gestureConfidence;
+  final bool physicalEffortObserved;
 }
 
 class AshaReply {
@@ -175,11 +181,13 @@ class AshaReply {
   bool get isOnline =>
       mode == 'llm' ||
       mode == 'gemini-agent' ||
+      mode == 'gemini-brain' ||
       mode == 'openai-agent' ||
       mode == 'local-llm-agent';
 
   bool get isAgentMode =>
       mode == 'gemini-agent' ||
+      mode == 'gemini-brain' ||
       mode == 'openai-agent' ||
       mode == 'offline-agent' ||
       mode == 'offline-rag-agent' ||

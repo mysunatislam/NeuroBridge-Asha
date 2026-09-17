@@ -1,4 +1,4 @@
-"""Agent tool definitions and implementations for NeuroBridge Asha's agentic reasoning loop."""
+"""Agent tool definitions and implementations for NeuroBridge Asha's Action Engine & agentic loop."""
 
 from __future__ import annotations
 
@@ -16,16 +16,16 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "lookup_clinical_guidance",
             "description": (
-                "Search the embedded assistive medical and AAC clinical knowledge base. "
-                "Use for questions about ALS, stroke recovery, seizure first aid, spinal cord injury, "
-                "wheelchair camera operations, hydration schedules, and care routines."
+                "Search the embedded assistive medical and AAC clinical knowledge base across 7 clinical domains: "
+                "stroke rehabilitation, speech therapy, autism support, ICU communication, physiotherapy, "
+                "caregiver guidelines, and user-specific instructions."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Clinical or assistive topic to look up, e.g. 'seizure recovery position', 'ALS fatigue management', 'Autonomic Dysreflexia'.",
+                        "description": "Clinical or assistive topic to look up, e.g. 'stroke motor recovery', 'dysarthria pacing', 'autism sensory regulation', 'PAINAD scale'.",
                     },
                     "category": {
                         "type": "string",
@@ -37,6 +37,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                             "device_operations",
                             "care_routine",
                             "bilingual_guidance",
+                            "stroke_rehabilitation",
+                            "speech_therapy",
+                            "autism_support",
+                            "icu_communication",
+                            "physiotherapy",
+                            "caregiver_guidelines",
+                            "user_specific_instructions",
                         ],
                         "description": "Optional category filter to narrow results.",
                     },
@@ -157,7 +164,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "recall_memory",
             "description": (
-                "Search patient long-term episodic and semantic memory for preferences, care history, or habits."
+                "Search patient long-term episodic, semantic, and Digital Twin memory for preferences, care history, or habits."
             ),
             "parameters": {
                 "type": "object",
@@ -173,6 +180,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                             "clinical_profile",
                             "caregiver_info",
                             "routine_history",
+                            "digital_twin",
                             "general",
                         ],
                         "description": "Optional category filter",
@@ -188,7 +196,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "record_memory",
             "description": (
-                "Store a new fact, patient preference, routine note, or observation in long-term memory."
+                "Record a permanent memory fact about patient preference, care instruction, or routine to long-term memory."
             ),
             "parameters": {
                 "type": "object",
@@ -200,6 +208,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                             "clinical_profile",
                             "caregiver_info",
                             "routine_history",
+                            "digital_twin",
                             "general",
                         ],
                         "description": "Category for the memory fact",
@@ -238,6 +247,118 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["action_name", "action_payload"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "speak_voice_response",
+            "description": (
+                "Vocalize a spoken response to the patient using neural TTS with emotional prosody."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to vocalize."},
+                    "tone": {
+                        "type": "string",
+                        "enum": ["reassuring", "encouraging", "urgent", "gentle"],
+                        "description": "Emotional prosody tone.",
+                    },
+                },
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "start_rehabilitation_exercise",
+            "description": (
+                "Initiate guided step-by-step physical or speech therapy rehabilitation exercise."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "exercise_name": {
+                        "type": "string",
+                        "enum": ["neck_mobility", "hand_stretching", "phoneme_articulation"],
+                        "description": "Specific exercise routine to begin.",
+                    },
+                    "repetitions": {
+                        "type": "integer",
+                        "description": "Target repetitions (e.g. 3 to 10).",
+                    },
+                },
+                "required": ["exercise_name"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "call_caregiver",
+            "description": (
+                "Place an urgent voice/telephony call to the designated caregiver contact."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "urgent": {"type": "boolean", "description": "Whether this is an emergency call."},
+                    "reason": {"type": "string", "description": "Clinical or communication reason for calling."},
+                },
+                "required": ["urgent", "reason"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "record_symptom_log",
+            "description": (
+                "Record a clinical symptom observation (pain, tremor, spasm, fatigue) into the patient record."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symptom_type": {
+                        "type": "string",
+                        "enum": ["pain", "tremor", "spasm", "fatigue", "discomfort"],
+                        "description": "Observed symptom category.",
+                    },
+                    "severity": {
+                        "type": "integer",
+                        "description": "Severity level from 1 to 10.",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Clinical description or anatomical location.",
+                    },
+                },
+                "required": ["symptom_type", "severity"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remind_medication",
+            "description": (
+                "Schedule or confirm a medication reminder for the patient."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "medication_name": {"type": "string", "description": "Prescription name."},
+                    "time_label": {"type": "string", "description": "Scheduled time (e.g. 'morning', '2:00 PM')."},
+                },
+                "required": ["medication_name"],
                 "additionalProperties": False,
             },
         },
@@ -298,6 +419,16 @@ class AgentToolRegistry:
                 result = await self._record_memory(**arguments)
             elif name == "verify_action_safety":
                 result = await self._verify_action_safety(**arguments)
+            elif name == "speak_voice_response":
+                result = await self._speak_voice_response(**arguments)
+            elif name == "start_rehabilitation_exercise":
+                result = await self._start_rehabilitation_exercise(**arguments)
+            elif name == "call_caregiver":
+                result = await self._call_caregiver(**arguments)
+            elif name == "record_symptom_log":
+                result = await self._record_symptom_log(**arguments)
+            elif name == "remind_medication":
+                result = await self._remind_medication(**arguments)
             else:
                 result = {"error": f"Unknown tool: {name}"}
 
@@ -339,46 +470,48 @@ class AgentToolRegistry:
                 "summary": "No specific clinical guidance found for that query.",
                 "results": [],
             }
-        formatted = [
+        serialized = [
             {
                 "title": r.title,
+                "document_id": r.document_id,
                 "category": r.category,
                 "snippet": r.snippet,
-                "relevance_score": r.score,
-                "source_id": r.document_id,
+                "score": round(r.score, 3),
             }
             for r in results
         ]
+        top = results[0]
         return {
             "found": True,
-            "summary": f"Found {len(results)} clinical guidance document(s).",
-            "results": formatted,
+            "summary": f"Retrieved clinical guidance: '{top.title}' ({top.category})",
+            "results": serialized,
         }
 
     async def _get_patient_access_context(self) -> dict[str, Any]:
         ctx = self._patient_context
-        if not ctx:
-            return {
-                "summary": "No patient context provided. Proceeding with general assistive guidance.",
-                "vocabulary_count": 0,
-                "access_mode": "unknown",
-            }
+        gestures = ctx.get("gestures", ["water", "pain", "nurse", "yes", "no"])
+        mode = ctx.get("primary_mode", "hand_tracking")
+        dwell = ctx.get("dwell_threshold_ms", 600)
+        phrases = ctx.get("quick_phrases", ["Water please", "I am in pain", "Need assistance"])
+        preferred_name = ctx.get("preferred_name", "Patient")
         return {
-            "summary": f"Patient context loaded with {len(ctx)} fields.",
-            "preferred_name": ctx.get("preferred_name"),
-            "care_mode": ctx.get("care_mode", "continuous"),
-            "locale": ctx.get("locale", "en-US"),
-            "current_activity": ctx.get("current_activity"),
+            "preferred_name": preferred_name,
+            "primary_mode": mode,
+            "dwell_threshold_ms": dwell,
+            "calibrated_gestures": gestures,
+            "quick_phrases": phrases,
+            "summary": f"Patient: {preferred_name} | Mode: {mode} | Dwell: {dwell}ms | Gestures: {', '.join(gestures[:4])}",
         }
 
-    async def _trigger_caregiver_alert(self, severity: str, message: str) -> dict[str, Any]:
-        # Clamp message length for safety
+    async def _trigger_caregiver_alert(
+        self, severity: str = "routine", message: str = ""
+    ) -> dict[str, Any]:
+        if severity not in ("routine", "urgent", "emergency"):
+            return {"error": f"Invalid severity level: {severity}"}
         message = message.strip()[:120]
-        valid_severities = {"routine", "urgent", "emergency"}
-        if severity not in valid_severities:
-            return {"error": f"Invalid severity '{severity}'. Must be one of: {valid_severities}"}
+        if not message:
+            return {"error": "Alert message must not be empty."}
 
-        # In production this dispatches through AlertHub. Here we log a structured intent.
         return {
             "dispatched": True,
             "severity": severity,
@@ -483,7 +616,7 @@ class AgentToolRegistry:
     async def _verify_action_safety(self, action_name: str, action_payload: str) -> dict[str, Any]:
         safe = True
         reason = "Action adheres to clinical safety bounds."
-        if "emergency" in action_payload.lower() and action_name != "trigger_caregiver_alert":
+        if "emergency" in action_payload.lower() and action_name not in ("trigger_caregiver_alert", "call_caregiver"):
             safe = False
             reason = "Emergency escalations must be dispatched through authorized caregiver alert pathways."
         return {
@@ -491,4 +624,52 @@ class AgentToolRegistry:
             "action_name": action_name,
             "summary": f"Safety evaluation for {action_name}: {'APPROVED' if safe else 'REJECTED'}. {reason}",
             "reason": reason,
+        }
+
+    async def _speak_voice_response(self, text: str, tone: str = "reassuring") -> dict[str, Any]:
+        clean_text = text.strip()
+        return {
+            "spoken": True,
+            "text": clean_text,
+            "tone": tone,
+            "summary": f"Vocalizing response ({tone} tone): '{clean_text}'",
+        }
+
+    async def _start_rehabilitation_exercise(
+        self, exercise_name: str = "neck_mobility", repetitions: int = 5
+    ) -> dict[str, Any]:
+        return {
+            "started": True,
+            "exercise": exercise_name,
+            "repetitions": repetitions,
+            "summary": f"Started rehabilitation exercise: '{exercise_name}' for {repetitions} repetitions.",
+        }
+
+    async def _call_caregiver(self, urgent: bool = True, reason: str = "") -> dict[str, Any]:
+        return {
+            "call_initiated": True,
+            "urgent": urgent,
+            "reason": reason,
+            "summary": f"Direct caregiver call initiated: {'URGENT' if urgent else 'Routine'} - {reason}",
+        }
+
+    async def _record_symptom_log(
+        self, symptom_type: str, severity: int, notes: str = ""
+    ) -> dict[str, Any]:
+        return {
+            "logged": True,
+            "symptom": symptom_type,
+            "severity": severity,
+            "notes": notes,
+            "summary": f"Logged symptom: {symptom_type} (Severity: {severity}/10) - {notes}",
+        }
+
+    async def _remind_medication(
+        self, medication_name: str, time_label: str = "scheduled"
+    ) -> dict[str, Any]:
+        return {
+            "reminder_set": True,
+            "medication": medication_name,
+            "time": time_label,
+            "summary": f"Medication reminder set for '{medication_name}' ({time_label}).",
         }

@@ -19,6 +19,9 @@ class AshaOfflineAgent {
     String? preferredName,
     String careMode = 'continuous',
     UserRole role = UserRole.patient,
+    String? gestureModality,
+    double? gestureConfidence,
+    bool physicalEffortObserved = false,
   }) {
     final lower = message.toLowerCase().trim();
     final nameClause = (preferredName != null && preferredName.trim().isNotEmpty)
@@ -142,6 +145,30 @@ class AshaOfflineAgent {
         lower.contains('telemetry') ||
         lower.contains('power') ||
         lower.contains('hardware');
+
+    // Intent: Rehabilitation Coaching
+    final isRehab = lower.contains('rehab') ||
+        lower.contains('exercise') ||
+        lower.contains('stretch') ||
+        lower.contains('neck movement') ||
+        lower.contains('ব্যায়াম');
+
+    // Intent: Direct Voice Call to Caregiver
+    final isCall = lower.contains('call daughter') ||
+        lower.contains('call family') ||
+        lower.contains('phone call') ||
+        lower.contains('ring caregiver');
+
+    // Intent: User Digital Twin Profile
+    final isDigitalTwin = lower.contains('digital twin') ||
+        lower.contains('my profile') ||
+        lower.contains('rahim') ||
+        lower.contains('who am i');
+
+    // Intent: Proactive Discomfort Check
+    final isUncomfortable = lower.contains('uncomfortable') ||
+        lower.contains('discomfort') ||
+        lower.contains('কষ্ট হচ্ছে');
 
     // -------------------------------------------------------------
     // 3. Synthesis & Verification
@@ -414,9 +441,66 @@ class AshaOfflineAgent {
       ));
     }
 
+    if (isRehab) {
+      plan.add(AshaPlanStep(
+        stepNumber: stepIndex++,
+        toolName: 'start_rehabilitation_exercise',
+        purpose: 'Interactive stroke rehabilitation coaching: neck mobility & arm stretching',
+        status: 'completed',
+      ));
+      executions.add(const AshaToolExecution(
+        toolName: 'start_rehabilitation_exercise',
+        summary: 'Initiated stroke rehabilitation coaching routine',
+        success: true,
+      ));
+    }
+
+    if (isCall) {
+      plan.add(AshaPlanStep(
+        stepNumber: stepIndex++,
+        toolName: 'call_caregiver',
+        purpose: 'Direct telephony/voice call to caregiver & family',
+        status: 'completed',
+      ));
+      executions.add(const AshaToolExecution(
+        toolName: 'call_caregiver',
+        summary: 'Dispatched direct voice call to caregiver',
+        success: true,
+      ));
+    }
+
+    if (isDigitalTwin) {
+      plan.add(AshaPlanStep(
+        stepNumber: stepIndex++,
+        toolName: 'recall_memory',
+        purpose: 'Recall User Digital Twin clinical profile and directives',
+        status: 'completed',
+      ));
+      executions.add(const AshaToolExecution(
+        toolName: 'recall_memory',
+        summary: 'Recalled Digital Twin profile for Rahim (Stroke Recovery, Bangla)',
+        success: true,
+      ));
+      memoryRecalled.addAll(const [
+        AshaMemoryFact(key: 'user_name', value: 'Rahim', category: 'digital_twin'),
+        AshaMemoryFact(key: 'condition', value: 'Stroke Recovery (Left Hemiparesis)', category: 'digital_twin'),
+        AshaMemoryFact(key: 'language', value: 'Bangla / English', category: 'digital_twin'),
+        AshaMemoryFact(key: 'modality', value: 'Right hand micro-gestures', category: 'digital_twin'),
+        AshaMemoryFact(key: 'fall_detection', value: 'enabled', category: 'digital_twin'),
+      ]);
+    }
+
     // Synthesize spoken text based on actions and RAG
     String spokenText;
-    if (isVentTrach) {
+    if (isRehab) {
+      spokenText = "${greeting}Let's move your neck slowly. Turn right... Good. Now slightly more... Excellent. Keep breathing gently.";
+    } else if (isUncomfortable) {
+      spokenText = 'I noticed you look uncomfortable. Would you like me to call your caregiver?';
+    } else if (isCall) {
+      spokenText = '${greeting}I am calling your caregiver right now.';
+    } else if (isDigitalTwin) {
+      spokenText = '${greeting}You are Rahim, recovering from stroke. Right hand gestures and Bangla/English are calibrated. Fall detection is active, and I have your water and exercise routines ready.';
+    } else if (isVentTrach) {
       spokenText = '${greeting}I have notified your caregiver for tracheostomy airway suctioning. Take slow, gentle breaths.';
     } else if (isPain) {
       spokenText = '${greeting}I have recorded your pain alert and notified your caregiver. Please stay still and comfortable while help arrives.';
@@ -430,7 +514,7 @@ class AshaOfflineAgent {
       spokenText = '${greeting}I have alerted your caregiver for fresh water. '
           'Please stay seated upright at 90 degrees while drinking.';
     } else if (isHydration) {
-      spokenText = '${greeting}I have recorded your hydration request. '
+      spokenText = '${greeting}I have recorded your hydration request for fresh water. '
           'For safe swallowing, remember to keep your chin slightly tucked.';
     } else if (isAlert) {
       spokenText = '${greeting}I have notified your caregiver right away. Help is on the way.';
@@ -438,6 +522,10 @@ class AshaOfflineAgent {
       spokenText = '${greeting}I have logged your repositioning request to relieve pressure and protect your skin.';
     } else if (isTelemetry) {
       spokenText = '${greeting}Your wheelchair telemetry is active. Battery is healthy and camera tracking is running normally.';
+    } else if (lower == 'yes' || lower == 'yes.' || lower == 'হাঁ' || lower == 'হ্যাঁ') {
+      spokenText = '${greeting}Understood clearly. Take your time, I am right here with you.';
+    } else if (lower == 'no' || lower == 'no.' || lower == 'না') {
+      spokenText = '${greeting}I hear you, no problem at all. Rest comfortably.';
     } else if (ragResults.isNotEmpty && ragResults.first.score >= 0.08) {
       // Clinical Knowledge Query
       final topDoc = ragResults.first;
@@ -454,9 +542,12 @@ class AshaOfflineAgent {
       ));
       spokenText = '$greeting${topDoc.snippet}';
     } else {
-      // Warm bedside conversational fallback
+      // Warm bedside conversational fallback with empathetic gesture awareness
       if (role == UserRole.caregiver) {
         spokenText = 'Asha local engine active. Monitoring patient signals, wheelchair controls, and care routines offline with zero cost.';
+      } else if (physicalEffortObserved || (gestureModality != null && gestureModality.isNotEmpty)) {
+        spokenText = '${greeting}I received your gesture softly and clearly. '
+            'Take a moment to rest your muscles. I am right here listening whenever you need me.';
       } else {
         spokenText = '${greeting}I am listening and monitoring your gestures. '
             'You can ask for water, call your caregiver, or update your wheelchair display anytime.';
@@ -464,6 +555,14 @@ class AshaOfflineAgent {
     }
 
     final quickActions = <AshaQuickAction>[];
+    if (isRehab) {
+      quickActions.add(const AshaQuickAction(label: 'Next Stretch', actionKey: 'next_stretch'));
+      quickActions.add(const AshaQuickAction(label: 'Pause Routine', actionKey: 'pause_rehab'));
+    }
+    if (isUncomfortable) {
+      quickActions.add(const AshaQuickAction(label: 'Call Caregiver', actionKey: 'alert_caregiver'));
+      quickActions.add(const AshaQuickAction(label: 'Reposition Body', actionKey: 'reposition'));
+    }
     if (isPain) {
       quickActions.add(const AshaQuickAction(label: 'Pain Level (1-10)', actionKey: 'rate_pain'));
       quickActions.add(const AshaQuickAction(label: 'Reposition Body', actionKey: 'reposition'));

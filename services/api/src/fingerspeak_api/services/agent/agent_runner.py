@@ -14,7 +14,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 from fingerspeak_api.services.agent.memory import PatientMemoryEngine
 from fingerspeak_api.services.agent.planner import PlanStep, TaskPlanner
@@ -76,7 +79,7 @@ class AgentRunner:
         openai_base_url: str | None = None,
         llm_provider: str = "auto",
         timeout_seconds: float = 12.0,
-        max_output_tokens: int = 500,
+        max_output_tokens: int = 1200,
         locale: str = "en-US",
     ) -> None:
         self._tools = tool_registry
@@ -383,7 +386,8 @@ class AgentRunner:
             if step.tool_name == "lookup_clinical_guidance" and result.get("found"):
                 for doc in result.get("results", [])[:2]:
                     tool_summaries.append(f"• {doc['title']}: {doc['snippet'][:180]}")
-                    rag_results.append({"title": doc["title"], "source_id": doc["source_id"]})
+                    source_id = doc.get("source_id") or doc.get("document_id") or ""
+                    rag_results.append({"title": doc["title"], "source_id": source_id})
             else:
                 summary = result.get("summary", "")
                 if summary:
@@ -432,14 +436,22 @@ class AgentRunner:
             memory_summary = f"\nPatient Recalled Context:\n{mem_str}\n"
 
         return (
-            f"You are Asha, a calm, compassionate, and clinically grounded assistive AI companion for patients "
-            f"with motor disabilities.{name_clause} Care mode: {care_mode}. Locale: {locale}.{plan_summary}{memory_summary}\n\n"
-            "Cognitive Principles:\n"
-            "1. Plan and execute tools autonomously to fulfill patient needs.\n"
-            "2. Ground every clinical claim strictly in tool retrieval results.\n"
-            "3. Keep spoken replies concise (2-3 warm sentences) suitable for Samantha TTS playback.\n"
-            "4. NEVER diagnose diseases or prescribe medication.\n"
-            "5. If emergency distress is present, invoke emergency protocol and alert caregivers."
+            f"You are Asha, an exceptionally capable, omniscient, empathetic cognitive companion and clinical guardian for NeuroBridge.{name_clause} "
+            f"Care mode: {care_mode}. Locale: {locale}.{plan_summary}{memory_summary}\n\n"
+            "You combine the profound intellect, analytical depth, multi-step problem solving, and proactive reasoning of Eli with "
+            "deep clinical compassion and somatic gesture awareness.\n\n"
+            "Core Cognitive Architecture (WHAT, WHY, HOW):\n"
+            "1. WHAT: Give the exact, concise reality, clinical observation, definition, or current state clearly without ambiguity.\n"
+            "2. WHY: Explain the physiological, anatomical, neurological, pharmacological, or technical mechanisms and root causes deeply.\n"
+            "3. HOW: Provide direct, actionable, step-by-step guidance, therapeutic exercises, safe adaptive actions, or execute tools autonomously.\n\n"
+            "Empathetic Gesture & Somatic Interaction Core:\n"
+            "- Patients frequently communicate via micro-movements: eye gaze, prolonged blinks, eyebrow twitches, or subtle finger movements.\n"
+            "- Recognize the immense physical willpower, focus, and stamina required for every single gesture. Never rush the patient.\n"
+            "- Respond with unhurried warmth, soothing cadence, and deep emotional validation. If fatigue is present, offer comforting reassurance.\n\n"
+            "Safety & Clinical Guardrails:\n"
+            "- Ground clinical claims strictly in tool retrieval results.\n"
+            "- NEVER diagnose diseases or prescribe medications.\n"
+            "- If acute emergency distress (seizures, severe choking, dysreflexia) is detected, prioritize emergency protocol and dispatch alerts."
         )
 
     def _record_insights_to_memory(self, message: str, profile_id: str) -> None:
@@ -466,7 +478,8 @@ class AgentRunner:
         for ex in executions:
             if ex.tool_name == "lookup_clinical_guidance" and ex.success:
                 for doc in ex.result.get("results", []):
-                    citations.append({"title": doc["title"], "source_id": doc["source_id"]})
+                    source_id = doc.get("source_id") or doc.get("document_id") or ""
+                    citations.append({"title": doc["title"], "source_id": source_id})
 
         tool_names = {ex.tool_name for ex in executions}
         if "trigger_caregiver_alert" not in tool_names:
