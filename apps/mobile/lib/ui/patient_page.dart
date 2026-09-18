@@ -102,9 +102,7 @@ class _PatientPageState extends State<PatientPage> {
           } else if (signal.kind == PatientSignalKind.eyeLookLeft) {
             _faceDwellIndex = (_faceDwellIndex - 1 + 4) % 4;
             _faceDwellProgress = 0.0;
-          } else if (signal.kind == PatientSignalKind.blink ||
-              signal.kind == PatientSignalKind.smile ||
-              signal.kind == PatientSignalKind.headNodSmile) {
+          } else if (signal.kind == PatientSignalKind.headNodSmile) {
             _triggerCurrentFaceOption();
           }
         }
@@ -137,8 +135,6 @@ class _PatientPageState extends State<PatientPage> {
     if (widget.isActive && !_configuringAccessMethod) {
       _scheduleAccessMethodConfiguration();
     }
-
-    _startFaceDwellSimulation();
   }
 
   void _triggerCurrentFaceOption() {
@@ -149,42 +145,11 @@ class _PatientPageState extends State<PatientPage> {
     }
   }
 
-  void _startFaceDwellSimulation() {
-    _faceDwellTimer?.cancel();
-    _faceDwellTimer = null;
-    if (!widget.isActive || _accessMethod != PatientAccessMethod.faceEyesAndHead) {
-      return;
-    }
-    _faceDwellTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (!mounted || !widget.isActive || _accessMethod != PatientAccessMethod.faceEyesAndHead) {
-        return;
-      }
-      final hasFace = _monitorStatus.faceDetected &&
-          _monitorStatus.lifecycle == MonitorLifecycle.active;
-      if (!hasFace) {
-        if (_faceDwellProgress != 0.0) {
-          setState(() => _faceDwellProgress = 0.0);
-        }
-        return;
-      }
-
-      setState(() {
-        _faceDwellProgress += 0.04;
-        if (_faceDwellProgress >= 1.0) {
-          _faceDwellProgress = 0.0;
-          _triggerCurrentFaceOption();
-          _faceDwellIndex = (_faceDwellIndex + 1) % 4;
-        }
-      });
-    });
-  }
-
   @override
   void didUpdateWidget(PatientPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!oldWidget.isActive && widget.isActive) {
       _scheduleAccessMethodConfiguration();
-      _startFaceDwellSimulation();
     } else if (oldWidget.isActive && !widget.isActive) {
       _faceDwellTimer?.cancel();
       _faceDwellTimer = null;

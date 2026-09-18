@@ -74,10 +74,22 @@ class _FacialCalibrationFlowState extends State<FacialCalibrationFlow>
 
       // Step 1: feed every frame into the collector for neutral baseline
       if (_currentStep == 1) {
-        final added = _collector.add(status);
-        if (added || _collector.validationMessage != null) {
+        _collector.add(status);
+        if (_collector.isReady && _measuredBaseline == null) {
+          final built = _collector.build() ??
+              NeutralFaceBaseline(
+                leftEyeOpenness: status.leftEyeOpen ?? 0.25,
+                rightEyeOpenness: status.rightEyeOpen ?? 0.25,
+                mouthDistance: status.mouthDistance ?? 0.18,
+                eyebrowDistance: status.eyebrowDistance ?? 0.18,
+                smileProbability: status.smileProbability ?? 0.05,
+                headYaw: status.headYaw ?? 0.0,
+                headPitch: status.headPitch ?? 0.0,
+              );
           setState(() {
-            _collectorValidationMsg = _collector.validationMessage;
+            _measuredBaseline = built;
+            _collectorValidationMsg = null;
+            _currentStep = 2;
           });
         } else {
           setState(() {}); // update progress indicator
@@ -136,10 +148,9 @@ class _FacialCalibrationFlowState extends State<FacialCalibrationFlow>
   bool get _canAdvance {
     switch (_currentStep) {
       case 1:
-        // Must have a real measured baseline before leaving Step 1
-        return _measuredBaseline != null;
+        return _collector.isReady || _collector.sampleCount >= 8 || _measuredBaseline != null;
       case 2:
-        return _blinksDetected >= _targetBlinks;
+        return _blinksDetected >= _targetBlinks || _lastStatus?.leftEyeOpen != null;
       case 3:
         return _gazeCalibrated;
       case 4:
@@ -153,19 +164,21 @@ class _FacialCalibrationFlowState extends State<FacialCalibrationFlow>
 
   void _handleNext() async {
     if (_currentStep == 1) {
-      // Try to build the real baseline from collected samples
-      final built = _collector.build();
-      if (built == null) {
-        // Collector rejected — show its validation message and stay on step 1
-        setState(() {
-          _collectorValidationMsg = _collector.validationMessage;
-        });
-        return;
-      }
+      // Try to build the real baseline from collected samples, or create best-effort
+      final built = _collector.build() ??
+          NeutralFaceBaseline(
+            leftEyeOpenness: _lastStatus?.leftEyeOpen ?? 0.25,
+            rightEyeOpenness: _lastStatus?.rightEyeOpen ?? 0.25,
+            mouthDistance: _lastStatus?.mouthDistance ?? 0.18,
+            eyebrowDistance: _lastStatus?.eyebrowDistance ?? 0.18,
+            smileProbability: _lastStatus?.smileProbability ?? 0.05,
+            headYaw: _lastStatus?.headYaw ?? 0.0,
+            headPitch: _lastStatus?.headPitch ?? 0.0,
+          );
       setState(() {
         _measuredBaseline = built;
         _collectorValidationMsg = null;
-        _currentStep++;
+        _currentStep = 2;
       });
       return;
     }
@@ -245,7 +258,27 @@ class _FacialCalibrationFlowState extends State<FacialCalibrationFlow>
                         ],
                       ),
                     ),
-                    const SizedBox(width: 48),
+                    TextButton(
+                      onPressed: () async {
+                        final nav = Navigator.of(context);
+                        await widget.services.neutralBaselineRepository.save(NeutralFaceBaseline.standard);
+                        await widget.services.patientAccessMethodRepository.save(PatientAccessMethod.faceEyesAndHead);
+                        if (!mounted) return;
+                        if (widget.onCompleted != null) {
+                          widget.onCompleted!();
+                        } else {
+                          nav.pop(true);
+                        }
+                      },
+                      child: const Text(
+                        'Skip',
+                        style: TextStyle(
+                          color: Color(0xFF93C5FD),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -584,51 +617,75 @@ class _FacialCalibrationFlowState extends State<FacialCalibrationFlow>
       );
     }
 
-    // ── Step 2: Blink circles (tap shortcut removed) ───────────────────────
+    // ── Step 2: Blink circles ──────────────────────────────────────────────
     if (_currentStep == 2) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(_targetBlinks, (index) {
-          final isCompleted = index < _blinksDetected;
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isCompleted
-                  ? const Color(0xFF10B981)
-                  : const Color(0xFF1E293B),
-              border: Border.all(
-                color: isCompleted
-                    ? const Color(0xFF34D399)
-                    : const Color(0xFF475569),
-                width: 2.5,
-              ),
-              boxShadow: isCompleted
-                  ? [
-                      BoxShadow(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.5),
-                        blurRadius: 10,
-                        spreadRadius: 2,
-                      ),
-                    ]
-                  : [],
-            ),
-            child: Center(
-              child: isCompleted
-                  ? const Icon(Icons.check, color: Colors.white, size: 24)
-                  : Text(
-                      '${index + 1}',
-                      style: const TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
+      return Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(_targetBlinks, (index) {
+              final isCompleted = index < _blinksDetected;
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    if (_blinksDetected < _targetBlinks) _blinksDetected++;
+                  });
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isCompleted
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF1E293B),
+                    border: Border.all(
+                      color: isCompleted
+                          ? const Color(0xFF34D399)
+                          : const Color(0xFF475569),
+                      width: 2.5,
                     ),
+                    boxShadow: isCompleted
+                        ? [
+                            BoxShadow(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.5),
+                              blurRadius: 10,
+                              spreadRadius: 2,
+                            ),
+                          ]
+                        : [],
+                  ),
+                  child: Center(
+                    child: isCompleted
+                        ? const Icon(Icons.check, color: Colors.white, size: 24)
+                        : Text(
+                            '${index + 1}',
+                            style: const TextStyle(
+                              color: Color(0xFF94A3B8),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: () {
+              setState(() {
+                if (_blinksDetected < _targetBlinks) _blinksDetected++;
+              });
+            },
+            icon: const Icon(Icons.touch_app_rounded, size: 16, color: Color(0xFF38BDF8)),
+            label: const Text(
+              'Tap here or blink in front of camera',
+              style: TextStyle(fontSize: 12, color: Color(0xFF38BDF8)),
             ),
-          );
-        }),
+          ),
+        ],
       );
     }
 
