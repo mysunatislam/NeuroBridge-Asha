@@ -1696,9 +1696,6 @@ export function FingerSpeakApp() {
           <section className="workspace speak-workspace" aria-labelledby="speak-title">
             <div className="patient-hero section-heading">
               <div className="patient-hero-copy">
-                <button className="asha-hero-button" type="button" onClick={() => { setAshaOpen(true); playLocalText("I’m right here with you. What would you like to talk about?"); }} aria-label="Open Asha companion">
-                  <AshaAvatar variant="hero" eager />
-                </button>
                 <div><span className="eyebrow">PATIENT COMPANION</span><h1 id="speak-title">You’re not alone. Asha is right here.</h1><p className="patient-lead">Talk on your phone, write on the wheelchair display, or reach your caregiver—with every important action kept in your control.</p></div>
               </div>
               <span className={tracking || faceTracking ? "tracking-pill live" : "tracking-pill"}>{tracking && faceTracking ? "Hand + face found" : faceTracking ? "Face found" : tracking ? "Hand found" : cameraStatus === "ready" ? "Monitoring active" : "Camera idle"}</span>

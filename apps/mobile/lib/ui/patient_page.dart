@@ -603,7 +603,7 @@ class _PatientPageState extends State<PatientPage> {
     );
   }
 
-  // --- Header with Avatar, Greeting, Mode Switch, and Theme Switch ---
+  // --- Header with Greeting, Mode Switch, and Theme Switch ---
   Widget _buildTopHeader(LiquidGlassThemeData theme) {
     final isHandMode = _accessMethod != PatientAccessMethod.faceEyesAndHead;
 
@@ -612,40 +612,6 @@ class _PatientPageState extends State<PatientPage> {
       children: [
         Row(
           children: [
-            // Asha Avatar with Live Glow Ring (Tap to open companion chat)
-            GestureDetector(
-              onTap: () => showAshaChatSheet(
-                context,
-                widget.services.companion,
-                services: widget.services,
-              ),
-              child: Tooltip(
-                message: 'Tap to chat with Asha',
-                child: Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: theme.speakColor,
-                      width: 2.2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: theme.speakColor.withValues(alpha: 0.35),
-                        blurRadius: 14,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                    image: const DecorationImage(
-                      image: AssetImage('assets/images/asha_avatar_new.png'),
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
