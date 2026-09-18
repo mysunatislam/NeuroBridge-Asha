@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:fingerspeak_mobile/core/mobile_services.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/services/asha_guide_service.dart';
-import 'package:fingerspeak_mobile/ui/asha_chat_sheet.dart';
 import 'package:fingerspeak_mobile/ui/caregiver_page.dart';
 import 'package:fingerspeak_mobile/ui/effects/angelic_sparkle.dart';
 import 'package:fingerspeak_mobile/ui/guide/asha_guide_host.dart';
@@ -151,6 +150,7 @@ class _FingerSpeakMobileAppState extends State<FingerSpeakMobileApp> {
 
               if (!_splashCompleted) {
                 return AngelicSparkleSplash(
+                  services: services,
                   onFinished: () {
                     if (mounted) setState(() => _splashCompleted = true);
                   },
@@ -360,20 +360,6 @@ class _MobileHomeState extends State<MobileHome> {
             ],
           ),
         ),
-        floatingActionButton: Padding(
-          padding: const EdgeInsets.only(bottom: 72),
-          child: AngelicAshaButton(
-            isCaregiver: false,
-            onTap: () => showAshaChatSheet(
-              context,
-              services.companion,
-              role: UserRole.patient,
-              voiceService: services.voice,
-              services: services,
-            ),
-          ),
-        ),
-        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         bottomNavigationBar: Container(
           decoration: BoxDecoration(
             color: navBgColor,
@@ -407,8 +393,6 @@ class _MobileHomeState extends State<MobileHome> {
       );
     }
 
-    final currentRole = _index == 1 ? UserRole.caregiver : UserRole.patient;
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
@@ -428,20 +412,6 @@ class _MobileHomeState extends State<MobileHome> {
           ],
         ),
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 72),
-        child: AngelicAshaButton(
-          isCaregiver: _index == 1,
-          onTap: () => showAshaChatSheet(
-            context,
-            services.companion,
-            role: currentRole,
-            voiceService: services.voice,
-            services: services,
-          ),
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: navBgColor,

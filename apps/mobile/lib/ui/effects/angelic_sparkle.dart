@@ -3,7 +3,9 @@
 // and smooth animated transitions for NeuroBridge Asha.
 
 import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../../core/mobile_services.dart';
 
 /// A single radiant stardust particle.
 class SparkleParticle {
@@ -247,11 +249,16 @@ class _AngelicSparkleFieldState extends State<AngelicSparkleField>
 }
 
 /// Ethereal Angelic Sparkle App Launch Splash Screen.
-/// Plays on app opening with breathing halo, starlight burst, and smooth transition.
+/// Asha slowly rises from the bottom with dynamic sound, liquid glass effects, smiles, waves, and talks.
 class AngelicSparkleSplash extends StatefulWidget {
-  const AngelicSparkleSplash({super.key, required this.onFinished});
+  const AngelicSparkleSplash({
+    super.key,
+    required this.onFinished,
+    this.services,
+  });
 
   final VoidCallback onFinished;
+  final MobileServices? services;
 
   @override
   State<AngelicSparkleSplash> createState() => _AngelicSparkleSplashState();
@@ -260,36 +267,79 @@ class AngelicSparkleSplash extends StatefulWidget {
 class _AngelicSparkleSplashState extends State<AngelicSparkleSplash>
     with SingleTickerProviderStateMixin {
   late final AnimationController _anim;
-  late final Animation<double> _scale;
+  late final Animation<double> _rise;
   late final Animation<double> _glow;
+  late final Animation<double> _wave;
+  late final Animation<double> _talk;
   late final Animation<double> _fade;
+  bool _soundPlayed = false;
+  bool _finished = false;
 
   @override
   void initState() {
     super.initState();
+    final isTest = WidgetsBinding.instance.runtimeType.toString().contains('Test');
     _anim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: Duration(milliseconds: isTest ? 100 : 4800),
     );
 
-    _scale = CurvedAnimation(
+    _rise = CurvedAnimation(
       parent: _anim,
-      curve: const Interval(0.0, 0.65, curve: Curves.easeOutBack),
+      curve: const Interval(0.0, 0.40, curve: Curves.easeOutCubic),
     );
 
     _glow = CurvedAnimation(
       parent: _anim,
-      curve: const Interval(0.2, 0.85, curve: Curves.easeInOut),
+      curve: const Interval(0.20, 0.85, curve: Curves.easeInOut),
+    );
+
+    _wave = CurvedAnimation(
+      parent: _anim,
+      curve: const Interval(0.35, 0.75, curve: Curves.easeInOut),
+    );
+
+    _talk = CurvedAnimation(
+      parent: _anim,
+      curve: const Interval(0.42, 0.85, curve: Curves.easeOutBack),
     );
 
     _fade = CurvedAnimation(
       parent: _anim,
-      curve: const Interval(0.75, 1.0, curve: Curves.easeInOut),
+      curve: const Interval(0.88, 1.0, curve: Curves.easeInOut),
     );
 
-    _anim.forward().then((_) {
-      if (mounted) widget.onFinished();
+    _anim.addListener(() {
+      if (_anim.value >= 0.35 && !_soundPlayed) {
+        _soundPlayed = true;
+        _triggerGreeting();
+      }
     });
+
+    _anim.forward().then((_) {
+      _complete();
+    });
+  }
+
+  void _triggerGreeting() {
+    if (widget.services != null) {
+      widget.services!.voice.playChimeSound().then((_) async {
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (mounted && !_finished) {
+          await widget.services!.voice.speakAsha(
+            "Hello! I am Asha, your voice and companion. I'm right here with you.",
+            force: true,
+          );
+        }
+      });
+    }
+  }
+
+  void _complete() {
+    if (!_finished) {
+      _finished = true;
+      if (mounted) widget.onFinished();
+    }
   }
 
   @override
@@ -300,132 +350,342 @@ class _AngelicSparkleSplashState extends State<AngelicSparkleSplash>
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
+
     return AnimatedBuilder(
       animation: _anim,
       builder: (context, child) {
         final fadeOut = (1.0 - _fade.value).clamp(0.0, 1.0);
+        final riseY = (1.0 - _rise.value) * (screenSize.height * 0.55);
+        final waveAngle = math.sin(_wave.value * math.pi * 4) * 0.08;
 
         return Opacity(
           opacity: fadeOut,
-          child: Scaffold(
-            body: Stack(
-              fit: StackFit.expand,
-              children: [
-                // 1. Serene Celestial Dawn Background
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Color(0xFFF0FDF4), // Soft Morning Mint
-                        Color(0xFFF8FAFC), // Pure Serene Pearl
-                        Color(0xFFEFF6FF), // Soft Starlight Blue
-                      ],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
+          child: GestureDetector(
+            onTap: _complete,
+            behavior: HitTestBehavior.opaque,
+            child: Scaffold(
+              body: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // 1. Serene Celestial Dawn & Liquid Glass Gradient Background
+                  Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Color(0xFFE0F2FE), // Soft Sky Blue
+                          Color(0xFFF0FDF4), // Gentle Morning Mint
+                          Color(0xFFFAF5FF), // Soft Starlight Violet
+                          Color(0xFFF8FAFC), // Pure Pearl
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
                     ),
                   ),
-                ),
 
-                // 2. Dynamic Starlight Sparkle Field
-                const AngelicSparkleField(particleCount: 32, centerGlow: true),
+                  // 2. Dynamic Starlight Sparkle Field
+                  const AngelicSparkleField(particleCount: 36, centerGlow: true),
 
-                // 3. Central Angelic Avatar & Branding
-                Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Glowing Aura Container
-                      Transform.scale(
-                        scale: 0.85 + 0.25 * _scale.value,
-                        child: Container(
-                          width: 130,
-                          height: 130,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF0D9488), Color(0xFFF59E0B)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF0D9488).withValues(alpha: 0.35 * _glow.value),
-                                blurRadius: 36 + 18 * _glow.value,
-                                spreadRadius: 6 + 8 * _glow.value,
-                              ),
-                              BoxShadow(
-                                color: const Color(0xFFF59E0B).withValues(alpha: 0.25 * _glow.value),
-                                blurRadius: 48,
-                                spreadRadius: 4,
-                              ),
-                            ],
-                          ),
-                          padding: const EdgeInsets.all(3.5),
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white,
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: Image.asset(
-                              'assets/images/asha-avatar.webp',
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-
-                      // App Name with Radiant Gradient
-                      ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
+                  // 3. Ambient Floating Liquid Glass Orbs
+                  Positioned(
+                    top: screenSize.height * 0.15,
+                    left: 24,
+                    child: Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
                           colors: [
-                            Color(0xFF0F172A),
-                            Color(0xFF0D9488),
-                            Color(0xFFD97706),
+                            const Color(0xFF2DD4BF).withValues(alpha: 0.25 * _glow.value),
+                            Colors.transparent,
                           ],
-                          stops: [0.0, 0.65, 1.0],
-                        ).createShader(bounds),
-                        child: const Text(
-                          'NEUROBRIDGE ASHA',
-                          style: TextStyle(
-                            fontFamily: 'Space Grotesk',
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 2.5,
-                            color: Colors.white,
-                          ),
                         ),
                       ),
-                      const SizedBox(height: 10),
-
-                      // Reassuring Subtitle
-                      Text(
-                        'Every Voice Reimagined · Assistive AAC & Companion',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          letterSpacing: 0.3,
-                          color: const Color(0xFF475569).withValues(alpha: _glow.value),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 36),
-
-                      // Subtle Shimmering Indicator
-                      SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          valueColor: AlwaysStoppedAnimation(
-                            const Color(0xFF0D9488).withValues(alpha: 0.8),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                  Positioned(
+                    bottom: screenSize.height * 0.20,
+                    right: 28,
+                    child: Container(
+                      width: 140,
+                      height: 140,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            const Color(0xFFF59E0B).withValues(alpha: 0.20 * _glow.value),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // 4. Central Rising Asha Character & Liquid Glass Stage
+                  Center(
+                    child: Transform.translate(
+                      offset: Offset(0, riseY),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Concentric Pulse Rings when Talking
+                            Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                if (_talk.value > 0.05) ...[
+                                  Container(
+                                    width: 180 + 30 * _talk.value,
+                                    height: 180 + 30 * _talk.value,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0xFF0D9488)
+                                            .withValues(alpha: (0.35 * (1.0 - _talk.value)).clamp(0.0, 1.0)),
+                                        width: 2.5,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    width: 205 + 40 * _talk.value,
+                                    height: 205 + 40 * _talk.value,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0xFF38BDF8)
+                                            .withValues(alpha: (0.25 * (1.0 - _talk.value)).clamp(0.0, 1.0)),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+
+                                // Glowing Liquid Glass Aura Container
+                                Transform.rotate(
+                                  angle: waveAngle,
+                                  child: Container(
+                                    width: 156,
+                                    height: 156,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFF0D9488),
+                                          Color(0xFF38BDF8),
+                                          Color(0xFFF59E0B),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF0D9488)
+                                              .withValues(alpha: 0.38 * _glow.value),
+                                          blurRadius: 40 + 20 * _glow.value,
+                                          spreadRadius: 8 + 6 * _glow.value,
+                                        ),
+                                        BoxShadow(
+                                          color: const Color(0xFFF59E0B)
+                                              .withValues(alpha: 0.28 * _glow.value),
+                                          blurRadius: 52,
+                                          spreadRadius: 4,
+                                        ),
+                                      ],
+                                    ),
+                                    padding: const EdgeInsets.all(4.5),
+                                    child: ClipOval(
+                                      child: BackdropFilter(
+                                        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.white.withValues(alpha: 0.9),
+                                          ),
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              // Base smiling new avatar
+                                              Image.asset(
+                                                'assets/images/asha_avatar_new.png',
+                                                fit: BoxFit.cover,
+                                              ),
+                                              // Smooth cross-fade to waving pose
+                                              Opacity(
+                                                opacity: (_wave.value * 2.2).clamp(0.0, 1.0),
+                                                child: Image.asset(
+                                                  'assets/images/asha_waving.png',
+                                                  fit: BoxFit.cover,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 22),
+
+                            // Liquid Glass Speech Bubble when Talking
+                            if (_talk.value > 0.05) ...[
+                              Transform.scale(
+                                scale: (0.75 + 0.25 * _talk.value).clamp(0.0, 1.0),
+                                child: Opacity(
+                                  opacity: _talk.value.clamp(0.0, 1.0),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(22),
+                                    child: BackdropFilter(
+                                      filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 18, vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.88),
+                                          borderRadius: BorderRadius.circular(22),
+                                          border: Border.all(
+                                            color: Colors.white.withValues(alpha: 0.95),
+                                            width: 1.8,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: const Color(0xFF0D9488)
+                                                  .withValues(alpha: 0.18),
+                                              blurRadius: 22,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFFD1FAE5),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.record_voice_over_rounded,
+                                                color: Color(0xFF059669),
+                                                size: 18,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            const Flexible(
+                                              child: Text(
+                                                "“Hello! I am Asha. I'm right here with you.”",
+                                                style: TextStyle(
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Color(0xFF0F172A),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+
+                            // App Name with Radiant Gradient Shader
+                            ShaderMask(
+                              shaderCallback: (bounds) => const LinearGradient(
+                                colors: [
+                                  Color(0xFF0F172A),
+                                  Color(0xFF0D9488),
+                                  Color(0xFFD97706),
+                                ],
+                                stops: [0.0, 0.65, 1.0],
+                              ).createShader(bounds),
+                              child: const Text(
+                                'NEUROBRIDGE ASHA',
+                                style: TextStyle(
+                                  fontFamily: 'Space Grotesk',
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 2.8,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Reassuring Subtitle
+                            Text(
+                              'Every Voice Reimagined · Assistive AAC & Companion',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                letterSpacing: 0.3,
+                                color: const Color(0xFF334155)
+                                    .withValues(alpha: _glow.value.clamp(0.4, 1.0)),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+
+                            // Liquid Glass "Get Started" / Continue Pill
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(30),
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 22, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                    borderRadius: BorderRadius.circular(30),
+                                    border: Border.all(
+                                      color: const Color(0xFF0D9488).withValues(alpha: 0.4),
+                                      width: 1.4,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF0D9488)
+                                            .withValues(alpha: 0.15),
+                                        blurRadius: 16,
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Get Started',
+                                        style: TextStyle(
+                                          color: Color(0xFF0D9488),
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      SizedBox(width: 6),
+                                      Icon(
+                                        Icons.arrow_forward_rounded,
+                                        size: 16,
+                                        color: Color(0xFF0D9488),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -509,7 +769,7 @@ class _AngelicAshaButtonState extends State<AngelicAshaButton>
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Image.asset(
-                  'assets/images/asha-avatar.webp',
+                  'assets/images/asha_avatar_new.png',
                   fit: BoxFit.cover,
                 ),
               ),

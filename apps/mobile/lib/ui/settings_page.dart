@@ -399,6 +399,61 @@ class _SettingsPageState extends State<SettingsPage> {
         LiquidGlassThemeController.isDark;
     final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final cardBorder = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    final textTitleColor = isDark ? Colors.white : Colors.black87;
+    final textSubtitleColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF556E68);
+    final accentTeal = isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0B756A);
+
+    InputDecoration inputDecor({
+      required String labelText,
+      IconData? icon,
+      Widget? prefixIcon,
+      Widget? suffixIcon,
+      String? hintText,
+      String? helperText,
+      Color? iconColorOverride,
+    }) {
+      return InputDecoration(
+        labelText: labelText,
+        labelStyle: TextStyle(
+          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+          fontSize: 13,
+        ),
+        hintText: hintText,
+        hintStyle: TextStyle(
+          color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+          fontSize: 13,
+        ),
+        helperText: helperText,
+        helperStyle: TextStyle(
+          color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+          fontSize: 11,
+        ),
+        prefixIcon: prefixIcon ?? (icon != null
+            ? Icon(
+                icon,
+                color: iconColorOverride ?? (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0B756A)),
+                size: 20,
+              )
+            : null),
+        suffixIcon: suffixIcon,
+        filled: true,
+        fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0D9488),
+            width: 1.8,
+          ),
+        ),
+      );
+    }
+
     final selectedVoice = widget.services.voice.preferences.ttsVoiceName;
     final voices = <String>{
       if (selectedVoice != null) selectedVoice,
@@ -734,10 +789,13 @@ class _SettingsPageState extends State<SettingsPage> {
 
         // Individual Patient Records & Clinical Settings Card
         Card(
-          color: Colors.white,
+          color: cardBg,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Color(0xFF9DE0D5), width: 1.5),
+            side: BorderSide(
+              color: isDark ? const Color(0xFF334155) : const Color(0xFF9DE0D5),
+              width: 1.5,
+            ),
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -746,9 +804,12 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Row(
                   children: [
-                    const CircleAvatar(
-                      backgroundColor: Color(0xFFD9F1EC),
-                      child: Icon(Icons.people_alt, color: Color(0xFF0B756A)),
+                    CircleAvatar(
+                      backgroundColor: isDark ? const Color(0xFF134E4A) : const Color(0xFFD9F1EC),
+                      child: Icon(
+                        Icons.people_alt,
+                        color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0B756A),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -759,12 +820,15 @@ class _SettingsPageState extends State<SettingsPage> {
                             'Individual Patient Records',
                             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF0B756A),
+                                  color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0B756A),
                                 ),
                           ),
-                          const Text(
+                          Text(
                             'Select a patient to manage individual clinical data, doctor, and live actions.',
-                            style: TextStyle(fontSize: 12, color: Color(0xFF556E68)),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: textSubtitleColor,
+                            ),
                           ),
                         ],
                       ),
@@ -785,22 +849,36 @@ class _SettingsPageState extends State<SettingsPage> {
                           padding: const EdgeInsets.only(right: 8),
                           child: ChoiceChip(
                             avatar: CircleAvatar(
-                              backgroundColor: isSel ? const Color(0xFF0B756A) : Colors.grey.shade400,
+                              backgroundColor: isSel
+                                  ? (isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0B756A))
+                                  : (isDark ? const Color(0xFF475569) : Colors.grey.shade400),
                               radius: 12,
                               child: Text(
                                 '$idx',
-                                style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: isSel && isDark ? const Color(0xFF0F172A) : Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                             label: Text(
                               'Patient $idx: ${p.name.split(' ').first}',
                               style: TextStyle(
                                 fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
-                                color: isSel ? const Color(0xFF0B756A) : Colors.black87,
+                                color: isSel
+                                    ? (isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0B756A))
+                                    : (isDark ? const Color(0xFFE2E8F0) : Colors.black87),
                               ),
                             ),
                             selected: isSel,
-                            selectedColor: const Color(0xFFD9F1EC),
+                            selectedColor: isDark ? const Color(0xFF134E4A) : const Color(0xFFD9F1EC),
+                            backgroundColor: isDark ? const Color(0xFF0F172A) : null,
+                            side: BorderSide(
+                              color: isSel
+                                  ? (isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0B756A))
+                                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            ),
                             onSelected: (selected) {
                               if (selected) {
                                 widget.services.patientRegistry.selectPatient(p.id);
@@ -812,24 +890,34 @@ class _SettingsPageState extends State<SettingsPage> {
                         );
                       }),
                       ActionChip(
-                        avatar: const Icon(Icons.add, size: 16, color: Color(0xFF0B756A)),
-                        label: const Text('Add Patient', style: TextStyle(color: Color(0xFF0B756A), fontWeight: FontWeight.bold)),
-                        backgroundColor: const Color(0xFFE8F6F3),
+                        avatar: Icon(Icons.add, size: 16, color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0B756A)),
+                        label: Text(
+                          'Add Patient',
+                          style: TextStyle(
+                            color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0B756A),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        backgroundColor: isDark ? const Color(0xFF134E4A) : const Color(0xFFE8F6F3),
+                        side: BorderSide(
+                          color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0B756A),
+                        ),
                         onPressed: _addNewPatientFromSettings,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Divider(),
+                Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                 const SizedBox(height: 12),
 
                 // Form fields for selected patient
                 TextField(
                   controller: _patientNameController,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Patient Full Name',
-                    prefixIcon: Icon(Icons.person),
+                    icon: Icons.person,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -840,9 +928,10 @@ class _SettingsPageState extends State<SettingsPage> {
                       child: TextField(
                         controller: _patientAgeController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
+                        style: TextStyle(color: textTitleColor, fontSize: 14),
+                        decoration: inputDecor(
                           labelText: 'Age',
-                          prefixIcon: Icon(Icons.cake_outlined),
+                          icon: Icons.cake_outlined,
                         ),
                       ),
                     ),
@@ -851,9 +940,10 @@ class _SettingsPageState extends State<SettingsPage> {
                       flex: 2,
                       child: TextField(
                         controller: _patientRoomController,
-                        decoration: const InputDecoration(
+                        style: TextStyle(color: textTitleColor, fontSize: 14),
+                        decoration: inputDecor(
                           labelText: 'Room / Bed Location',
-                          prefixIcon: Icon(Icons.bed),
+                          icon: Icons.bed,
                         ),
                       ),
                     ),
@@ -862,57 +952,63 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 10),
                 TextField(
                   controller: _patientConditionController,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Clinical Diagnosis / Medical Condition',
-                    prefixIcon: Icon(Icons.local_hospital_outlined),
+                    icon: Icons.local_hospital_outlined,
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _patientModalityController,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Communication & Input Modality',
-                    prefixIcon: Icon(Icons.accessibility_new),
+                    icon: Icons.accessibility_new,
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _patientDoctorNameController,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Assigned Physician / Doctor Name',
-                    prefixIcon: Icon(Icons.medical_services_outlined),
+                    icon: Icons.medical_services_outlined,
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _patientDoctorPhoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Doctor Phone (Auto-syncs to Emergency)',
-                    prefixIcon: Icon(Icons.phone),
+                    icon: Icons.phone,
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _patientDoctorEmailController,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Doctor Email for Progress Reports',
-                    prefixIcon: Icon(Icons.email_outlined),
+                    icon: Icons.email_outlined,
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _patientDirectivesController,
                   maxLines: 2,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Doctor Directives / Rehabilitation Plan',
-                    prefixIcon: Icon(Icons.assignment),
+                    icon: Icons.assignment,
                   ),
                 ),
                 const SizedBox(height: 14),
 
-                // Quick actions for this patient in Settings
+                 // Quick actions for this patient in Settings
                 Builder(builder: (context) {
                   final registry = widget.services.patientRegistry;
                   final patientId = _selectedPatientId ?? registry.activePatient.id;
@@ -927,8 +1023,22 @@ class _SettingsPageState extends State<SettingsPage> {
                         runSpacing: 8,
                         children: [
                           ActionChip(
-                            avatar: const Icon(Icons.videocam, size: 16, color: Color(0xFF0B756A)),
-                            label: const Text('Live Camera Feed'),
+                            avatar: Icon(
+                              Icons.videocam,
+                              size: 16,
+                              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0B756A),
+                            ),
+                            label: Text(
+                              'Live Camera Feed',
+                              style: TextStyle(
+                                color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0B756A),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            backgroundColor: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.4) : const Color(0xFFE0F2FE),
+                            side: BorderSide(
+                              color: isDark ? const Color(0xFF0284C7) : const Color(0xFFBAE6FD),
+                            ),
                             onPressed: () => showPatientLiveMonitorSheet(
                               context: context,
                               services: widget.services,
@@ -936,8 +1046,22 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                           ),
                           ActionChip(
-                            avatar: const Icon(Icons.assignment, size: 16, color: Color(0xFFB45309)),
-                            label: const Text('Report to Doctor'),
+                            avatar: Icon(
+                              Icons.assignment,
+                              size: 16,
+                              color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                            ),
+                            label: Text(
+                              'Report to Doctor',
+                              style: TextStyle(
+                                color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            backgroundColor: isDark ? const Color(0xFF451A03).withValues(alpha: 0.4) : const Color(0xFFFEF3C7),
+                            side: BorderSide(
+                              color: isDark ? const Color(0xFFD97706) : const Color(0xFFFDE68A),
+                            ),
                             onPressed: () => showDoctorReportSheet(
                               context: context,
                               services: widget.services,
@@ -954,8 +1078,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               flex: 1,
                               child: OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFFB42318),
-                                  side: const BorderSide(color: Color(0xFFFECDCA)),
+                                  foregroundColor: const Color(0xFFF87171),
+                                  side: const BorderSide(color: Color(0xFFEF4444)),
                                 ),
                                 onPressed: () async {
                                   await registry.deletePatient(curPatient.id);
@@ -975,7 +1099,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             flex: 2,
                             child: FilledButton.icon(
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF0B756A),
+                                backgroundColor: isDark ? const Color(0xFF0D9488) : const Color(0xFF0B756A),
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                               ),
                               onPressed: _saveCurrentPatientProfile,
@@ -996,9 +1120,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
         // Emergency Contacts Card
         Card(
-          color: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: cardBorder),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1006,47 +1132,55 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Text(
                   'Emergency & Contact Numbers',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: textTitleColor,
+                      ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'Configured phone numbers for 1-tap dialer in emergency situations.',
-                  style: TextStyle(color: Color(0xFF556E68)),
+                  style: TextStyle(color: textSubtitleColor),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _ambulancePhoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Ambulance Emergency Number',
-                    prefixIcon: Icon(Icons.emergency, color: Color(0xFFB42318)),
+                    icon: Icons.emergency,
+                    iconColorOverride: const Color(0xFFEF4444),
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _doctorPhoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Doctor / Physician Phone',
-                    prefixIcon: Icon(Icons.medical_services),
+                    icon: Icons.medical_services,
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _caregiverPhoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Caregiver Phone',
-                    prefixIcon: Icon(Icons.person),
+                    icon: Icons.person,
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _patientPhoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Patient Phone',
-                    prefixIcon: Icon(Icons.contact_phone),
+                    icon: Icons.contact_phone,
                   ),
                 ),
               ],
@@ -1057,9 +1191,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
         // Wheelchair Hardware Connection Card
         Card(
-          color: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: cardBorder),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1067,18 +1203,33 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Text(
                   'Pair Wheelchair Raspberry Pi',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: textTitleColor,
+                      ),
                 ),
                 const SizedBox(height: 4),
-                Text(_piStateLabel(_piState)),
+                Text(
+                  _piStateLabel(_piState),
+                  style: TextStyle(
+                    color: _piState == PiConnectionState.connected
+                        ? const Color(0xFF10B981)
+                        : textSubtitleColor,
+                    fontWeight: _piState == PiConnectionState.connected
+                        ? FontWeight.w700
+                        : FontWeight.normal,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _piUrlController,
                   keyboardType: TextInputType.url,
                   autocorrect: false,
                   enableSuggestions: false,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'Pi WebSocket URL',
+                    icon: Icons.wifi,
                     helperText:
                         'e.g. ws://192.168.43.50:8765/v1/device/ws or ws://raspberrypi.local:8765/v1/device/ws',
                   ),
@@ -1089,8 +1240,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   obscureText: true,
                   enableSuggestions: false,
                   autocorrect: false,
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: textTitleColor, fontSize: 14),
+                  decoration: inputDecor(
                     labelText: 'One-time Pi Pairing Code',
+                    icon: Icons.lock_outline,
                     helperText:
                         'Connects wirelessly or via direct USB tethering.',
                   ),
@@ -1121,9 +1274,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
         // Asha Voice Settings Card
         Card(
-          color: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: cardBorder),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1133,27 +1288,38 @@ class _SettingsPageState extends State<SettingsPage> {
                   contentPadding: EdgeInsets.zero,
                   value: widget.services.voice.preferences.automaticallySpeak,
                   onChanged: _setAutoSpeak,
-                  title: const Text('Asha Speaks Automatically',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: const Text(
-                      'Plays answers and check-ins aloud through phone speaker.'),
+                  title: Text(
+                    'Asha Speaks Automatically',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: textTitleColor),
+                  ),
+                  subtitle: Text(
+                    'Plays answers and check-ins aloud through phone speaker.',
+                    style: TextStyle(color: textSubtitleColor),
+                  ),
                 ),
-                const Divider(),
+                Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                 Text(
-                  'Aasha Phone Voice',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  'Asha Phone Voice',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: textTitleColor,
+                      ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                    'Choose an installed device TTS voice, rate, pitch and volume.'),
+                Text(
+                  'Choose an installed device TTS voice, rate, pitch and volume.',
+                  style: TextStyle(color: textSubtitleColor),
+                ),
                 const SizedBox(height: 12),
 
                 // Playback Preference
-                Text('Playback Preference',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: const Color(0xFF0B756A),
-                          fontWeight: FontWeight.w700,
-                        )),
+                Text(
+                  'Playback Preference',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: accentTeal,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
                 const SizedBox(height: 6),
                 SegmentedButton<PlaybackPreference>(
                   segments: const [
@@ -1269,9 +1435,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
         // Asha AI & Knowledge Engine Card
         Card(
-          color: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: cardBorder),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1282,7 +1450,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE8F0FE),
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE8F0FE),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Icon(Icons.psychology,
@@ -1292,15 +1460,18 @@ class _SettingsPageState extends State<SettingsPage> {
                     Expanded(
                       child: Text(
                         'Asha AI & Knowledge Engine',
-                        style: Theme.of(context).textTheme.titleLarge,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: textTitleColor,
+                            ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                const Text(
+                Text(
                   'Select your intelligence engine. Offline RAG works 100% locally with zero API cost, or connect to self-hosted Ollama or cloud providers.',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF556E68)),
+                  style: TextStyle(fontSize: 13, color: textSubtitleColor),
                 ),
                 const SizedBox(height: 14),
 
@@ -1311,31 +1482,31 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     ChoiceChip(
                       avatar: const Icon(Icons.offline_bolt, size: 16, color: Color(0xFF15803D)),
-                      label: const Text('Offline RAG (\$0)'),
+                      label: Text('Offline RAG (\$0)', style: TextStyle(color: textTitleColor)),
                       selected: _aiProvider == 'offline',
                       onSelected: (selected) {
                         if (selected) setState(() => _aiProvider = 'offline');
                       },
                     ),
                     ChoiceChip(
-                      avatar: const Icon(Icons.computer, size: 16),
-                      label: const Text('Local Ollama'),
+                      avatar: Icon(Icons.computer, size: 16, color: textTitleColor),
+                      label: Text('Local Ollama', style: TextStyle(color: textTitleColor)),
                       selected: _aiProvider == 'ollama',
                       onSelected: (selected) {
                         if (selected) setState(() => _aiProvider = 'ollama');
                       },
                     ),
                     ChoiceChip(
-                      avatar: const Icon(Icons.flash_on, size: 16),
-                      label: const Text('OpenAI / Groq'),
+                      avatar: Icon(Icons.flash_on, size: 16, color: textTitleColor),
+                      label: Text('OpenAI / Groq', style: TextStyle(color: textTitleColor)),
                       selected: _aiProvider == 'custom_openai',
                       onSelected: (selected) {
                         if (selected) setState(() => _aiProvider = 'custom_openai');
                       },
                     ),
                     ChoiceChip(
-                      avatar: const Icon(Icons.auto_awesome, size: 16),
-                      label: const Text('Gemini API'),
+                      avatar: Icon(Icons.auto_awesome, size: 16, color: textTitleColor),
+                      label: Text('Gemini API', style: TextStyle(color: textTitleColor)),
                       selected: _aiProvider == 'gemini',
                       onSelected: (selected) {
                         if (selected) setState(() => _aiProvider = 'gemini');
@@ -1349,33 +1520,37 @@ class _SettingsPageState extends State<SettingsPage> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
+                      color: isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFF0FDF4),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF86EFAC)),
+                      border: Border.all(color: isDark ? const Color(0xFF059669) : const Color(0xFF86EFAC)),
                     ),
-                    child: const Column(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.check_circle, color: Color(0xFF15803D), size: 18),
-                            SizedBox(width: 8),
+                            const Icon(Icons.check_circle, color: Color(0xFF15803D), size: 18),
+                            const SizedBox(width: 8),
                             Text(
                               '100% Free On-Device Deterministic RAG',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF15803D),
+                                color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF15803D),
                               ),
                             ),
                           ],
                         ),
-                        SizedBox(height: 6),
+                        const SizedBox(height: 6),
                         Text(
                           '• \$0.00 API cost — no credit card, account, or API key needed.\n'
                           '• Instant bedside response (< 5ms latency) with zero network dependency.\n'
                           '• 100% HIPAA-compliant: clinical queries and vitals never leave the device.\n'
                           '• Grounded in verified medical knowledge for ALS, stroke, dysreflexia, seizures, and safe hydration.',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF166534), height: 1.4),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? const Color(0xFFA7F3D0) : const Color(0xFF166534),
+                            height: 1.4,
+                          ),
                         ),
                       ],
                     ),
@@ -1383,20 +1558,22 @@ class _SettingsPageState extends State<SettingsPage> {
                 ] else if (_aiProvider == 'ollama') ...[
                   TextField(
                     controller: _customBaseUrlController,
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: textTitleColor),
+                    decoration: inputDecor(
                       labelText: 'Ollama Endpoint URL',
                       hintText: 'http://localhost:11434/v1 or LAN IP',
-                      prefixIcon: Icon(Icons.link, color: Color(0xFF0B756A)),
+                      prefixIcon: const Icon(Icons.link, color: Color(0xFF0B756A)),
                       helperText: 'Zero token cost. Runs locally on your machine or ward server.',
                     ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _customModelController,
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: textTitleColor),
+                    decoration: inputDecor(
                       labelText: 'Ollama Model',
                       hintText: 'gemma2:2b, llama3.2:3b, qwen2.5:3b',
-                      prefixIcon: Icon(Icons.memory, color: Color(0xFF0B756A)),
+                      prefixIcon: const Icon(Icons.memory, color: Color(0xFF0B756A)),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1405,8 +1582,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     runSpacing: 4,
                     children: [
                       ActionChip(
+                        backgroundColor: isDark ? const Color(0xFF0F172A) : null,
                         avatar: const Icon(Icons.bolt, size: 14, color: Color(0xFF0B756A)),
-                        label: const Text('Gemma 2 (2B)', style: TextStyle(fontSize: 11)),
+                        label: Text('Gemma 2 (2B)', style: TextStyle(fontSize: 11, color: textTitleColor)),
                         onPressed: () {
                           _customModelController.text = 'gemma2:2b';
                           if (_customBaseUrlController.text.isEmpty ||
@@ -1417,8 +1595,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         },
                       ),
                       ActionChip(
+                        backgroundColor: isDark ? const Color(0xFF0F172A) : null,
                         avatar: const Icon(Icons.smart_toy, size: 14, color: Color(0xFF0B756A)),
-                        label: const Text('Llama 3.2 (3B)', style: TextStyle(fontSize: 11)),
+                        label: Text('Llama 3.2 (3B)', style: TextStyle(fontSize: 11, color: textTitleColor)),
                         onPressed: () {
                           _customModelController.text = 'llama3.2:3b';
                           if (_customBaseUrlController.text.isEmpty) {
@@ -1428,8 +1607,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         },
                       ),
                       ActionChip(
+                        backgroundColor: isDark ? const Color(0xFF0F172A) : null,
                         avatar: const Icon(Icons.psychology, size: 14, color: Color(0xFF0B756A)),
-                        label: const Text('Qwen 2.5 (3B)', style: TextStyle(fontSize: 11)),
+                        label: Text('Qwen 2.5 (3B)', style: TextStyle(fontSize: 11, color: textTitleColor)),
                         onPressed: () {
                           _customModelController.text = 'qwen2.5:3b';
                           if (_customBaseUrlController.text.isEmpty) {
@@ -1443,30 +1623,33 @@ class _SettingsPageState extends State<SettingsPage> {
                 ] else if (_aiProvider == 'custom_openai') ...[
                   TextField(
                     controller: _customBaseUrlController,
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: textTitleColor),
+                    decoration: inputDecor(
                       labelText: 'API Base URL',
                       hintText: 'https://api.groq.com/openai/v1',
-                      prefixIcon: Icon(Icons.cloud_queue, color: Color(0xFF0B756A)),
+                      prefixIcon: const Icon(Icons.cloud_queue, color: Color(0xFF0B756A)),
                     ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _customModelController,
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: textTitleColor),
+                    decoration: inputDecor(
                       labelText: 'Model Name',
                       hintText: 'gemma2-9b-it, llama-3.3-70b-versatile',
-                      prefixIcon: Icon(Icons.smart_toy, color: Color(0xFF0B756A)),
+                      prefixIcon: const Icon(Icons.smart_toy, color: Color(0xFF0B756A)),
                     ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _customApiKeyController,
                     obscureText: _obscureCustomKey,
-                    decoration: InputDecoration(
+                    style: TextStyle(color: textTitleColor),
+                    decoration: inputDecor(
                       labelText: 'API Key (Optional for some local proxies)',
                       prefixIcon: const Icon(Icons.key, color: Color(0xFF0B756A)),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscureCustomKey ? Icons.visibility : Icons.visibility_off),
+                        icon: Icon(_obscureCustomKey ? Icons.visibility : Icons.visibility_off, color: textSubtitleColor),
                         onPressed: () => setState(() => _obscureCustomKey = !_obscureCustomKey),
                       ),
                     ),
@@ -1477,8 +1660,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     runSpacing: 4,
                     children: [
                       ActionChip(
+                        backgroundColor: isDark ? const Color(0xFF0F172A) : null,
                         avatar: const Icon(Icons.speed, size: 14, color: Color(0xFF0B756A)),
-                        label: const Text('Groq Gemma 2-9B (\$0)', style: TextStyle(fontSize: 11)),
+                        label: Text('Groq Gemma 2-9B (\$0)', style: TextStyle(fontSize: 11, color: textTitleColor)),
                         onPressed: () {
                           _customBaseUrlController.text = 'https://api.groq.com/openai/v1';
                           _customModelController.text = 'gemma2-9b-it';
@@ -1486,8 +1670,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         },
                       ),
                       ActionChip(
+                        backgroundColor: isDark ? const Color(0xFF0F172A) : null,
                         avatar: const Icon(Icons.bolt, size: 14, color: Color(0xFF0B756A)),
-                        label: const Text('Groq Llama 3.3 (\$0)', style: TextStyle(fontSize: 11)),
+                        label: Text('Groq Llama 3.3 (\$0)', style: TextStyle(fontSize: 11, color: textTitleColor)),
                         onPressed: () {
                           _customBaseUrlController.text = 'https://api.groq.com/openai/v1';
                           _customModelController.text = 'llama-3.3-70b-versatile';
@@ -1495,8 +1680,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         },
                       ),
                       ActionChip(
+                        backgroundColor: isDark ? const Color(0xFF0F172A) : null,
                         avatar: const Icon(Icons.cloud_done, size: 14, color: Color(0xFF0B756A)),
-                        label: const Text('OpenRouter Gemma (\$0)', style: TextStyle(fontSize: 11)),
+                        label: Text('OpenRouter Gemma (\$0)', style: TextStyle(fontSize: 11, color: textTitleColor)),
                         onPressed: () {
                           _customBaseUrlController.text = 'https://openrouter.ai/api/v1';
                           _customModelController.text = 'google/gemma-2-9b-it:free';
@@ -1509,7 +1695,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   TextField(
                     controller: _geminiKeyController,
                     obscureText: _obscureGeminiKey,
-                    decoration: InputDecoration(
+                    style: TextStyle(color: textTitleColor),
+                    decoration: inputDecor(
                       labelText: 'Gemini API Key',
                       hintText: 'AIzaSy...',
                       prefixIcon: const Icon(Icons.key, color: Color(0xFF0B756A)),
@@ -1518,7 +1705,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           _obscureGeminiKey
                               ? Icons.visibility
                               : Icons.visibility_off,
-                          color: const Color(0xFF556E68),
+                          color: textSubtitleColor,
                         ),
                         onPressed: () => setState(
                             () => _obscureGeminiKey = !_obscureGeminiKey),
@@ -1561,13 +1748,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: _testResult!['success'] == true
-                          ? const Color(0xFFF0FDF4)
-                          : const Color(0xFFFEF2F2),
+                          ? (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFF0FDF4))
+                          : (isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFEF2F2)),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                         color: _testResult!['success'] == true
-                            ? const Color(0xFF86EFAC)
-                            : const Color(0xFFFECACA),
+                            ? (isDark ? const Color(0xFF059669) : const Color(0xFF86EFAC))
+                            : (isDark ? const Color(0xFFDC2626) : const Color(0xFFFECACA)),
                       ),
                     ),
                     child: Row(
@@ -1577,8 +1764,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               ? Icons.check_circle
                               : Icons.error,
                           color: _testResult!['success'] == true
-                              ? const Color(0xFF15803D)
-                              : const Color(0xFFDC2626),
+                              ? (isDark ? const Color(0xFF34D399) : const Color(0xFF15803D))
+                              : (isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626)),
                           size: 18,
                         ),
                         const SizedBox(width: 8),
@@ -1589,8 +1776,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: _testResult!['success'] == true
-                                  ? const Color(0xFF166534)
-                                  : const Color(0xFF991B1B),
+                                  ? (isDark ? const Color(0xFFA7F3D0) : const Color(0xFF166534))
+                                  : (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B)),
                             ),
                           ),
                         ),
@@ -1601,8 +1788,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                               color: _testResult!['success'] == true
-                                  ? const Color(0xFF15803D)
-                                  : const Color(0xFFDC2626),
+                                  ? (isDark ? const Color(0xFF34D399) : const Color(0xFF15803D))
+                                  : (isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626)),
                             ),
                           ),
                       ],
@@ -1618,9 +1805,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
         // Care Routines & Hydration Reminders Card
         Card(
-          color: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: cardBorder),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1628,12 +1817,15 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Text(
                   'Continuous Care Routines',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: textTitleColor,
+                      ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'Automatic periodic reminders and reassuring wellness check-ins managed entirely locally.',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF556E68)),
+                  style: TextStyle(fontSize: 13, color: textSubtitleColor),
                 ),
                 const SizedBox(height: 12),
 
@@ -1644,10 +1836,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     backgroundColor: Color(0xFFD9F1EC),
                     child: Icon(Icons.water_drop, color: Color(0xFF0B756A)),
                   ),
-                  title: const Text('Hydration Reminders',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(
+                    'Hydration Reminders',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: textTitleColor),
+                  ),
                   subtitle: Text(
-                      'Interval: ${widget.services.reminders.settings.hydration.intervalMinutes} min • Active ${widget.services.reminders.settings.hydration.activeFrom}–${widget.services.reminders.settings.hydration.activeUntil}'),
+                    'Interval: ${widget.services.reminders.settings.hydration.intervalMinutes} min • Active ${widget.services.reminders.settings.hydration.activeFrom}–${widget.services.reminders.settings.hydration.activeUntil}',
+                    style: TextStyle(color: textSubtitleColor),
+                  ),
                   trailing: Switch(
                     value: widget.services.reminders.settings.hydration.enabled,
                     onChanged: (val) async {
@@ -1662,9 +1858,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     const Icon(Icons.timer, size: 16, color: Color(0xFF0B756A)),
                     const SizedBox(width: 6),
                     Text(
-                        'Hydration Interval: ${widget.services.reminders.settings.hydration.intervalMinutes} minutes',
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600)),
+                      'Hydration Interval: ${widget.services.reminders.settings.hydration.intervalMinutes} minutes',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: textTitleColor,
+                      ),
+                    ),
                   ]),
                   Slider(
                     value: widget
@@ -1686,7 +1886,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     },
                   ),
                 ],
-                const Divider(),
+                Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
 
                 // Check-Ins Settings
                 ListTile(
@@ -1695,10 +1895,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     backgroundColor: Color(0xFFFBE4E8),
                     child: Icon(Icons.favorite, color: Color(0xFFC04B67)),
                   ),
-                  title: const Text('Reassuring Wellness Check-Ins',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(
+                    'Reassuring Wellness Check-Ins',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: textTitleColor),
+                  ),
                   subtitle: Text(
-                      'Interval: ${widget.services.reminders.settings.checkIns.intervalMinutes} min • Active ${widget.services.reminders.settings.checkIns.activeFrom}–${widget.services.reminders.settings.checkIns.activeUntil}'),
+                    'Interval: ${widget.services.reminders.settings.checkIns.intervalMinutes} min • Active ${widget.services.reminders.settings.checkIns.activeFrom}–${widget.services.reminders.settings.checkIns.activeUntil}',
+                    style: TextStyle(color: textSubtitleColor),
+                  ),
                   trailing: Switch(
                     value: widget.services.reminders.settings.checkIns.enabled,
                     onChanged: (val) async {
@@ -1717,9 +1921,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     const Icon(Icons.timer, size: 16, color: Color(0xFFC04B67)),
                     const SizedBox(width: 6),
                     Text(
-                        'Check-in Interval: ${widget.services.reminders.settings.checkIns.intervalMinutes} minutes',
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600)),
+                      'Check-in Interval: ${widget.services.reminders.settings.checkIns.intervalMinutes} minutes',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: textTitleColor,
+                      ),
+                    ),
                   ]),
                   Slider(
                     value: widget
@@ -1797,9 +2005,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
         // Profile Management & Backup Card
         Card(
-          color: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: cardBorder),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1807,12 +2017,15 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Text(
                   'Profile & Gesture Model Management',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: textTitleColor,
+                      ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'Choose between standard factory database thresholds or individual patient calibrated profile.',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF556E68)),
+                  style: TextStyle(fontSize: 13, color: textSubtitleColor),
                 ),
                 const SizedBox(height: 12),
                 SegmentedButton<bool>(
@@ -1891,9 +2104,11 @@ class _SettingsPageState extends State<SettingsPage> {
             final sync = widget.services.cloudSync;
             final profileId = sync.remoteProfileId;
             return Card(
-              color: Colors.white,
+              color: cardBg,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: cardBorder),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -1905,14 +2120,17 @@ class _SettingsPageState extends State<SettingsPage> {
                         const SizedBox(width: 8),
                         Text(
                           'Cloud Privacy & Caregiver Sync',
-                          style: Theme.of(context).textTheme.titleLarge,
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: textTitleColor,
+                              ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'Zero-knowledge telemetry and voluntary alert sharing with authorized caregivers.',
-                      style: TextStyle(fontSize: 13, color: Color(0xFF556E68)),
+                      style: TextStyle(fontSize: 13, color: textSubtitleColor),
                     ),
                     const SizedBox(height: 12),
 
@@ -1921,19 +2139,21 @@ class _SettingsPageState extends State<SettingsPage> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE8F6F3),
+                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFE8F6F3),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFA6E3D9)),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF334155) : const Color(0xFFA6E3D9),
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Patient Profile ID (Share with Caregiver):',
                               style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
-                                  color: Color(0xFF0B756A)),
+                                  color: accentTeal),
                             ),
                             const SizedBox(height: 4),
                             Row(
@@ -1941,10 +2161,11 @@ class _SettingsPageState extends State<SettingsPage> {
                                 Expanded(
                                   child: SelectableText(
                                     profileId,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontFamily: 'monospace',
                                         fontSize: 12,
-                                        fontWeight: FontWeight.bold),
+                                        fontWeight: FontWeight.bold,
+                                        color: textTitleColor),
                                   ),
                                 ),
                                 IconButton(
@@ -1975,13 +2196,17 @@ class _SettingsPageState extends State<SettingsPage> {
                       value: sync.consentToEventSync,
                       onChanged: (val) =>
                           sync.setConsent(consentToEventSync: val),
-                      title: const Text('Share Confirmed Activity',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14)),
-                      subtitle: const Text(
-                          'Opaque gesture keys and timestamps only. Zero raw video.'),
+                      title: Text(
+                        'Share Confirmed Activity',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14, color: textTitleColor),
+                      ),
+                      subtitle: Text(
+                        'Opaque gesture keys and timestamps only. Zero raw video.',
+                        style: TextStyle(color: textSubtitleColor),
+                      ),
                     ),
-                    const Divider(),
+                    Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
 
                     // Consent Toggle 2
                     SwitchListTile(
@@ -1989,11 +2214,15 @@ class _SettingsPageState extends State<SettingsPage> {
                       value: sync.consentToCaregiverAlerts,
                       onChanged: (val) =>
                           sync.setConsent(consentToCaregiverAlerts: val),
-                      title: const Text('Send Caregiver Cloud Alerts',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14)),
-                      subtitle: const Text(
-                          'Allows urgent and emergency spoken phrases to reach approved caregivers.'),
+                      title: Text(
+                        'Send Caregiver Cloud Alerts',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14, color: textTitleColor),
+                      ),
+                      subtitle: Text(
+                        'Allows urgent and emergency spoken phrases to reach approved caregivers.',
+                        style: TextStyle(color: textSubtitleColor),
+                      ),
                     ),
                     const SizedBox(height: 12),
 
@@ -2039,6 +2268,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _showExportDialog() {
     final jsonText = widget.services.recognition.exportProfileJson();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -2056,14 +2286,19 @@ class _SettingsPageState extends State<SettingsPage> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF4F8F7),
+                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF4F8F7),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFD0E4E0)),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFD0E4E0),
+                    ),
                   ),
                   child: SelectableText(
                     jsonText,
-                    style:
-                        const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                    ),
                   ),
                 ),
               ],
@@ -2098,6 +2333,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _showImportDialog() {
     final importController = TextEditingController();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -2114,10 +2350,31 @@ class _SettingsPageState extends State<SettingsPage> {
                 controller: importController,
                 minLines: 4,
                 maxLines: 8,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                decoration: const InputDecoration(
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                ),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
                   hintText:
                       '{\n  "schema_version": "fingerspeak-v1",\n  ...\n}',
+                  hintStyle: TextStyle(
+                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    ),
+                  ),
                 ),
               ),
             ],

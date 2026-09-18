@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:just_audio/just_audio.dart';
@@ -447,6 +449,61 @@ class PatientVoiceService {
   }
 
   Future<void> speakSystemPrompt(String text) => speakAsha(text, force: true);
+
+  /// Synthesizes and plays a gentle dynamic celestial harp/chime tone.
+  Future<void> playChimeSound() async {
+    try {
+      final wav = _createChimeWav();
+      final uri = Uri.dataFromBytes(wav, mimeType: 'audio/wav');
+      await _audioPlayer.stop();
+      await _audioPlayer.setAudioSource(AudioSource.uri(uri));
+      await _audioPlayer.play();
+    } on Object {
+      // Audio fallback graceful ignore
+    }
+  }
+
+  static Uint8List _createChimeWav() {
+    const sampleRate = 22050;
+    const duration = 0.65;
+    final totalSamples = (sampleRate * duration).toInt();
+    final byteData = ByteData(44 + totalSamples * 2);
+
+    // RIFF header
+    byteData.setUint8(0, 0x52); byteData.setUint8(1, 0x49); // R, I
+    byteData.setUint8(2, 0x46); byteData.setUint8(3, 0x46); // F, F
+    byteData.setUint32(4, 36 + totalSamples * 2, Endian.little);
+    byteData.setUint8(8, 0x57); byteData.setUint8(9, 0x41); // W, A
+    byteData.setUint8(10, 0x56); byteData.setUint8(11, 0x45); // V, E
+
+    // fmt subchunk
+    byteData.setUint8(12, 0x66); byteData.setUint8(13, 0x6D); // f, m
+    byteData.setUint8(14, 0x74); byteData.setUint8(15, 0x20); // t, ' '
+    byteData.setUint32(16, 16, Endian.little);
+    byteData.setUint16(20, 1, Endian.little); // PCM
+    byteData.setUint16(22, 1, Endian.little); // Mono
+    byteData.setUint32(24, sampleRate, Endian.little);
+    byteData.setUint32(28, sampleRate * 2, Endian.little);
+    byteData.setUint16(32, 2, Endian.little);
+    byteData.setUint16(34, 16, Endian.little);
+
+    // data subchunk
+    byteData.setUint8(36, 0x64); byteData.setUint8(37, 0x61); // d, a
+    byteData.setUint8(38, 0x74); byteData.setUint8(39, 0x61); // t, a
+    byteData.setUint32(40, totalSamples * 2, Endian.little);
+
+    for (int i = 0; i < totalSamples; i++) {
+      final t = i / sampleRate;
+      final decay = math.exp(-4.2 * t);
+      // Gentle warm triad arpeggio: 587.33 Hz (D5), 880 Hz (A5), 1174.66 Hz (D6)
+      final sample = (math.sin(2 * math.pi * 587.33 * t) * 0.45 +
+                      math.sin(2 * math.pi * 880.0 * t) * 0.35 +
+                      math.sin(2 * math.pi * 1174.66 * t) * 0.20) * decay;
+      final intSample = (sample * 24000).clamp(-32768, 32767).toInt();
+      byteData.setInt16(44 + i * 2, intSample, Endian.little);
+    }
+    return byteData.buffer.asUint8List();
+  }
 
   Future<bool> startCaregiverRecording(
     String phraseKey,
