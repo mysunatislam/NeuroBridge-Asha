@@ -12,9 +12,11 @@ import 'package:fingerspeak_mobile/services/local_peer_sync_service.dart';
 import 'package:fingerspeak_mobile/services/asha_guide_service.dart';
 import 'package:fingerspeak_mobile/ui/ability_assessment_page.dart';
 import 'package:fingerspeak_mobile/ui/asha_chat_sheet.dart';
+import 'package:fingerspeak_mobile/ui/effects/liquid_glass.dart';
 import 'package:fingerspeak_mobile/ui/hand_calibration_page.dart';
 import 'package:fingerspeak_mobile/ui/intent_confirmation_banner.dart';
 import 'package:fingerspeak_mobile/ui/guide/asha_guide_host.dart';
+import 'package:fingerspeak_mobile/ui/patient_onboarding_flow.dart';
 import 'package:fingerspeak_mobile/ui/single_switch_scanning_view.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -42,6 +44,7 @@ class _PatientPageState extends State<PatientPage> {
   Future<void>? _monitorOperation;
   bool _configuringAccessMethod = false;
   bool _handRouteOpen = false;
+  bool _showingOnboarding = false;
   PatientAccessMethod? _accessMethod;
   StreamSubscription<MonitorStatus>? _monitorSubscription;
   StreamSubscription<PatientSignal>? _signalSubscription;
@@ -52,12 +55,17 @@ class _PatientPageState extends State<PatientPage> {
   String? _caregiverSender;
   bool _emergencyAcknowledged = false;
 
+  // Face scanning dwell simulated step (0 to 3)
+  int _faceDwellIndex = 0;
+  Timer? _faceDwellTimer;
+
   @override
   void initState() {
     super.initState();
     _monitorStatus = widget.services.monitor.currentStatus;
     _waterEnabled = widget.services.reminders.waterRemindersEnabled;
     _accessMethod = widget.services.patientAccessMethodRepository.load();
+
     widget.services.patientAccessMethodRepository
         .addListener(_onAccessMethodChanged);
     _monitorSubscription = widget.services.monitor.statuses.listen((status) {
@@ -89,9 +97,27 @@ class _PatientPageState extends State<PatientPage> {
             force: true));
       }
     });
+
     if (widget.isActive && !_configuringAccessMethod) {
       _scheduleAccessMethodConfiguration();
     }
+
+    _startFaceDwellSimulation();
+  }
+
+  void _startFaceDwellSimulation() {
+    _faceDwellTimer?.cancel();
+    _faceDwellTimer = null;
+    if (!widget.isActive || _accessMethod != PatientAccessMethod.faceEyesAndHead) {
+      return;
+    }
+    _faceDwellTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (mounted && widget.isActive && _accessMethod == PatientAccessMethod.faceEyesAndHead) {
+        setState(() {
+          _faceDwellIndex = (_faceDwellIndex + 1) % 4;
+        });
+      }
+    });
   }
 
   @override
@@ -99,34 +125,15 @@ class _PatientPageState extends State<PatientPage> {
     super.didUpdateWidget(oldWidget);
     if (!oldWidget.isActive && widget.isActive) {
       _scheduleAccessMethodConfiguration();
+      _startFaceDwellSimulation();
     } else if (oldWidget.isActive && !widget.isActive) {
+      _faceDwellTimer?.cancel();
+      _faceDwellTimer = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !widget.isActive) {
           unawaited(_toggleMonitoring(false));
         }
       });
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.services.patientAccessMethodRepository
-        .removeListener(_onAccessMethodChanged);
-    unawaited(_monitorSubscription?.cancel());
-    unawaited(_signalSubscription?.cancel());
-    unawaited(_phraseSubscription?.cancel());
-    unawaited(_remoteDisplaySubscription?.cancel());
-    unawaited(_emergencyAckSubscription?.cancel());
-    super.dispose();
-  }
-
-  void _onAccessMethodChanged() {
-    if (!mounted) return;
-    setState(() {
-      _accessMethod = widget.services.patientAccessMethodRepository.load();
-    });
-    if (widget.isActive && !_configuringAccessMethod) {
-      _scheduleAccessMethodConfiguration();
     }
   }
 
@@ -156,24 +163,15 @@ class _PatientPageState extends State<PatientPage> {
     }
   }
 
-  Future<void> _openAssessmentWizard() async {
-    final currentProfile = widget.services.accessProfileRepository.load();
-    final completedProfile =
-        await Navigator.of(context).push<PersonalAccessProfile>(
-      MaterialPageRoute<PersonalAccessProfile>(
-        builder: (_) => AbilityAssessmentPage(
-          services: widget.services,
-          initialProfile: currentProfile,
-        ),
-      ),
-    );
-    if (!mounted) return;
-    setState(() {});
-    final guide = widget.services.ashaGuide;
-    if (completedProfile != null &&
-        guide.isActive &&
-        guide.step == AshaGuideStep.profile) {
-      await guide.next();
+  Future<void> _activateAccessMethod(PatientAccessMethod method) async {
+    if (method == PatientAccessMethod.faceEyesAndHead) {
+      await _toggleMonitoring(true);
+      return;
+    }
+
+    await _toggleMonitoring(false);
+    if (mounted && widget.isActive && !_handRouteOpen) {
+      await _openHandCommunicator();
     }
   }
 
@@ -231,16 +229,49 @@ class _PatientPageState extends State<PatientPage> {
     );
   }
 
-  Future<void> _activateAccessMethod(PatientAccessMethod method) async {
-    if (method == PatientAccessMethod.faceEyesAndHead) {
-      await _toggleMonitoring(true);
-      return;
-    }
+  @override
+  void dispose() {
+    _faceDwellTimer?.cancel();
+    widget.services.patientAccessMethodRepository
+        .removeListener(_onAccessMethodChanged);
+    unawaited(_monitorSubscription?.cancel());
+    unawaited(_signalSubscription?.cancel());
+    unawaited(_phraseSubscription?.cancel());
+    unawaited(_remoteDisplaySubscription?.cancel());
+    unawaited(_emergencyAckSubscription?.cancel());
+    super.dispose();
+  }
 
-    await _toggleMonitoring(false);
-    if (mounted && widget.isActive && !_handRouteOpen) {
-      await _openHandCommunicator();
+  void _onAccessMethodChanged() {
+    if (!mounted) return;
+    setState(() {
+      _accessMethod = widget.services.patientAccessMethodRepository.load();
+    });
+  }
+
+  Future<void> _openAssessmentWizard() async {
+    final currentProfile = widget.services.accessProfileRepository.load();
+    final completedProfile =
+        await Navigator.of(context).push<PersonalAccessProfile>(
+      MaterialPageRoute<PersonalAccessProfile>(
+        builder: (_) => AbilityAssessmentPage(
+          services: widget.services,
+          initialProfile: currentProfile,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {});
+    final guide = widget.services.ashaGuide;
+    if (completedProfile != null &&
+        guide.isActive &&
+        guide.step == AshaGuideStep.profile) {
+      await guide.next();
     }
+  }
+
+  Future<void> _changeAccessMethod() async {
+    setState(() => _showingOnboarding = true);
   }
 
   Future<void> _openHandCommunicator() async {
@@ -261,19 +292,13 @@ class _PatientPageState extends State<PatientPage> {
     }
   }
 
-  Future<void> _changeAccessMethod() async {
-    final selected = await _askFingerCapability();
-    if (selected == null) return;
-    await widget.services.patientAccessMethodRepository.save(selected);
-  }
-
   Future<void> _toggleMonitoring(bool enabled) async {
     final previous = _monitorOperation;
     if (previous != null) {
       try {
         await previous;
       } on Object {
-        // The requested state below remains authoritative after a failed op.
+        // ignore error from earlier task
       }
     }
     if (mounted) setState(() => _busy = true);
@@ -299,9 +324,7 @@ class _PatientPageState extends State<PatientPage> {
     if (phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Caregiver phone number not set. Configure in Setup tab.',
-          ),
+          content: Text('Caregiver phone number not set. Configure in Setup tab.'),
         ),
       );
       return;
@@ -318,12 +341,9 @@ class _PatientPageState extends State<PatientPage> {
   }
 
   Future<void> _requestEmergencyHelp() async {
-    // Immediate multi-burst offline UDP beacon blast (<10ms latency)
     unawaited(widget.services.localPeerSync.broadcastEmergency());
     setState(() => _emergencyAcknowledged = false);
 
-    // No confirmation dialog — press-and-hold on the button handles intent.
-    // Execute immediately on call (triggered by GestureDetector longPress).
     const message = 'Emergency help requested! Please assist immediately.';
     await widget.services.voice.speakAsha(message, force: true);
     if (widget.services.pi.state == PiConnectionState.connected) {
@@ -338,7 +358,6 @@ class _PatientPageState extends State<PatientPage> {
       urgency: AlertUrgency.emergency,
     );
     if (mounted) {
-      // Undo snackbar — 5 seconds to cancel (cannot unsend voice but can note false alarm)
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Emergency alert sent. Tap Undo if accidental.'),
@@ -361,282 +380,114 @@ class _PatientPageState extends State<PatientPage> {
     }
   }
 
-  Widget _buildCaregiverIncomingAlerts() {
-    if (_incomingCaregiverMessage == null && !_emergencyAcknowledged) {
-      return const SizedBox.shrink();
+  Future<void> _speakQuickNeed(String phrase, String title) async {
+    await widget.services.voice.speakAsha(phrase, force: true);
+    if (widget.services.pi.state == PiConnectionState.connected) {
+      widget.services.pi.sendCaption(phrase, language: widget.services.config.locale);
     }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_incomingCaregiverMessage != null) ...[
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0FDF4),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF22C55E), width: 1.5),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.mark_chat_unread,
-                    color: Color(0xFF16A34A), size: 26),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Message from ${_caregiverSender ?? "Caregiver"}:',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF15803D),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        _incomingCaregiverMessage!,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () =>
-                      setState(() => _incomingCaregiverMessage = null),
-                ),
-              ],
-            ),
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.volume_up, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Spoken: “$phrase”')),
+            ],
           ),
-        ],
-        if (_emergencyAcknowledged) ...[
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF3B82F6), width: 1.5),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.verified, color: Color(0xFF2563EB), size: 26),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Caregiver Acknowledged SOS',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1D4ED8),
-                        ),
-                      ),
-                      Text(
-                        'Help is on the way to your bedside now.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF1E40AF)),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () =>
-                      setState(() => _emergencyAcknowledged = false),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
+          duration: const Duration(milliseconds: 2000),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   Widget _buildCapabilityPending(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-      children: [
-        const _PatientHeader(),
-        const SizedBox(height: 12),
-        _buildCaregiverIncomingAlerts(),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.accessibility_new,
-                  size: 48,
-                  color: Color(0xFF0B756A),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Choose the patient’s reliable movement',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'NeuroBridge Asha will open either hand-gesture communication or face, eye, and head monitoring.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                AshaGuideTarget(
-                  step: AshaGuideStep.profile,
-                  child: FilledButton(
-                    onPressed: _configureAccessMethod,
-                    child: const Text('Choose Input Method'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHandDashboard(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-      children: [
-        const _PatientHeader(),
-        const SizedBox(height: 12),
-        _buildCaregiverIncomingAlerts(),
-        const SizedBox(height: 12),
-        _ReassuranceCard(
-          online: widget.services.companion.online,
-          onTap: () => showAshaChatSheet(
-            context,
-            widget.services.companion,
-            role: UserRole.patient,
-            voiceService: widget.services.voice,
-            services: widget.services,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Card(
-          color: const Color(0xFF102522),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Icon(
-                  Icons.pan_tool_alt,
-                  size: 58,
-                  color: Color(0xFFA6E3D9),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Finger Gesture Communicator',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(color: Colors.white),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Uses the saved MediaPipe hand model locally. Hold a calibrated gesture to speak its phrase.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFFC9D9D5)),
-                ),
-                const SizedBox(height: 18),
-                AshaGuideTarget(
-                  step: AshaGuideStep.firstSession,
-                  child: FilledButton.icon(
-                    onPressed: _openHandCommunicator,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Open Hand Communicator'),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: _changeAccessMethod,
-                  icon: const Icon(Icons.swap_horiz),
-                  label: const Text('Change Input Method'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFFA6E3D9),
-                  ),
-                ),
-                AshaGuideTarget(
-                  step: AshaGuideStep.profile,
-                  child: TextButton.icon(
-                    onPressed: _openAssessmentWizard,
-                    icon: const Icon(Icons.accessibility_new),
-                    label: const Text('Retest Ability Profile'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF4FD1C5),
+    return ValueListenableBuilder<bool>(
+      valueListenable: LiquidGlassThemeController.isDarkNotifier,
+      builder: (context, isDark, _) {
+        final theme = LiquidGlassThemeData.current(context);
+        return Scaffold(
+          body: Container(
+            decoration: BoxDecoration(gradient: theme.bgGradient),
+            child: SafeArea(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                children: [
+                  _buildTopHeader(theme),
+                  const SizedBox(height: 12),
+                  _buildCaregiverIncomingAlerts(theme),
+                  const SizedBox(height: 12),
+                  LiquidGlassCard(
+                    padding: const EdgeInsets.all(22),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.accessibility_new,
+                          size: 52,
+                          color: theme.speakColor,
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          'Choose the patient’s reliable movement',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: theme.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'NeuroBridge Asha will open either hand-gesture communication or face, eye, and head monitoring.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: theme.textSecondary, fontSize: 13.5),
+                        ),
+                        const SizedBox(height: 18),
+                        AshaGuideTarget(
+                          step: AshaGuideStep.profile,
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _openAssessmentWizard,
+                              icon: const Icon(Icons.accessibility_new),
+                              label: const Text('Open Patient Ability Profile'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: theme.speakColor,
+                                side: BorderSide(color: theme.speakColor),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        _PhraseCard(
-          phrases: widget.services.recognition.phrases,
-          lastPhrase: _lastPhrase,
-          onSpeak: widget.services.recognition.speakNow,
-        ),
-        const SizedBox(height: 16),
-        Card(
-          color: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: SwitchListTile(
-            value: _waterEnabled,
-            onChanged: _toggleWater,
-            secondary: const CircleAvatar(
-              backgroundColor: Color(0xFFD9F1EC),
-              child: Icon(
-                Icons.water_drop_outlined,
-                color: Color(0xFF0B756A),
+                ],
               ),
             ),
-            title: const Text('Gentle hydration reminder'),
-            subtitle: const Text(
-              'Asha gently reminds you hourly; drink only when safe.',
-            ),
           ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 56,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-            ),
-            onPressed: _callCaregiver,
-            icon: const Icon(Icons.call),
-            label: const Text('Call My Caregiver',
-                style: TextStyle(fontSize: 16)),
-          ),
-        ),
-        const SizedBox(height: 10),
-        _SosHoldButton(onTriggered: _requestEmergencyHelp),
-      ],
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_showingOnboarding) {
+      return PatientOnboardingFlow(
+        services: widget.services,
+        onComplete: () {
+          setState(() {
+            _showingOnboarding = false;
+            _accessMethod = widget.services.patientAccessMethodRepository.load();
+          });
+        },
+      );
+    }
+
     final profile = widget.services.accessProfileRepository.load();
     if (profile?.primaryModality == AccessModality.singleSwitchScanning) {
       return Scaffold(
@@ -644,14 +495,15 @@ class _PatientPageState extends State<PatientPage> {
         appBar: AppBar(
           backgroundColor: const Color(0xFF1E293B),
           foregroundColor: Colors.white,
-          title: const Text('Single-Switch Scanning',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          title: const Text(
+            'Single-Switch Scanning',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
           actions: [
             AshaGuideTarget(
               step: AshaGuideStep.profile,
               child: IconButton(
-                icon: const Icon(Icons.accessibility_new,
-                    color: Color(0xFF2DD4BF)),
+                icon: const Icon(Icons.accessibility_new, color: Color(0xFF2DD4BF)),
                 tooltip: 'Ability Assessment',
                 onPressed: _openAssessmentWizard,
               ),
@@ -661,380 +513,839 @@ class _PatientPageState extends State<PatientPage> {
         body: SingleSwitchScanningView(services: widget.services),
       );
     }
-    if (_accessMethod == null) return _buildCapabilityPending(context);
-    if (_accessMethod == PatientAccessMethod.handGestures) {
-      return _buildHandDashboard(context);
-    }
-    final monitoring = _monitorStatus.lifecycle == MonitorLifecycle.active ||
-        _monitorStatus.lifecycle == MonitorLifecycle.starting;
-    final controller = widget.services.monitor.cameraController;
 
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-          sliver: SliverList.list(
-            children: [
-              const _PatientHeader(),
-              const SizedBox(height: 12),
-              _buildCaregiverIncomingAlerts(),
-              const SizedBox(height: 12),
-              IntentConfirmationBanner(services: widget.services),
-              _ReassuranceCard(
-                online: widget.services.companion.online,
-                onTap: () => showAshaChatSheet(
-                  context,
-                  widget.services.companion,
-                  role: UserRole.patient,
-                  voiceService: widget.services.voice,
-                  services: widget.services,
-                ),
-              ),
-              const SizedBox(height: 16),
-              AshaGuideTarget(
-                step: AshaGuideStep.profile,
-                child: SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _openAssessmentWizard,
-                    icon: const Icon(Icons.accessibility_new),
-                    label: const Text('Open Patient Ability Profile'),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Card(
-                color: const Color(0xFF102522),
-                clipBehavior: Clip.antiAlias,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (monitoring &&
-                        controller != null &&
-                        controller.value.isInitialized)
-                      Container(
-                        height: 220,
-                        color: Colors.black,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          alignment: Alignment.center,
-                          children: [
-                            Center(
-                              child: AspectRatio(
-                                aspectRatio: controller.value.aspectRatio > 0
-                                    ? controller.value.aspectRatio
-                                    : 4 / 3,
-                                child: CameraPreview(controller),
+    if (_accessMethod == null) return _buildCapabilityPending(context);
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: LiquidGlassThemeController.isDarkNotifier,
+      builder: (context, isDark, _) {
+        final theme = LiquidGlassThemeData.current(context);
+
+        return Scaffold(
+          body: Container(
+            decoration: BoxDecoration(gradient: theme.bgGradient),
+            child: SafeArea(
+              bottom: false,
+              child: CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 110),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        _buildTopHeader(theme),
+                        const SizedBox(height: 14),
+                        _buildCaregiverIncomingAlerts(theme),
+                        IntentConfirmationBanner(services: widget.services),
+                        _buildAshaReassuranceCard(theme),
+                        const SizedBox(height: 16),
+                        _buildHeroActions(theme),
+                        const SizedBox(height: 20),
+                        AshaGuideTarget(
+                          step: AshaGuideStep.profile,
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _openAssessmentWizard,
+                              icon: const Icon(Icons.accessibility_new),
+                              label: const Text('Open Patient Ability Profile'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: theme.speakColor,
+                                side: BorderSide(color: theme.speakColor),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                               ),
                             ),
-                            Positioned(
-                              top: 12,
-                              left: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xCC000000),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                      color: const Color(0xFF0B756A)),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.videocam,
-                                        size: 14, color: Color(0xFF4ADE80)),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      'LIVE WEBCAM CV',
-                                      style: TextStyle(
-                                        color: Color(0xFF4ADE80),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            Center(
-                              child: Container(
-                                width: 140,
-                                height: 170,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(70),
-                                  border: Border.all(
-                                    color: const Color(0x664ADE80),
-                                    width: 1.5,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      )
-                    else
-                      SizedBox(
-                        height: 180,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        const SizedBox(height: 16),
+                        if (_accessMethod == PatientAccessMethod.faceEyesAndHead)
+                          _buildFaceScanningSection(theme)
+                        else
+                          _buildHandModeSection(theme),
+                        const SizedBox(height: 20),
+                        _buildDailyNeedsGrid(theme),
+                        const SizedBox(height: 20),
+                        _buildBottomVitalsBar(theme),
+                        const SizedBox(height: 18),
+                        _PhraseCard(
+                          phrases: widget.services.recognition.phrases,
+                          lastPhrase: _lastPhrase,
+                          onSpeak: widget.services.recognition.speakNow,
+                          theme: theme,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildHydrationReminderCard(theme),
+                        const SizedBox(height: 14),
+                        _buildOnboardingReplayButton(theme),
+                        const SizedBox(height: 20),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // --- Header with Avatar, Greeting, Mode Switch, and Theme Switch ---
+  Widget _buildTopHeader(LiquidGlassThemeData theme) {
+    final isHandMode = _accessMethod != PatientAccessMethod.faceEyesAndHead;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            // Asha Avatar with Live Glow Ring
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: theme.speakColor,
+                  width: 2.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: theme.speakColor.withValues(alpha: 0.35),
+                    blurRadius: 14,
+                    spreadRadius: 2,
+                  ),
+                ],
+                image: const DecorationImage(
+                  image: AssetImage('assets/images/asha-avatar.webp'),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'NEUROBRIDGE ASHA',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                          color: theme.speakColor,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
-                              Icons.face_retouching_natural,
-                              color: Color(0xFFA6E3D9),
-                              size: 52,
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Face not detected',
+                            Icon(Icons.wifi, size: 10, color: Color(0xFF10B981)),
+                            SizedBox(width: 4),
+                            Text(
+                              'LAN Active',
                               style: TextStyle(
-                                  color: Color(0xFFA6E3D9),
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 6),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 24),
-                              child: Text(
-                                '1. Ensure room is well lit\n2. Position camera at eye level\n3. Stay within 40–60 cm of camera',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    color: Color(0xFFC9D9D5), fontSize: 12),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF10B981),
                               ),
                             ),
                           ],
                         ),
                       ),
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'You are not alone.',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: theme.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Theme Toggle
+            const ThemeToggleSwitch(),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // Mode switch pills bar
+        Row(
+          children: [
+            LiquidGlassPill(
+              icon: Icons.pan_tool_alt_rounded,
+              label: 'Hand Mode',
+              isActive: isHandMode,
+              accentColor: theme.speakColor,
+              onTap: () async {
+                setState(() => _accessMethod = PatientAccessMethod.handGestures);
+                await widget.services.patientAccessMethodRepository
+                    .save(PatientAccessMethod.handGestures);
+                await _toggleMonitoring(false);
+              },
+            ),
+            const SizedBox(width: 8),
+            LiquidGlassPill(
+              icon: Icons.remove_red_eye_rounded,
+              label: 'Face Mode',
+              isActive: !isHandMode,
+              accentColor: theme.waterColor,
+              onTap: () async {
+                setState(() => _accessMethod = PatientAccessMethod.faceEyesAndHead);
+                await widget.services.patientAccessMethodRepository
+                    .save(PatientAccessMethod.faceEyesAndHead);
+                await _toggleMonitoring(true);
+              },
+            ),
+            const Spacer(),
+            IconButton(
+              icon: Icon(Icons.settings_suggest_rounded, color: theme.textSecondary, size: 20),
+              tooltip: 'Configure Input Method',
+              onPressed: _changeAccessMethod,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // --- Hero Action Buttons (Speak & SOS) ---
+  Widget _buildHeroActions(LiquidGlassThemeData theme) {
+    return Column(
+      children: [
+        LiquidGlassHeroButton(
+          icon: Icons.pan_tool_rounded,
+          title: 'Speak [Hold Gestures]',
+          subtitle: 'Hold calibrated gesture to speak immediately',
+          accentColor: theme.speakColor,
+          onTap: _openHandCommunicator,
+        ),
+        const SizedBox(height: 12),
+        _LiquidGlassSosButton(
+          onTriggered: _requestEmergencyHelp,
+          theme: theme,
+        ),
+      ],
+    );
+  }
+
+  // --- 2x3 Daily Needs Colorful Liquid Glass Grid ---
+  Widget _buildDailyNeedsGrid(LiquidGlassThemeData theme) {
+    final needs = [
+      {
+        'title': 'Water',
+        'subtitle': 'I need a sip of water',
+        'icon': Icons.water_drop_rounded,
+        'color': theme.waterColor,
+      },
+      {
+        'title': 'Food',
+        'subtitle': 'I am hungry / meal time',
+        'icon': Icons.restaurant_rounded,
+        'color': theme.foodColor,
+      },
+      {
+        'title': 'Toilet',
+        'subtitle': 'I need bathroom assistance',
+        'icon': Icons.wc_rounded,
+        'color': theme.toiletColor,
+      },
+      {
+        'title': 'Rest',
+        'subtitle': 'I want to sleep / rest',
+        'icon': Icons.bed_rounded,
+        'color': theme.restColor,
+      },
+      {
+        'title': 'Call Family',
+        'subtitle': 'Please call my family',
+        'icon': Icons.phone_in_talk_rounded,
+        'color': theme.familyColor,
+      },
+      {
+        'title': 'Entertainment',
+        'subtitle': 'Turn on TV or music',
+        'icon': Icons.sports_esports_rounded,
+        'color': theme.entertainmentColor,
+      },
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.grid_view_rounded, size: 18, color: theme.speakColor),
+            const SizedBox(width: 8),
+            Text(
+              'Daily Needs & Quick Actions',
+              style: TextStyle(
+                fontSize: 16.5,
+                fontWeight: FontWeight.w800,
+                color: theme.textPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.15,
+          ),
+          itemCount: needs.length,
+          itemBuilder: (context, index) {
+            final item = needs[index];
+            final title = item['title'] as String;
+            final subtitle = item['subtitle'] as String;
+            final icon = item['icon'] as IconData;
+            final color = item['color'] as Color;
+
+            return LiquidGlassCard(
+              onTap: () => _speakQuickNeed(subtitle, title),
+              borderRadius: 20,
+              padding: const EdgeInsets.all(14),
+              customBorderColor: color.withValues(alpha: 0.45),
+              customGlowColor: color.withValues(alpha: 0.25),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: color.withValues(alpha: 0.4)),
+                    ),
+                    child: Icon(icon, color: color, size: 24),
+                  ),
+                  const Spacer(),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: theme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: theme.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // --- Real-time Hand Gesture HUD Section (Path 1) ---
+  Widget _buildHandModeSection(LiquidGlassThemeData theme) {
+    return LiquidGlassCard(
+      padding: const EdgeInsets.all(16),
+      customBorderColor: theme.speakColor.withValues(alpha: 0.4),
+      customGlowColor: theme.speakColor.withValues(alpha: 0.2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: theme.speakColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.videocam_rounded, color: theme.speakColor, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Real-Time Hand Gesture HUD',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: theme.textPrimary,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                ),
+                child: const Text(
+                  'Confidence 96%',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF10B981),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Viewfinder simulation
+          Container(
+            height: 130,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.speakColor.withValues(alpha: 0.3)),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Center(
+                  child: Icon(
+                    Icons.front_hand_rounded,
+                    size: 54,
+                    color: theme.speakColor.withValues(alpha: 0.7),
+                  ),
+                ),
+                Positioned(
+                  bottom: 8,
+                  left: 12,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, size: 14, color: Color(0xFF10B981)),
+                      const SizedBox(width: 6),
+                      Text(
+                        _lastSignal != null
+                            ? 'Gesture: ${_lastSignal!.kind.displayName}'
+                            : 'Tracking Ready • Show Hand',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 12,
+                  child: TextButton.icon(
+                    onPressed: _openHandCommunicator,
+                    icon: const Icon(Icons.fullscreen_rounded, size: 16),
+                    label: const Text('Open Studio'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.speakColor,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Face, Eye & Head Scanning Section (Path 2) ---
+  Widget _buildFaceScanningSection(LiquidGlassThemeData theme) {
+    final monitoring = _monitorStatus.lifecycle == MonitorLifecycle.active ||
+        _monitorStatus.lifecycle == MonitorLifecycle.starting;
+    final controller = widget.services.monitor.cameraController;
+
+    final faceOptions = [
+      {'title': 'I need water', 'icon': Icons.water_drop_rounded, 'color': theme.waterColor},
+      {'title': 'I need help', 'icon': Icons.emergency_rounded, 'color': theme.sosColor},
+      {'title': 'I feel pain', 'icon': Icons.sentiment_dissatisfied_rounded, 'color': theme.foodColor},
+      {'title': 'Yes / Confirm', 'icon': Icons.check_circle_rounded, 'color': theme.restColor},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.remove_red_eye_rounded, color: theme.waterColor, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'Facial Input Monitor HUD',
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w800,
+                    color: theme.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            ListenableBuilder(
+              listenable: widget.services.ashaGuide,
+              builder: (context, _) {
+                final guide = widget.services.ashaGuide;
+                if (guide.isActive &&
+                    guide.step == AshaGuideStep.firstSession) {
+                  return AshaGuideTarget(
+                    step: AshaGuideStep.firstSession,
+                    child: FilledButton.icon(
+                      key: const ValueKey('asha-guide-start-face-session'),
+                      onPressed: _busy
+                          ? null
+                          : () async {
+                              if (!monitoring) {
+                                await _toggleMonitoring(true);
+                              }
+                              if (!mounted) return;
+                              if (widget.services.monitor.currentStatus.lifecycle ==
+                                      MonitorLifecycle.active &&
+                                  guide.isActive &&
+                                  guide.step == AshaGuideStep.firstSession) {
+                                await guide.next();
+                              }
+                            },
+                      icon: Icon(monitoring ? Icons.check : Icons.play_arrow),
+                      label: Text(monitoring ? 'Continue' : 'Start'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: theme.waterColor,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  );
+                }
+                return Switch(
+                  value: monitoring,
+                  onChanged: _busy ? null : _toggleMonitoring,
+                  activeTrackColor: theme.waterColor.withValues(alpha: 0.6),
+                  activeThumbColor: theme.waterColor,
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Live camera feed or placeholder
+        if (monitoring && controller != null && controller.value.isInitialized)
+          Container(
+            height: 180,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: theme.waterColor.withValues(alpha: 0.5)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CameraPreview(controller),
+                Center(
+                  child: Container(
+                    width: 120,
+                    height: 150,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(60),
+                      border: Border.all(color: const Color(0x774ADE80), width: 1.5),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          LiquidGlassCard(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.face_retouching_natural_rounded, color: theme.waterColor, size: 36),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        monitoring ? 'Searching for face…' : 'Face Monitor Paused',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: theme.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Keep camera at eye level (40–60 cm distance).',
+                        style: TextStyle(fontSize: 12, color: theme.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 14),
+        // Telemetry Chips
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _buildTelemetryPill(theme, Icons.visibility_rounded, 'Gaze', 'Center (80%)'),
+            _buildTelemetryPill(theme, Icons.remove_red_eye_rounded, 'Blink', 'Detected'),
+            _buildTelemetryPill(theme, Icons.sentiment_satisfied_alt_rounded, 'Mouth', 'Neutral'),
+            _buildTelemetryPill(theme, Icons.straighten_rounded, 'Head Pose', 'Stable'),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Dwell Scanning Selection (Eye Gaze / Head)',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: theme.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Vertical stacked dwell cards
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: faceOptions.length,
+          itemBuilder: (context, index) {
+            final opt = faceOptions[index];
+            final isDwellTarget = index == _faceDwellIndex;
+            final color = opt['color'] as Color;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: LiquidGlassCard(
+                onTap: () => _speakQuickNeed(opt['title'] as String, opt['title'] as String),
+                borderRadius: 18,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                borderWidth: isDwellTarget ? 2.5 : 1.0,
+                customBorderColor: isDwellTarget ? color : theme.cardBorder,
+                customGlowColor: isDwellTarget ? color.withValues(alpha: 0.4) : theme.glowShadow,
+                child: Row(
+                  children: [
+                    Icon(opt['icon'] as IconData, color: color, size: 22),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        opt['title'] as String,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: theme.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (isDwellTarget) ...[
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          value: 0.85,
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Dwell 85%',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTelemetryPill(LiquidGlassThemeData theme, IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.pillGlass,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: theme.pillBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: theme.waterColor),
+          const SizedBox(width: 6),
+          Text(
+            '$label: ',
+            style: TextStyle(fontSize: 11.5, color: theme.textSecondary),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+              color: theme.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Bottom Vitals Bar (❤️ 72 BPM, 🫁 16 / min, 😊 "Feeling Good") ---
+  Widget _buildBottomVitalsBar(LiquidGlassThemeData theme) {
+    return LiquidGlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      customBorderColor: theme.restColor.withValues(alpha: 0.35),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildVitalMetric(
+            theme,
+            icon: Icons.favorite_rounded,
+            value: '72 BPM',
+            label: 'Heart Rate',
+            color: const Color(0xFFF43F5E),
+          ),
+          Container(width: 1, height: 28, color: theme.cardBorder),
+          _buildVitalMetric(
+            theme,
+            icon: Icons.air_rounded,
+            value: '16 / min',
+            label: 'Breathing',
+            color: const Color(0xFF0EA5E9),
+          ),
+          Container(width: 1, height: 28, color: theme.cardBorder),
+          _buildVitalMetric(
+            theme,
+            icon: Icons.sentiment_satisfied_alt_rounded,
+            value: 'Comfortable',
+            label: 'Patient Vibe',
+            color: const Color(0xFF10B981),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVitalMetric(
+    LiquidGlassThemeData theme, {
+    required IconData icon,
+    required String value,
+    required String label,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: theme.textPrimary,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                color: theme.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // --- Asha Reassurance Card ---
+  Widget _buildAshaReassuranceCard(LiquidGlassThemeData theme) {
+    return LiquidGlassCard(
+      onTap: () => showAshaChatSheet(
+        context,
+        widget.services.companion,
+        role: UserRole.patient,
+        voiceService: widget.services.voice,
+        services: widget.services,
+      ),
+      padding: const EdgeInsets.all(16),
+      customBorderColor: theme.speakColor.withValues(alpha: 0.4),
+      customGlowColor: theme.speakColor.withValues(alpha: 0.25),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: theme.speakColor.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.favorite_rounded, color: theme.speakColor, size: 26),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Asha is with you',
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                        color: theme.textPrimary,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: theme.speakColor,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Continuous Multimodal Monitor',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge
-                                      ?.copyWith(color: Colors.white),
-                                ),
-                              ),
-                              ListenableBuilder(
-                                listenable: widget.services.ashaGuide,
-                                builder: (context, _) {
-                                  final guide = widget.services.ashaGuide;
-                                  if (guide.isActive &&
-                                      guide.step == AshaGuideStep.firstSession) {
-                                    return AshaGuideTarget(
-                                      step: AshaGuideStep.firstSession,
-                                      child: FilledButton.icon(
-                                        key: const ValueKey(
-                                            'asha-guide-start-face-session'),
-                                        onPressed: _busy
-                                            ? null
-                                            : () async {
-                                                if (!monitoring) {
-                                                  await _toggleMonitoring(true);
-                                                }
-                                                if (!mounted) return;
-                                                if (widget.services.monitor
-                                                            .currentStatus.lifecycle ==
-                                                        MonitorLifecycle.active &&
-                                                    guide.isActive &&
-                                                    guide.step ==
-                                                        AshaGuideStep.firstSession) {
-                                                  await guide.next();
-                                                }
-                                              },
-                                        icon: Icon(monitoring
-                                            ? Icons.check
-                                            : Icons.play_arrow),
-                                        label: Text(
-                                            monitoring ? 'Continue' : 'Start'),
-                                      ),
-                                    );
-                                  }
-                                  return Switch(
-                                    value: monitoring,
-                                    onChanged:
-                                        _busy ? null : _toggleMonitoring,
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
+                          Icon(Icons.chat_bubble_outline, size: 10, color: Colors.white),
+                          SizedBox(width: 4),
                           Text(
-                            _monitorStatus.message,
-                            style: const TextStyle(color: Color(0xFFC9D9D5)),
-                          ),
-                          const SizedBox(height: 14),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _StatusChip(
-                                icon: Icons.face,
-                                text: _monitorStatus.faceDetected
-                                    ? 'Face detected'
-                                    : 'Searching for face',
-                              ),
-                              _StatusChip(
-                                icon: Icons.remove_red_eye_outlined,
-                                text: _eyeLabel(_monitorStatus),
-                              ),
-                              if (_monitorStatus.lipTremorDetected)
-                                const _StatusChip(
-                                  icon: Icons.graphic_eq,
-                                  text: 'Lip micro-movement tracking',
-                                ),
-                              if (_lastSignal != null)
-                                _StatusChip(
-                                  icon: Icons.bolt,
-                                  text: _lastSignal!.kind.displayName,
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Camera breathing estimate (not a medical measurement)',
+                            'Chat',
                             style: TextStyle(
-                              color: Color(0xFFA6E3D9),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            _monitorStatus.breathingStatus,
-                            style: const TextStyle(
-                              color: Color(0xFFC9D9D5),
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'Processed entirely locally on device. Calibrated gestures trigger voice playback, wheelchair screen captions, and caregiver alerts.',
-                            style: TextStyle(
-                              color: Color(0xFF9FB4AF),
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          const Divider(color: Color(0x33FFFFFF)),
-                          const SizedBox(height: 6),
-                          ExcludeSemantics(
-                            child: Text(
-                              'Quick Signal Test (Tap to Trigger):',
-                              style: TextStyle(
-                                color: Color(0xFFA6E3D9),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                _TestSignalButton(
-                                  label: 'Blink',
-                                  icon: Icons.visibility_outlined,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(PatientSignalKind.blink),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Rapid Blinks',
-                                  icon: Icons.electric_bolt,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.rapidBlink),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Slow Blink',
-                                  icon: Icons.nights_stay,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.slowBlink),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Smile',
-                                  icon: Icons.sentiment_satisfied_alt,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(PatientSignalKind.smile),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Left Smile',
-                                  icon: Icons.mood,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.smileLeft),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Right Smile',
-                                  icon: Icons.mood,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.smileRight),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Mouth Open',
-                                  icon: Icons.face,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.mouthOpen),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Eyebrows Up',
-                                  icon: Icons.arrow_upward,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.eyebrowsUp),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Raise Hand',
-                                  icon: Icons.pan_tool,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.handRaised),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Open Palm',
-                                  icon: Icons.front_hand,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.handOpenPalm),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Periocular micro-movement',
-                                  icon: Icons.remove_red_eye,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.eyeTremor),
-                                ),
-                                const SizedBox(width: 6),
-                                _TestSignalButton(
-                                  label: 'Lip micro-movement',
-                                  icon: Icons.graphic_eq,
-                                  onTap: () => widget.services.monitor
-                                      .simulateSignal(
-                                          PatientSignalKind.lipTremor),
-                                ),
-                              ],
+                              color: Colors.white,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
@@ -1042,330 +1353,193 @@ class _PatientPageState extends State<PatientPage> {
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              _PhraseCard(
-                phrases: widget.services.recognition.phrases,
-                lastPhrase: _lastPhrase,
-                onSpeak: widget.services.recognition.speakNow,
-              ),
-              const SizedBox(height: 16),
-              Card(
-                color: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                child: SwitchListTile(
-                  value: _waterEnabled,
-                  onChanged: _toggleWater,
-                  secondary: const CircleAvatar(
-                    backgroundColor: Color(0xFFD9F1EC),
-                    child: Icon(Icons.water_drop_outlined,
-                        color: Color(0xFF0B756A)),
-                  ),
-                  title: const Text('Gentle hydration reminder'),
-                  subtitle: const Text(
-                    'Asha gently reminds you hourly; drink only when safe.',
-                  ),
+                const SizedBox(height: 3),
+                Text(
+                  'Powered by Eli-Asha brain. Ready for conversational thoughts, questions, or reassurance.',
+                  style: TextStyle(fontSize: 12.5, color: theme.textSecondary),
                 ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 56,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                  ),
-                  onPressed: _callCaregiver,
-                  icon: const Icon(Icons.call),
-                  label: const Text('Call My Caregiver',
-                      style: TextStyle(fontSize: 16)),
-                ),
-              ),
-              const SizedBox(height: 10),
-              _SosHoldButton(onTriggered: _requestEmergencyHelp),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _eyeLabel(MonitorStatus status) {
-    if (status.leftEyeOpen == null || status.rightEyeOpen == null) {
-      return 'Eye tracking ready';
-    }
-    final average = (status.leftEyeOpen! + status.rightEyeOpen!) / 2;
-    return average < 0.3 ? 'Eyes closed' : 'Eyes open';
-  }
-}
-
-class _PatientHeader extends StatelessWidget {
-  const _PatientHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text('NEUROBRIDGE ASHA • PATIENT',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: const Color(0xFF0B756A),
-                      letterSpacing: 1.6,
-                      fontWeight: FontWeight.w800,
-                    )),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFFD1FAE5),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFA7F3D0)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.wifi, size: 12, color: Color(0xFF065F46)),
-                  SizedBox(width: 4),
-                  Text(
-                    'Bed 101 • LAN Active',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF065F46),
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text('You’re not alone.',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                )),
-        const Text(
-          'Asha is with you. Blink, move your eyes, smile, or use gestures to speak.',
-          style: TextStyle(fontSize: 15, color: Color(0xFF4A5E59)),
-        ),
-      ],
-    );
-  }
-}
-
-class _ReassuranceCard extends StatelessWidget {
-  const _ReassuranceCard({required this.online, this.onTap});
-
-  final bool online;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: const Color(0xFFD9F1EC),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              const Icon(Icons.favorite, color: Color(0xFF0B756A), size: 36),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text('Asha is with you',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                )),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0B756A),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.chat_bubble_outline,
-                                  size: 12, color: Colors.white),
-                              SizedBox(width: 4),
-                              Text('Tap to talk',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Asha is here if you need anything. Ready for intentional gaze, expression, or gesture cues.',
-                      style:
-                          TextStyle(fontSize: 13.5, color: Color(0xFF134E48)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C3A35),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: const Color(0xFFA6E3D9)),
-          const SizedBox(width: 6),
-          Text(text, style: const TextStyle(color: Colors.white, fontSize: 13)),
         ],
       ),
     );
   }
-}
 
-class _PhraseCard extends StatelessWidget {
-  const _PhraseCard({
-    required this.phrases,
-    required this.lastPhrase,
-    required this.onSpeak,
-  });
-
-  final List<CalibratedPhrase> phrases;
-  final CalibratedPhrase? lastPhrase;
-  final Future<void> Function(CalibratedPhrase) onSpeak;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+  // --- Caregiver incoming alert banners ---
+  Widget _buildCaregiverIncomingAlerts(LiquidGlassThemeData theme) {
+    if (_incomingCaregiverMessage == null && !_emergencyAcknowledged) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_incomingCaregiverMessage != null) ...[
+          LiquidGlassCard(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            customBorderColor: const Color(0xFF22C55E),
+            child: Row(
               children: [
-                const Icon(Icons.record_voice_over, color: Color(0xFF0B756A)),
-                const SizedBox(width: 8),
-                Text('My Voice & Quick Phrases',
-                    style: Theme.of(context).textTheme.titleLarge),
+                const Icon(Icons.mark_chat_unread_rounded, color: Color(0xFF16A34A), size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Message from ${_caregiverSender ?? "Caregiver"}:',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF16A34A),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _incomingCaregiverMessage!,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: theme.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded, size: 18, color: theme.textSecondary),
+                  onPressed: () => setState(() => _incomingCaregiverMessage = null),
+                ),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-                lastPhrase == null
-                    ? 'Trigger gestures or tap below to speak immediately.'
-                    : 'Last spoken: “${lastPhrase!.phrase}”',
-                style: const TextStyle(color: Color(0xFF556E68))),
-            const SizedBox(height: 14),
-            if (phrases.isEmpty)
-              const Text(
-                  'A caregiver can calibrate and add phrases in the Caregiver tab.')
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: phrases
-                    .map((phrase) => FilledButton.tonal(
-                          onPressed: () => onSpeak(phrase),
-                          child: Text(phrase.phrase),
-                        ))
-                    .toList(),
-              ),
-          ],
-        ),
+          ),
+        ],
+        if (_emergencyAcknowledged) ...[
+          LiquidGlassCard(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            customBorderColor: const Color(0xFF3B82F6),
+            child: Row(
+              children: [
+                const Icon(Icons.verified_rounded, color: Color(0xFF2563EB), size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Caregiver Acknowledged SOS',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2563EB),
+                        ),
+                      ),
+                      Text(
+                        'Help is on the way to your bedside now.',
+                        style: TextStyle(fontSize: 11.5, color: theme.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded, size: 18, color: theme.textSecondary),
+                  onPressed: () => setState(() => _emergencyAcknowledged = false),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // --- Hydration reminder switch tile ---
+  Widget _buildHydrationReminderCard(LiquidGlassThemeData theme) {
+    return LiquidGlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.waterColor.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.water_drop_outlined, color: theme.waterColor, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Gentle hydration reminder',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: theme.textPrimary,
+                  ),
+                ),
+                Text(
+                  'Asha gently reminds you hourly to stay comfortable.',
+                  style: TextStyle(fontSize: 11.5, color: theme.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: _waterEnabled,
+            onChanged: _toggleWater,
+            activeTrackColor: theme.waterColor.withValues(alpha: 0.6),
+            activeThumbColor: theme.waterColor,
+          ),
+        ],
       ),
     );
   }
-}
 
-class _TestSignalButton extends StatelessWidget {
-  const _TestSignalButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF1D3B36),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: const Color(0xFFA6E3D9)),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFFE3F2EE),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+  // --- Replay Onboarding Button ---
+  Widget _buildOnboardingReplayButton(LiquidGlassThemeData theme) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () => setState(() => _showingOnboarding = true),
+        icon: Icon(Icons.auto_awesome_rounded, color: theme.speakColor, size: 18),
+        label: Text(
+          'Replay Patient Setup Wizard',
+          style: TextStyle(
+            color: theme.textPrimary,
+            fontWeight: FontWeight.w700,
+            fontSize: 13.5,
           ),
         ),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: theme.cardBorder),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
       ),
     );
   }
 }
 
-/// Press-and-hold SOS button. Triggers after 1.5s hold; shows radial progress.
-/// Replaces confirmation dialog with immediate action + undo snackbar.
-class _SosHoldButton extends StatefulWidget {
-  const _SosHoldButton({required this.onTriggered});
+// --- Liquid Glass SOS Button with Press-and-Hold Animation ---
+class _LiquidGlassSosButton extends StatefulWidget {
+  const _LiquidGlassSosButton({
+    required this.onTriggered,
+    required this.theme,
+  });
+
   final VoidCallback onTriggered;
+  final LiquidGlassThemeData theme;
 
   @override
-  State<_SosHoldButton> createState() => _SosHoldButtonState();
+  State<_LiquidGlassSosButton> createState() => _LiquidGlassSosButtonState();
 }
 
-class _SosHoldButtonState extends State<_SosHoldButton>
+class _LiquidGlassSosButtonState extends State<_LiquidGlassSosButton>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   bool _holding = false;
@@ -1406,6 +1580,8 @@ class _SosHoldButtonState extends State<_SosHoldButton>
 
   @override
   Widget build(BuildContext context) {
+    final sosColor = widget.theme.sosColor;
+
     return Semantics(
       label: 'Emergency SOS. Press and hold to activate.',
       button: true,
@@ -1416,62 +1592,159 @@ class _SosHoldButtonState extends State<_SosHoldButton>
           animation: _controller,
           builder: (context, child) {
             return Container(
-              height: 72,
+              height: 74,
               decoration: BoxDecoration(
-                color: const Color(0xFFB42318),
-                borderRadius: BorderRadius.circular(16),
-                border: _holding
-                    ? Border.all(color: Colors.white54, width: 2)
-                    : null,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(
+                    color: sosColor.withValues(alpha: _holding ? 0.6 : 0.35),
+                    blurRadius: _holding ? 28 : 16,
+                    spreadRadius: _holding ? 2 : 0,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              child: Stack(
-                children: [
-                  if (_holding)
-                    Positioned.fill(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: LinearProgressIndicator(
-                          value: _controller.value,
-                          backgroundColor: const Color(0x44FFFFFF),
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                              Colors.white30),
-                          minHeight: 72,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: Stack(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            sosColor.withValues(alpha: 0.9),
+                            sosColor.withValues(alpha: 0.7),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: _holding ? Colors.white : Colors.white24,
+                          width: _holding ? 2.0 : 1.0,
                         ),
                       ),
                     ),
-                  Center(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.emergency,
-                            color: Colors.white, size: 24),
-                        const SizedBox(width: 10),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              _holding ? 'Hold to confirm…' : 'Emergency Help SOS',
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            if (!_holding)
-                              const Text(
-                                'Press and hold to activate',
-                                style: TextStyle(
-                                    color: Colors.white70, fontSize: 11),
-                              ),
-                          ],
+                    if (_holding)
+                      Positioned.fill(
+                        child: LinearProgressIndicator(
+                          value: _controller.value,
+                          backgroundColor: Colors.transparent,
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.white38),
                         ),
-                      ],
+                      ),
+                    Center(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.emergency_rounded, color: Colors.white, size: 28),
+                          const SizedBox(width: 12),
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _holding ? 'Hold to confirm SOS…' : 'Need Help / Emergency SOS',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16.5,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _holding ? 'Releasing cancels request' : 'Press and hold for 1.5s to alert caregiver',
+                                style: const TextStyle(color: Colors.white70, fontSize: 11.5),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+// --- Quick Phrases Card ---
+class _PhraseCard extends StatelessWidget {
+  const _PhraseCard({
+    required this.phrases,
+    required this.lastPhrase,
+    required this.onSpeak,
+    required this.theme,
+  });
+
+  final List<CalibratedPhrase> phrases;
+  final CalibratedPhrase? lastPhrase;
+  final Future<void> Function(CalibratedPhrase) onSpeak;
+  final LiquidGlassThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return LiquidGlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.record_voice_over_rounded, color: theme.speakColor, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'My Voice & Quick Phrases',
+                style: TextStyle(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w800,
+                  color: theme.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            lastPhrase == null
+                ? 'Trigger gestures or tap below to speak immediately.'
+                : 'Last spoken: “${lastPhrase!.phrase}”',
+            style: TextStyle(fontSize: 12.5, color: theme.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          if (phrases.isEmpty)
+            Text(
+              'A caregiver can calibrate and add phrases in the Caregiver tab.',
+              style: TextStyle(fontSize: 12.5, color: theme.textSecondary),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: phrases
+                  .map(
+                    (phrase) => FilledButton.tonal(
+                      onPressed: () => onSpeak(phrase),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: theme.speakColor.withValues(alpha: 0.15),
+                        foregroundColor: theme.textPrimary,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        phrase.phrase,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+        ],
       ),
     );
   }

@@ -756,3 +756,46 @@ html, body { transition: background .35s ease, color .35s ease; }
 :root[data-theme="dark"] .asha-avatar,
 :root[data-theme="dark"] .asha-mini-avatar,
 :root[data-theme="dark"] .asha-portrait-large { box-shadow: 0 0 0 1px rgba(255,184,202,.3), 0 0 34px rgba(255,112,180,.24); }
+
+/* Liquid Glass System Tokens & Components */
+.liquid-glass-card {
+  background: var(--glass, rgba(255, 255, 255, 0.75));
+  border: 1.2px solid var(--line);
+  border-radius: 24px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.08);
+  transition: all 0.22s ease;
+}
+:root[data-theme="dark"] .liquid-glass-card {
+  background: rgba(18, 26, 46, 0.72);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+.daily-needs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+@media (max-width: 900px) {
+  .daily-needs-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.vitals-bar-dock {
+  margin-top: 24px;
+  padding: 14px 20px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: var(--glass, rgba(255, 255, 255, 0.75));
+  backdrop-filter: blur(18px);
+  border: 1.2px solid var(--line);
+}
+:root[data-theme="dark"] .vitals-bar-dock {
+  background: rgba(18, 26, 46, 0.72);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+

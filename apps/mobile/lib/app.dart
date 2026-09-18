@@ -12,6 +12,7 @@ import 'package:fingerspeak_mobile/ui/pi_display_page.dart';
 import 'package:fingerspeak_mobile/ui/role_selection_page.dart';
 import 'package:fingerspeak_mobile/ui/settings_page.dart';
 import 'package:fingerspeak_mobile/ui/caregiver_multi_patient_page.dart';
+import 'package:fingerspeak_mobile/ui/effects/liquid_glass.dart';
 import 'package:flutter/material.dart';
 
 class FingerSpeakMobileApp extends StatefulWidget {
@@ -45,73 +46,125 @@ class _FingerSpeakMobileAppState extends State<FingerSpeakMobileApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'NeuroBridge Asha',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0D9488),
-          primary: const Color(0xFF0D9488),
-          secondary: const Color(0xFFD97706),
-          surface: Colors.white,
-          brightness: Brightness.light,
-        ),
-        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-        useMaterial3: true,
-        fontFamily: 'Space Grotesk',
-        cardTheme: CardThemeData(
-          color: Colors.white,
-          elevation: 1,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Color(0xFFE2E8F0)),
-          ),
-        ),
-        textTheme: const TextTheme(
-          headlineMedium:
-              TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-          titleLarge:
-              TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-          titleMedium:
-              TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
-          bodyMedium: TextStyle(color: Color(0xFF334155)),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          filled: true,
-          fillColor: Colors.white,
-        ),
-      ),
-      home: FutureBuilder<MobileServices>(
-        future: _services,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return _StartupError(error: snapshot.error!);
-          }
-          final services = snapshot.data;
-          if (services == null) {
-            return const Scaffold(
-              backgroundColor: Color(0xFFF8FAFC),
-              body: Center(
-                child: CircularProgressIndicator(color: Color(0xFF0D9488)),
+    return ValueListenableBuilder<bool>(
+      valueListenable: LiquidGlassThemeController.isDarkNotifier,
+      builder: (context, isDark, _) {
+        return MaterialApp(
+          title: 'NeuroBridge Asha',
+          debugShowCheckedModeBanner: false,
+          themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF0D9488),
+              primary: const Color(0xFF0D9488),
+              secondary: const Color(0xFFD97706),
+              surface: Colors.white,
+              brightness: Brightness.light,
+            ),
+            scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+            useMaterial3: true,
+            fontFamily: 'Space Grotesk',
+            cardTheme: CardThemeData(
+              color: Colors.white,
+              elevation: 1,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: Color(0xFFE2E8F0)),
               ),
-            );
-          }
+            ),
+            textTheme: const TextTheme(
+              headlineMedium: TextStyle(
+                  fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+              titleLarge: TextStyle(
+                  fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+              titleMedium: TextStyle(
+                  fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+              bodyMedium: TextStyle(color: Color(0xFF334155)),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+          ),
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF0D9488),
+              primary: const Color(0xFF2DD4BF),
+              secondary: const Color(0xFFF59E0B),
+              surface: const Color(0xFF0D1527),
+              brightness: Brightness.dark,
+            ),
+            scaffoldBackgroundColor: const Color(0xFF070A12),
+            useMaterial3: true,
+            fontFamily: 'Space Grotesk',
+            cardTheme: CardThemeData(
+              color: const Color(0x281E293B),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: const BorderSide(color: Color(0x3838BDF8)),
+              ),
+            ),
+            textTheme: const TextTheme(
+              headlineMedium: TextStyle(
+                  fontWeight: FontWeight.w800, color: Color(0xFFF8FAFC)),
+              titleLarge: TextStyle(
+                  fontWeight: FontWeight.w800, color: Color(0xFFF8FAFC)),
+              titleMedium: TextStyle(
+                  fontWeight: FontWeight.w700, color: Color(0xFFE2E8F0)),
+              bodyMedium: TextStyle(color: Color(0xFF94A3B8)),
+            ),
+            navigationBarTheme: NavigationBarThemeData(
+              backgroundColor: const Color(0xFF0D1527),
+              indicatorColor: const Color(0x332DD4BF),
+              iconTheme: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return const IconThemeData(color: Color(0xFF2DD4BF));
+                }
+                return const IconThemeData(color: Color(0xFF94A3B8));
+              }),
+              labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return const TextStyle(
+                      color: Color(0xFF2DD4BF), fontWeight: FontWeight.bold);
+                }
+                return const TextStyle(color: Color(0xFF94A3B8));
+              }),
+            ),
+          ),
+          home: FutureBuilder<MobileServices>(
+            future: _services,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return _StartupError(error: snapshot.error!);
+              }
+              final services = snapshot.data;
+              if (services == null) {
+                return const Scaffold(
+                  backgroundColor: Color(0xFFF8FAFC),
+                  body: Center(
+                    child: CircularProgressIndicator(color: Color(0xFF0D9488)),
+                  ),
+                );
+              }
 
-          if (!_splashCompleted) {
-            return AngelicSparkleSplash(
-              onFinished: () {
-                if (mounted) setState(() => _splashCompleted = true);
-              },
-            );
-          }
+              if (!_splashCompleted) {
+                return AngelicSparkleSplash(
+                  onFinished: () {
+                    if (mounted) setState(() => _splashCompleted = true);
+                  },
+                );
+              }
 
-          return _AppRoot(
-            services: services,
-            forcedRole: widget.forcedRole,
-          );
-        },
-      ),
+              return _AppRoot(
+                services: services,
+                forcedRole: widget.forcedRole,
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -283,10 +336,16 @@ class _MobileHomeState extends State<MobileHome> {
   Widget build(BuildContext context) {
     final services = widget.services;
     final isPatientOnly = widget.forcedRole == UserRole.patient;
+    final isDark = LiquidGlassThemeController.isDark;
+    final navBgColor = isDark ? const Color(0xFF0D1527) : Colors.white;
+    final navBorderColor =
+        isDark ? const Color(0x3338BDF8) : const Color(0xFFE2E8F0);
+    final navIndicator =
+        isDark ? const Color(0x332DD4BF) : const Color(0xFFCCFBF1);
 
     if (isPatientOnly) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: SafeArea(
           bottom: false,
           child: IndexedStack(
@@ -316,14 +375,14 @@ class _MobileHomeState extends State<MobileHome> {
         ),
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         bottomNavigationBar: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+          decoration: BoxDecoration(
+            color: navBgColor,
+            border: Border(top: BorderSide(color: navBorderColor)),
           ),
           child: NavigationBar(
-            backgroundColor: Colors.white,
+            backgroundColor: navBgColor,
             elevation: 0,
-            indicatorColor: const Color(0xFFCCFBF1),
+            indicatorColor: navIndicator,
             selectedIndex: _index.clamp(0, 2),
             onDestinationSelected: (index) => setState(() => _index = index),
             destinations: const [
@@ -351,7 +410,7 @@ class _MobileHomeState extends State<MobileHome> {
     final currentRole = _index == 1 ? UserRole.caregiver : UserRole.patient;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         bottom: false,
         child: IndexedStack(
@@ -384,14 +443,14 @@ class _MobileHomeState extends State<MobileHome> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+        decoration: BoxDecoration(
+          color: navBgColor,
+          border: Border(top: BorderSide(color: navBorderColor)),
         ),
         child: NavigationBar(
-          backgroundColor: Colors.white,
+          backgroundColor: navBgColor,
           elevation: 0,
-          indicatorColor: const Color(0xFFCCFBF1),
+          indicatorColor: navIndicator,
           selectedIndex: _index,
           onDestinationSelected: (index) => setState(() => _index = index),
           destinations: const [
