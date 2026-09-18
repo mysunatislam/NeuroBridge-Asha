@@ -58,8 +58,9 @@ class _PatientPageState extends State<PatientPage> {
   String? _caregiverSender;
   bool _emergencyAcknowledged = false;
 
-  // Face scanning dwell simulated step (0 to 3)
+  // Face scanning dwell step (0 to 3) and progress (0.0 to 1.0)
   int _faceDwellIndex = 0;
+  double _faceDwellProgress = 0.0;
   Timer? _faceDwellTimer;
 
   @override
@@ -75,7 +76,22 @@ class _PatientPageState extends State<PatientPage> {
       if (mounted) setState(() => _monitorStatus = status);
     });
     _signalSubscription = widget.services.monitor.signals.listen((signal) {
-      if (mounted) setState(() => _lastSignal = signal);
+      if (!mounted) return;
+      setState(() {
+        _lastSignal = signal;
+        if (_accessMethod == PatientAccessMethod.faceEyesAndHead) {
+          if (signal.kind == PatientSignalKind.eyeLookRight) {
+            _faceDwellIndex = (_faceDwellIndex + 1) % 4;
+            _faceDwellProgress = 0.0;
+          } else if (signal.kind == PatientSignalKind.eyeLookLeft) {
+            _faceDwellIndex = (_faceDwellIndex - 1 + 4) % 4;
+            _faceDwellProgress = 0.0;
+          } else if (signal.kind == PatientSignalKind.blink ||
+              signal.kind == PatientSignalKind.smile) {
+            _triggerCurrentFaceOption();
+          }
+        }
+      });
     });
     _phraseSubscription =
         widget.services.recognition.spokenPhrases.listen((phrase) {
@@ -108,18 +124,41 @@ class _PatientPageState extends State<PatientPage> {
     _startFaceDwellSimulation();
   }
 
+  void _triggerCurrentFaceOption() {
+    const titles = ['I need water', 'I need help', 'I feel pain', 'Yes / Confirm'];
+    if (_faceDwellIndex >= 0 && _faceDwellIndex < titles.length) {
+      final t = titles[_faceDwellIndex];
+      _speakQuickNeed(t, t);
+    }
+  }
+
   void _startFaceDwellSimulation() {
     _faceDwellTimer?.cancel();
     _faceDwellTimer = null;
     if (!widget.isActive || _accessMethod != PatientAccessMethod.faceEyesAndHead) {
       return;
     }
-    _faceDwellTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (mounted && widget.isActive && _accessMethod == PatientAccessMethod.faceEyesAndHead) {
-        setState(() {
-          _faceDwellIndex = (_faceDwellIndex + 1) % 4;
-        });
+    _faceDwellTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted || !widget.isActive || _accessMethod != PatientAccessMethod.faceEyesAndHead) {
+        return;
       }
+      final hasFace = _monitorStatus.faceDetected &&
+          _monitorStatus.lifecycle == MonitorLifecycle.active;
+      if (!hasFace) {
+        if (_faceDwellProgress != 0.0) {
+          setState(() => _faceDwellProgress = 0.0);
+        }
+        return;
+      }
+
+      setState(() {
+        _faceDwellProgress += 0.04;
+        if (_faceDwellProgress >= 1.0) {
+          _faceDwellProgress = 0.0;
+          _triggerCurrentFaceOption();
+          _faceDwellIndex = (_faceDwellIndex + 1) % 4;
+        }
+      });
     });
   }
 
@@ -965,6 +1004,7 @@ class _PatientPageState extends State<PatientPage> {
   Widget _buildFaceScanningSection(LiquidGlassThemeData theme) {
     final monitoring = _monitorStatus.lifecycle == MonitorLifecycle.active ||
         _monitorStatus.lifecycle == MonitorLifecycle.starting;
+    final hasFace = monitoring && _monitorStatus.faceDetected;
     final controller = widget.services.monitor.cameraController;
 
     final faceOptions = [
@@ -1076,15 +1116,21 @@ class _PatientPageState extends State<PatientPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        monitoring ? 'Searching for face…' : 'Face Monitor Paused',
+                        !monitoring
+                            ? 'Face Monitor Paused'
+                            : (hasFace
+                                ? 'Face Detected & Tracking'
+                                : 'Searching for face…'),
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
-                          color: theme.textPrimary,
+                          color: hasFace ? const Color(0xFF10B981) : theme.textPrimary,
                         ),
                       ),
                       Text(
-                        'Keep camera at eye level (40–60 cm distance).',
+                        hasFace
+                            ? 'Patient aligned. Gaze or dwell to select.'
+                            : 'Keep camera at eye level (40–60 cm distance).',
                         style: TextStyle(fontSize: 12, color: theme.textSecondary),
                       ),
                     ],
@@ -1099,10 +1145,56 @@ class _PatientPageState extends State<PatientPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            _buildTelemetryPill(theme, Icons.visibility_rounded, 'Gaze', 'Center (80%)'),
-            _buildTelemetryPill(theme, Icons.remove_red_eye_rounded, 'Blink', 'Detected'),
-            _buildTelemetryPill(theme, Icons.sentiment_satisfied_alt_rounded, 'Mouth', 'Neutral'),
-            _buildTelemetryPill(theme, Icons.straighten_rounded, 'Head Pose', 'Stable'),
+            _buildTelemetryPill(
+              theme,
+              Icons.visibility_rounded,
+              'Gaze',
+              !hasFace
+                  ? 'No Face'
+                  : (_monitorStatus.headYaw != null
+                      ? (_monitorStatus.headYaw! < -10
+                          ? 'Left (${_monitorStatus.headYaw!.abs().toStringAsFixed(0)}°)'
+                          : _monitorStatus.headYaw! > 10
+                              ? 'Right (+${_monitorStatus.headYaw!.toStringAsFixed(0)}°)'
+                              : 'Center')
+                      : 'Center'),
+              active: hasFace,
+            ),
+            _buildTelemetryPill(
+              theme,
+              Icons.remove_red_eye_rounded,
+              'Blink',
+              !hasFace
+                  ? '—'
+                  : (_monitorStatus.leftEyeOpen != null
+                      ? (((_monitorStatus.leftEyeOpen! + (_monitorStatus.rightEyeOpen ?? _monitorStatus.leftEyeOpen!)) / 2) < 0.32
+                          ? 'Blink'
+                          : 'Open (${(((_monitorStatus.leftEyeOpen! + (_monitorStatus.rightEyeOpen ?? _monitorStatus.leftEyeOpen!)) / 2) * 100).round()}%)')
+                      : (_lastSignal?.kind == PatientSignalKind.blink ? 'Blink' : 'Open')),
+              active: hasFace,
+            ),
+            _buildTelemetryPill(
+              theme,
+              Icons.sentiment_satisfied_alt_rounded,
+              'Mouth',
+              !hasFace
+                  ? '—'
+                  : ((_monitorStatus.smileProbability ?? 0) > 0.35
+                      ? 'Smile (${((_monitorStatus.smileProbability!) * 100).round()}%)'
+                      : 'Neutral'),
+              active: hasFace,
+            ),
+            _buildTelemetryPill(
+              theme,
+              Icons.straighten_rounded,
+              'Head Pose',
+              !hasFace
+                  ? '—'
+                  : (_monitorStatus.headYaw != null
+                      ? (_monitorStatus.headYaw!.abs() > 15 ? 'Turned' : 'Stable')
+                      : 'Stable'),
+              active: hasFace,
+            ),
           ],
         ),
         const SizedBox(height: 16),
@@ -1122,7 +1214,7 @@ class _PatientPageState extends State<PatientPage> {
           itemCount: faceOptions.length,
           itemBuilder: (context, index) {
             final opt = faceOptions[index];
-            final isDwellTarget = index == _faceDwellIndex;
+            final isDwellTarget = hasFace && index == _faceDwellIndex;
             final color = opt['color'] as Color;
 
             return Padding(
@@ -1148,19 +1240,19 @@ class _PatientPageState extends State<PatientPage> {
                         ),
                       ),
                     ),
-                    if (isDwellTarget) ...[
+                    if (isDwellTarget && _faceDwellProgress > 0) ...[
                       SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(
-                          value: 0.85,
+                          value: _faceDwellProgress,
                           strokeWidth: 2.5,
                           valueColor: AlwaysStoppedAnimation<Color>(color),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Dwell 85%',
+                        'Dwell ${(_faceDwellProgress * 100).round()}%',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -1226,29 +1318,48 @@ class _PatientPageState extends State<PatientPage> {
     );
   }
 
-  Widget _buildTelemetryPill(LiquidGlassThemeData theme, IconData icon, String label, String value) {
+  Widget _buildTelemetryPill(
+    LiquidGlassThemeData theme,
+    IconData icon,
+    String label,
+    String value, {
+    bool active = true,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: theme.pillGlass,
+        color: active ? theme.pillGlass : theme.cardBorder.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: theme.pillBorder),
+        border: Border.all(
+          color: active ? theme.pillBorder : theme.cardBorder.withValues(alpha: 0.25),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: theme.waterColor),
+          Icon(
+            icon,
+            size: 14,
+            color: active ? theme.waterColor : theme.textSecondary.withValues(alpha: 0.5),
+          ),
           const SizedBox(width: 6),
           Text(
             '$label: ',
-            style: TextStyle(fontSize: 11.5, color: theme.textSecondary),
+            style: TextStyle(
+              fontSize: 11.5,
+              color: active ? theme.textSecondary : theme.textSecondary.withValues(alpha: 0.6),
+            ),
           ),
           Text(
             value,
             style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.bold,
-              color: theme.textPrimary,
+              color: active
+                  ? (value.contains('Blink') || value.contains('Smile')
+                      ? theme.waterColor
+                      : theme.textPrimary)
+                  : theme.textSecondary.withValues(alpha: 0.5),
             ),
           ),
         ],
