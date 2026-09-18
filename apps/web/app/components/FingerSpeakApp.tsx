@@ -61,15 +61,19 @@ import {
   type CareRoutineSettings,
 } from "../lib/care-routines";
 import {
-  FaceIntentEngine,
-  NeutralFaceCalibrator,
-  type FaceIntentId,
-  type FaceIntentOutput,
   type FaceLandmarkerCompatibleResult,
 } from "../lib/face-intent";
 import {
-  FACE_INTENT_LABELS,
-  createFaceControlEngine,
+  DEFAULT_NEUROFACE_BINDINGS,
+  NEUROFACE_RULE_IDS,
+  NEUROFACE_RULE_LABELS,
+  NEUROFACE_RULE_PHRASES,
+  NeuroFaceAutoCalibrator,
+  NeuroFaceRuleEngine,
+  type NeuroFaceRuleId,
+  type NeuroFaceStatus,
+} from "../lib/neuroface-rules";
+import {
   createDefaultFaceControlSettings,
   validateFaceControlSettings,
   type FaceControlSettings,
@@ -182,9 +186,24 @@ export function FingerSpeakApp() {
   const [remoteDeviceMessage, setRemoteDeviceMessage] = useState("No verified patient-device heartbeat yet.");
   const [ashaOpen, setAshaOpen] = useState(false);
   const [faceTracking, setFaceTracking] = useState(false);
-  const [faceIntent, setFaceIntent] = useState<FaceIntentOutput>(() => new FaceIntentEngine().snapshot());
-  const [faceCalibrationMessage, setFaceCalibrationMessage] = useState("Calibrate a relaxed neutral face before using eye or facial movements.");
+  const [neurofaceStatus, setNeurofaceStatus] = useState<NeuroFaceStatus>(() => new NeuroFaceRuleEngine().snapshot());
+  const [faceCalibrationMessage, setFaceCalibrationMessage] = useState("Face rules auto-calibrate from your relaxed face — no setup needed.");
   const [faceCalibrationProgress, setFaceCalibrationProgress] = useState(0);
+  const [neurofaceBindings, setNeurofaceBindings] = useState<Record<NeuroFaceRuleId, string | null>>(() => {
+    if (typeof window === "undefined") return { ...DEFAULT_NEUROFACE_BINDINGS };
+    try {
+      const saved = JSON.parse(localStorage.getItem("neuroface.bindings.v1") ?? "null") as Record<NeuroFaceRuleId, string | null> | null;
+      if (saved) return { ...DEFAULT_NEUROFACE_BINDINGS, ...saved };
+    } catch { /* fall through to defaults */ }
+    return { ...DEFAULT_NEUROFACE_BINDINGS };
+  });
+  const [neurofaceEnabled, setNeurofaceEnabled] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const saved = localStorage.getItem("neuroface.enabled.v1");
+      return saved === null ? true : saved === "true";
+    } catch { return true; }
+  });
   const [faceControls, setFaceControls] = useState<FaceControlSettings>(() => createDefaultFaceControlSettings("local-profile"));
   const [speechSettings, setSpeechSettings] = useState<PatientSpeechSettings>(() => createDefaultPatientSpeechSettings("local-profile"));
   const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -262,8 +281,10 @@ export function FingerSpeakApp() {
   const profileRef = useRef(profile);
   const localContactsRef = useRef(localContacts);
   const faceControlsRef = useRef(faceControls);
-  const faceCalibratorRef = useRef<NeutralFaceCalibrator | null>(null);
-  const faceEngineRef = useRef(new FaceIntentEngine());
+  const neurofaceCalibratorRef = useRef<NeuroFaceAutoCalibrator | null>(new NeuroFaceAutoCalibrator());
+  const neurofaceEngineRef = useRef(new NeuroFaceRuleEngine());
+  const neurofaceBindingsRef = useRef(neurofaceBindings);
+  const neurofaceEnabledRef = useRef(neurofaceEnabled);
   const patientSpeechRef = useRef(createPatientSpeechService());
   const caregiverCaptureRef = useRef<ActiveCaregiverMicrophoneCapture | null>(null);
   const caregiverCaptureTargetRef = useRef<(VoicePhraseOption & { profileId: string; caregiverName: string }) | null>(null);
@@ -279,15 +300,22 @@ export function FingerSpeakApp() {
     () => profile.gestures.find((gesture) => gesture.id === prediction.gestureId) ?? null,
     [prediction.gestureId, profile.gestures],
   );
-  const currentFaceGesture = useMemo(() => {
-    if (!faceIntent.candidateId) return null;
-    const gestureId = faceControls.bindings[faceIntent.candidateId];
-    return profile.gestures.find((gesture) => gesture.id === gestureId) ?? null;
-  }, [faceControls.bindings, faceIntent.candidateId, profile.gestures]);
-  const faceGesturePolicyKey = useMemo(
-    () => profile.gestures.map(({ id, phrase, risk, dwellMs }) => `${id}\u0000${phrase}\u0000${risk}\u0000${dwellMs}`).join("\u0001"),
-    [profile.gestures],
-  );
+  const currentFaceGesture = useMemo<Gesture | null>(() => {
+    const rule = neurofaceStatus.lastTrigger?.rule;
+    if (!rule) return null;
+    const gestureId = neurofaceBindings[rule];
+    const bound = gestureId ? profile.gestures.find((gesture) => gesture.id === gestureId) : undefined;
+    if (bound?.phrase) return bound;
+    return {
+      id: `face:${rule}`,
+      name: NEUROFACE_RULE_LABELS[rule],
+      phrase: NEUROFACE_RULE_PHRASES[rule],
+      icon: "◉",
+      risk: rule === "emergency-abnormality" ? "emergency" : "routine",
+      dwellMs: 0,
+      samples: [],
+    };
+  }, [neurofaceBindings, neurofaceStatus.lastTrigger, profile.gestures]);
   const calibrationReady = profile.gestures.every((gesture) => gesture.samples.length >= 2);
   const capturedCount = profile.gestures.reduce((total, gesture) => total + gesture.samples.length, 0);
   const requiredCount = profile.gestures.length * 2;
@@ -481,10 +509,15 @@ export function FingerSpeakApp() {
 
   useEffect(() => {
     faceControlsRef.current = faceControls;
-    const engine = createFaceControlEngine(faceControls, profileRef.current.gestures);
-    faceEngineRef.current = engine;
-    setFaceIntent(engine.snapshot());
-  }, [faceControls, faceGesturePolicyKey]);
+  }, [faceControls]);
+
+  useEffect(() => {
+    neurofaceBindingsRef.current = neurofaceBindings;
+  }, [neurofaceBindings]);
+
+  useEffect(() => {
+    neurofaceEnabledRef.current = neurofaceEnabled;
+  }, [neurofaceEnabled]);
 
   useEffect(() => {
     modelRef.current = model;
@@ -511,8 +544,9 @@ export function FingerSpeakApp() {
       setRoutineSettings(nextRoutines);
       setFaceControls(nextFace);
       faceControlsRef.current = nextFace;
-      faceEngineRef.current = createFaceControlEngine(nextFace, profileRef.current.gestures);
-      setFaceIntent(faceEngineRef.current.snapshot());
+      neurofaceCalibratorRef.current = new NeuroFaceAutoCalibrator();
+      neurofaceEngineRef.current = new NeuroFaceRuleEngine();
+      setNeurofaceStatus(neurofaceEngineRef.current.snapshot());
     }).catch(() => {
       if (!cancelled) setCareSettingsMessage("Some local voice or reminder settings could not be loaded.");
     });
@@ -786,7 +820,7 @@ export function FingerSpeakApp() {
   const stopCamera = useCallback(() => {
     cameraStartTokenRef.current += 1;
     cameraStartingRef.current = false;
-    const calibrationWasActive = faceCalibratorRef.current !== null;
+    const calibrationWasActive = neurofaceCalibratorRef.current !== null;
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
     animationRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -800,9 +834,9 @@ export function FingerSpeakApp() {
     landmarkerRef.current = null;
     try { faceLandmarkerRef.current?.close(); } catch { /* The camera is already stopping. */ }
     faceLandmarkerRef.current = null;
-    faceCalibratorRef.current = null;
-    faceEngineRef.current = createFaceControlEngine(faceControlsRef.current, profileRef.current.gestures);
-    setFaceIntent(faceEngineRef.current.snapshot());
+    neurofaceCalibratorRef.current = new NeuroFaceAutoCalibrator();
+    neurofaceEngineRef.current = new NeuroFaceRuleEngine();
+    setNeurofaceStatus(neurofaceEngineRef.current.snapshot());
     recentFramesRef.current = [];
     captureFramesRef.current = [];
     capturingRef.current = false;
@@ -820,9 +854,7 @@ export function FingerSpeakApp() {
     setCameraStatus("off");
     setCameraMessage("Camera stopped. No camera frames were saved or uploaded.");
     if (calibrationWasActive) {
-      setFaceCalibrationMessage(faceControlsRef.current.baseline
-        ? "Face calibration stopped before completion. The previous saved calibration is still active."
-        : "Face calibration stopped before completion. Start the camera and try neutral calibration again.");
+      setFaceCalibrationMessage("Face monitor stopped. Auto-calibration restarts with the camera.");
     }
     const canvas = canvasRef.current;
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
@@ -876,6 +908,21 @@ export function FingerSpeakApp() {
     });
     if (gesture.risk !== "routine") void queueEvent(gesture, "caregiver_alert");
   }, [queueEvent]);
+
+  const speakNeurofaceTrigger = useCallback((rule: NeuroFaceRuleId) => {
+    const gestureId = neurofaceBindingsRef.current[rule];
+    const bound = gestureId ? profileRef.current.gestures.find((item) => item.id === gestureId) : undefined;
+    const gesture: Gesture = bound?.phrase ? bound : {
+      id: `face:${rule}`,
+      name: NEUROFACE_RULE_LABELS[rule],
+      phrase: NEUROFACE_RULE_PHRASES[rule],
+      icon: "◉",
+      risk: rule === "emergency-abnormality" ? "emergency" : "routine",
+      dwellMs: 0,
+      samples: [],
+    };
+    speakGesture(gesture, "face");
+  }, [speakGesture]);
 
   useEffect(() => {
     const event = piDevice.patientIntent;
@@ -975,36 +1022,26 @@ export function FingerSpeakApp() {
     }
     const facePresent = Boolean(faceResult.faceLandmarks?.[0]?.length || faceResult.faceBlendshapes?.[0]?.categories.length);
     setFaceTracking(facePresent);
-    const calibrator = faceCalibratorRef.current;
-    if (calibrator) {
-      calibrator.add(faceResult);
-      setFaceCalibrationProgress(calibrator.progress);
-      if (calibrator.ready) {
-        const baseline = calibrator.finish();
-        faceCalibratorRef.current = null;
-        const nextFaceControls = validateFaceControlSettings({
-          ...faceControlsRef.current,
-          baseline,
-          updatedAt: new Date().toISOString(),
-        });
-        faceControlsRef.current = nextFaceControls;
-        faceEngineRef.current = createFaceControlEngine(nextFaceControls, profileRef.current.gestures);
-        setFaceControls(nextFaceControls);
-        setFaceIntent(faceEngineRef.current.snapshot());
-        setFaceCalibrationProgress(1);
-        setFaceCalibrationMessage("Neutral face saved. Deliberate eye and facial movements can now speak their assigned phrases.");
-        void deviceStorage.saveFaceControlSettings(nextFaceControls).catch(() => {
-          setFaceCalibrationMessage("Face calibration worked for this session but could not be saved on this device.");
-        });
+    const faceLandmarks = faceResult.faceLandmarks?.[0] ?? null;
+    if (faceLandmarks && faceLandmarks.length >= 478) {
+      const calibrator = neurofaceCalibratorRef.current;
+      if (calibrator) {
+        if (calibrator.add(faceLandmarks)) setFaceCalibrationProgress(calibrator.progress);
+        if (calibrator.ready) {
+          const twin = calibrator.finish();
+          neurofaceCalibratorRef.current = null;
+          neurofaceEngineRef.current = new NeuroFaceRuleEngine(twin);
+          setNeurofaceStatus(neurofaceEngineRef.current.snapshot());
+          setFaceCalibrationProgress(1);
+          setFaceCalibrationMessage("Face baseline learned automatically. Blink 5× for water · smile when feeling good · head right 5× for food.");
+        }
+      } else if (neurofaceEnabledRef.current) {
+        const { status, trigger } = neurofaceEngineRef.current.step(faceLandmarks, now);
+        setNeurofaceStatus(status);
+        if (trigger) speakNeurofaceTrigger(trigger.rule);
       }
-    } else if (faceControlsRef.current.enabled) {
-      const nextFaceIntent = faceEngineRef.current.step(faceResult, now);
-      setFaceIntent(nextFaceIntent);
-      if (nextFaceIntent.trigger) {
-        const gestureId = faceControlsRef.current.bindings[nextFaceIntent.trigger.id];
-        const gesture = profileRef.current.gestures.find((item) => item.id === gestureId);
-        if (gesture?.phrase) speakGesture(gesture, "face");
-      }
+    } else if (!facePresent) {
+      neurofaceEngineRef.current.step(null, now);
     }
 
     let result: ReturnType<HandLandmarker["detectForVideo"]>;
@@ -1057,7 +1094,7 @@ export function FingerSpeakApp() {
       }
     }
     animationRef.current = requestAnimationFrame(() => processFrameRef.current());
-  }, [drawHand, speakGesture, stopCameraAfterVisionFailure]);
+  }, [drawHand, speakGesture, speakNeurofaceTrigger, stopCameraAfterVisionFailure]);
 
   useEffect(() => {
     processFrameRef.current = processFrame;
@@ -1392,38 +1429,33 @@ export function FingerSpeakApp() {
 
   const startFaceCalibration = useCallback(() => {
     if (cameraStatus !== "ready") {
-      setFaceCalibrationMessage("Start the private camera first, then calibrate a relaxed neutral face.");
+      setFaceCalibrationMessage("Start the private camera first — your relaxed face becomes the baseline automatically.");
       return;
     }
-    faceCalibratorRef.current = new NeutralFaceCalibrator(45, 120);
-    faceEngineRef.current = createFaceControlEngine(faceControlsRef.current, profileRef.current.gestures);
+    neurofaceCalibratorRef.current = new NeuroFaceAutoCalibrator();
+    neurofaceEngineRef.current = new NeuroFaceRuleEngine();
+    setNeurofaceStatus(neurofaceEngineRef.current.snapshot());
     setFaceCalibrationProgress(0);
-    setFaceIntent(faceEngineRef.current.snapshot());
-    setFaceCalibrationMessage("Look naturally toward the camera and relax your eyes, eyebrows, and mouth for about four seconds.");
+    setFaceCalibrationMessage("Relax and look at the camera for about two seconds while your baseline is learned.");
   }, [cameraStatus]);
 
-  const updateFaceControl = useCallback(async (
-    intentId: FaceIntentId | "enabled",
+  const updateNeurofaceRule = useCallback(async (
+    rule: NeuroFaceRuleId | "enabled",
     value: string | boolean,
   ) => {
-    const next = validateFaceControlSettings({
-      ...faceControlsRef.current,
-      enabled: intentId === "enabled" ? Boolean(value) : faceControlsRef.current.enabled,
-      bindings: intentId === "enabled"
-        ? faceControlsRef.current.bindings
-        : { ...faceControlsRef.current.bindings, [intentId]: value === "" ? null : String(value) },
-      updatedAt: new Date().toISOString(),
-    });
-    faceControlsRef.current = next;
-    faceEngineRef.current = createFaceControlEngine(next, profileRef.current.gestures);
-    setFaceIntent(faceEngineRef.current.snapshot());
-    setFaceControls(next);
-    try {
-      await deviceStorage.saveFaceControlSettings(next);
-      setFaceCalibrationMessage("Face and eye movement controls were saved on this device.");
-    } catch {
-      setFaceCalibrationMessage("The face-control change is active for this session but could not be saved.");
+    if (rule === "enabled") {
+      const enabled = Boolean(value);
+      neurofaceEnabledRef.current = enabled;
+      setNeurofaceEnabled(enabled);
+      try { localStorage.setItem("neuroface.enabled.v1", JSON.stringify(enabled)); } catch { /* session-only */ }
+      setFaceCalibrationMessage(enabled ? "Face rules are on." : "Face rules paused. Touch phrases still work.");
+      return;
     }
+    const next = { ...neurofaceBindingsRef.current, [rule]: value === "" ? null : String(value) };
+    neurofaceBindingsRef.current = next;
+    setNeurofaceBindings(next);
+    try { localStorage.setItem("neuroface.bindings.v1", JSON.stringify(next)); } catch { /* session-only */ }
+    setFaceCalibrationMessage("Face rule phrase saved on this device.");
   }, []);
 
   const saveSpeechPreferences = useCallback(async () => {
@@ -1709,7 +1741,7 @@ export function FingerSpeakApp() {
                     <div className="camera-placeholder">
                       <span className="hand-orbit">✋</span>
                       <strong>{cameraStatus === "loading" ? "Preparing recognition…" : "Camera stays private"}</strong>
-                      <p>Only movement landmarks are processed for deliberate hand, eye, brow, and mouth controls. Video frames never leave this device.</p>
+                      <p>Only movement landmarks are processed for deliberate hand movements and auto-calibrated face rules. Video frames never leave this device.</p>
                     </div>
                   )}
                   <div className="camera-status"><span className={tracking ? "status-dot live" : "status-dot"} />{cameraMessage}</div>
@@ -1719,7 +1751,7 @@ export function FingerSpeakApp() {
                     {faceTracking ? "🟢 Face in frame" : "🟡 Finding face"}
                   </span>
                   <span className="hud-status-badge">
-                    👁 Eyes: {faceIntent.candidateId === "blink" ? "Blink" : "Tracking ready"}
+                    👁 Face rules: {neurofaceStatus.calibrated ? "Watching" : `Calibrating ${Math.round(faceCalibrationProgress * 100)}%`}
                   </span>
                   <span className="hud-status-badge">
                     🫁 Breathing: Normal
@@ -1727,9 +1759,9 @@ export function FingerSpeakApp() {
                   <span className="hud-status-badge">
                     👄 Tremor: Monitored
                   </span>
-                  {faceIntent.candidateId && (
+                  {neurofaceStatus.lastTrigger && (
                     <span className="hud-status-badge active-signal">
-                      ⚡ Signal: {FACE_INTENT_LABELS[faceIntent.candidateId]}
+                      ⚡ Signal: {NEUROFACE_RULE_LABELS[neurofaceStatus.lastTrigger.rule]}
                     </span>
                   )}
                 </div>
@@ -1867,14 +1899,14 @@ export function FingerSpeakApp() {
               </div>
 
               <div className="intent-card face-intent-card">
-                <div className="intent-topline"><span>EYE &amp; FACE CONTROL</span><span className={`intent-state state-${faceIntent.phase.toLowerCase()}`}>{faceIntent.phase.replaceAll("_", " ")}</span></div>
+                <div className="intent-topline"><span>FACE RULES · AUTO-CALIBRATED</span><span className={`intent-state state-${neurofaceStatus.calibrated ? "ready" : "calibrating"}`}>{neurofaceStatus.calibrated ? "WATCHING" : "CALIBRATING"}</span></div>
                 <div className="recognized-gesture">
-                  <div className={`gesture-orb ${currentFaceGesture?.risk === "emergency" ? "danger" : ""}`} style={{ "--progress": `${Math.round(faceIntent.progress * 360)}deg` } as React.CSSProperties}>
-                    <span>{faceIntent.candidateId ? currentFaceGesture?.icon ?? "◉" : "◉"}</span>
+                  <div className={`gesture-orb ${currentFaceGesture?.risk === "emergency" ? "danger" : ""}`} style={{ "--progress": `${Math.round(faceCalibrationProgress * 360)}deg` } as React.CSSProperties}>
+                    <span>{currentFaceGesture ? currentFaceGesture.icon : "◉"}</span>
                   </div>
-                  <div><small>{faceControls.baseline ? "Patient-calibrated movement" : "Neutral calibration needed"}</small><strong>{faceIntent.candidateId ? `${FACE_INTENT_LABELS[faceIntent.candidateId]} → ${currentFaceGesture?.name ?? "Unassigned"}` : faceTracking ? "Watching deliberate movements" : "Keep your face visible"}</strong><p>{faceControls.enabled ? "Blink, gaze, brow, and mouth controls are on" : "Face controls are paused"} · no emotion or medical inference</p></div>
+                  <div><small>{neurofaceStatus.calibrated ? "Baseline learned automatically" : "Learning your relaxed face…"}</small><strong>{neurofaceStatus.lastTrigger ? `${NEUROFACE_RULE_LABELS[neurofaceStatus.lastTrigger.rule]} → ${currentFaceGesture?.name ?? "Spoken"}` : faceTracking ? "Watching face rules" : "Keep your face visible"}</strong><p>{neurofaceEnabled ? "5 blinks water · smile good · abnormality help · head-right food" : "Face rules paused"} · movement patterns only</p></div>
                 </div>
-                <div className="confidence-track" aria-label={`Face movement confirmation ${Math.round(faceIntent.progress * 100)} percent`}><span style={{ width: `${faceIntent.progress * 100}%` }} /></div>
+                <div className="confidence-track" aria-label={`Face auto-calibration ${Math.round(faceCalibrationProgress * 100)} percent`}><span style={{ width: `${faceCalibrationProgress * 100}%` }} /></div>
               </div>
 
               <div className="phrase-header"><div><span className="eyebrow">TOUCH BACKUP</span><h2>Say it now</h2></div><span className="voice-status" role="status">{voiceMessage}</span></div>
@@ -1938,20 +1970,20 @@ export function FingerSpeakApp() {
                 </div>
                 <section className="face-calibration-card" aria-labelledby="face-calibration-title">
                   <div className="face-calibration-head">
-                    <div><span className="eyebrow">EYE &amp; FACE MOVEMENTS</span><h2 id="face-calibration-title">Calibrate your neutral position</h2></div>
-                    <button className="button primary" type="button" onClick={startFaceCalibration} disabled={cameraStatus !== "ready"}>Calibrate neutral face</button>
+                    <div><span className="eyebrow">FACE RULES</span><h2 id="face-calibration-title">Your face calibrates itself</h2></div>
+                    <button className="button primary" type="button" onClick={startFaceCalibration} disabled={cameraStatus !== "ready"}>Reset face baseline</button>
                   </div>
-                  <p>Look naturally at the front camera while the bar fills. FingerSpeak detects only deliberate blink, gaze, eyebrow, and mouth movements; it does not infer emotion, pain, identity, or muscle health.</p>
-                  <div className="progress-track" aria-label={`Face calibration ${Math.round(faceCalibrationProgress * 100)} percent`}><span style={{ width: `${faceCalibrationProgress * 100}%` }} /></div>
+                  <p>Blink 5 times for water · hold a smile when feeling good · turn your head right 5 times for food. A sustained one-sided droop or distress movement calls for emergency help. No manual setup — your relaxed face is the baseline.</p>
+                  <div className="progress-track" aria-label={`Face auto-calibration ${Math.round(faceCalibrationProgress * 100)} percent`}><span style={{ width: `${faceCalibrationProgress * 100}%` }} /></div>
                   <div className="toggle-row">
-                    <span><strong>Use calibrated face controls</strong><small>Mapped movements speak immediately after the hold and release safeguards.</small></span>
-                    <button className="switch" type="button" role="switch" aria-label="Use face and eye movement controls" aria-checked={faceControls.enabled} onClick={() => void updateFaceControl("enabled", !faceControls.enabled)}><i /></button>
+                    <span><strong>Use auto-calibrated face rules</strong><small>Detected rules speak immediately; emergency help also alerts your caregiver.</small></span>
+                    <button className="switch" type="button" role="switch" aria-label="Use auto-calibrated face rules" aria-checked={neurofaceEnabled} onClick={() => void updateNeurofaceRule("enabled", !neurofaceEnabled)}><i /></button>
                   </div>
                   <div className="face-binding-grid">
-                    {(Object.keys(FACE_INTENT_LABELS) as FaceIntentId[]).map((intentId) => (
-                      <label key={intentId}>{FACE_INTENT_LABELS[intentId]}
-                        <select value={faceControls.bindings[intentId] ?? ""} onChange={(event) => void updateFaceControl(intentId, event.target.value)}>
-                          <option value="">No phrase</option>
+                    {NEUROFACE_RULE_IDS.map((ruleId) => (
+                      <label key={ruleId}>{NEUROFACE_RULE_LABELS[ruleId]}
+                        <select value={neurofaceBindings[ruleId] ?? ""} onChange={(event) => void updateNeurofaceRule(ruleId, event.target.value)}>
+                          <option value="">Built-in phrase</option>
                           {profile.gestures.filter((gesture) => gesture.phrase).map((gesture) => <option key={gesture.id} value={gesture.id}>{gesture.name}: {gesture.phrase}</option>)}
                         </select>
                       </label>
