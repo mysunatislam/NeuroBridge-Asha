@@ -20,18 +20,19 @@ class FaceControlMainPage extends StatefulWidget {
 
 class _FaceControlMainPageState extends State<FaceControlMainPage> {
   int _selectedIndex = 0;
-  bool _showMonitor = false; // Toggle between Screen 10 and Screen 11
+  bool _showMonitor = false;
 
   StreamSubscription<PatientSignal>? _signalSub;
   StreamSubscription<MonitorStatus>? _monitorSub;
 
-  String _currentGaze = 'Right';
-  String _currentBlink = 'Detected';
-  String _currentMouth = 'Neutral';
-  String _currentHeadPose = 'Stable';
+  // Live raw status — updated every camera frame from the ML engine
+  MonitorStatus? _liveStatus;
 
-  /// Rolling 24-bar history for the live signal graph, driven by real
-  /// MonitorStatus events. Each entry is a bar height in the range [4, 45].
+  // Last detected signal — shown with a timestamp label
+  PatientSignalKind? _lastSignalKind;
+  DateTime? _lastSignalAt;
+
+  /// Rolling 24-bar signal history for the graph, driven by real MonitorStatus.
   final List<double> _signalHistory = List<double>.filled(24, 4.0);
 
   final List<Map<String, dynamic>> _faceActions = [
@@ -70,48 +71,48 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
   @override
   void initState() {
     super.initState();
+
+    // ── Signal stream: navigation + selection events ──────────────────────
     _signalSub = widget.services.monitor.signals.listen((signal) {
       if (!mounted) return;
       setState(() {
+        _lastSignalKind = signal.kind;
+        _lastSignalAt = DateTime.now();
+
         if (signal.kind == PatientSignalKind.eyeLookRight) {
-          _currentGaze = 'Right';
           _selectedIndex = (_selectedIndex + 1) % _faceActions.length;
         } else if (signal.kind == PatientSignalKind.eyeLookLeft) {
-          _currentGaze = 'Left';
-          _selectedIndex = (_selectedIndex - 1 + _faceActions.length) % _faceActions.length;
-        } else if (signal.kind == PatientSignalKind.headLeft || signal.kind == PatientSignalKind.headRight) {
-          _currentHeadPose = signal.kind == PatientSignalKind.headLeft ? 'Left' : 'Right';
-        } else if (signal.kind == PatientSignalKind.blink || signal.kind == PatientSignalKind.smile) {
-          _currentBlink = 'Detected';
+          _selectedIndex =
+              (_selectedIndex - 1 + _faceActions.length) % _faceActions.length;
+        } else if (signal.kind == PatientSignalKind.blink ||
+            signal.kind == PatientSignalKind.smile) {
           _triggerSelectedAction();
         }
       });
     });
 
+    // ── Status stream: every camera frame from real ML Kit inference ───────
     _monitorSub = widget.services.monitor.statuses.listen((status) {
       if (!mounted) return;
       setState(() {
-        if (status.faceDetected) {
-          if (status.smileProbability != null && status.smileProbability! > 0.3) {
-            _currentMouth = 'Smiling';
-          } else {
-            _currentMouth = 'Neutral';
-          }
-          if (status.headYaw != null) {
-            _currentHeadPose = status.headYaw!.abs() > 15 ? 'Turned' : 'Stable';
-          }
+        _liveStatus = status;
 
-          // Compute a composite signal height from real facial metrics and
-          // push it into the rolling 24-bar history buffer.
+        if (status.faceDetected) {
+          // Push composite signal height into rolling bar graph buffer
           final smileH = (status.smileProbability ?? 0.0) * 20.0;
-          final eyeH = ((status.leftEyeOpen ?? 0.5) +
-                      (status.rightEyeOpen ?? 0.5)) /
+          final eyeH =
+              ((status.leftEyeOpen ?? 0.5) + (status.rightEyeOpen ?? 0.5)) /
                   2.0 *
                   15.0;
           final yawH = ((status.headYaw?.abs() ?? 0.0) / 90.0) * 10.0;
           final barH = (smileH + eyeH + yawH).clamp(4.0, 45.0);
           _signalHistory.removeAt(0);
           _signalHistory.add(barH);
+        } else {
+          // Face lost — slowly decay bars toward baseline
+          for (int i = 0; i < _signalHistory.length; i++) {
+            _signalHistory[i] = (_signalHistory[i] * 0.85).clamp(4.0, 45.0);
+          }
         }
       });
     });
@@ -150,6 +151,84 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
     }
   }
 
+  // ── Computed live display values from raw MonitorStatus ─────────────────
+
+  /// Eye openness as a percentage string, e.g. "78%" — updates every frame.
+  String get _eyeOpenStr {
+    final s = _liveStatus;
+    if (s == null || !s.faceDetected) return '— %';
+    final l = s.leftEyeOpen;
+    final r = s.rightEyeOpen;
+    if (l == null && r == null) return '— %';
+    final avg = ((l ?? r ?? 0) + (r ?? l ?? 0)) / 2.0;
+    return '${(avg * 100).round()}%';
+  }
+
+  /// Head yaw with direction, e.g. "−12° L" or "+24° R". Updates every frame.
+  String get _headYawStr {
+    final s = _liveStatus;
+    if (s == null || !s.faceDetected) return '—°';
+    final yaw = s.headYaw;
+    if (yaw == null) return '—°';
+    final abs = yaw.abs();
+    final dir = yaw < -5
+        ? ' L'
+        : yaw > 5
+            ? ' R'
+            : ' ↑';
+    return '${abs.toStringAsFixed(1)}°$dir';
+  }
+
+  /// Smile probability as a percentage string. Updates every frame.
+  String get _smileStr {
+    final s = _liveStatus;
+    if (s == null || !s.faceDetected) return '—%';
+    final p = s.smileProbability;
+    if (p == null) return '—%';
+    return '${(p * 100).round()}%';
+  }
+
+  /// Last detected signal kind as a readable label with age indicator.
+  String get _lastSignalStr {
+    if (_lastSignalKind == null) return 'Listening...';
+    final age = _lastSignalAt != null
+        ? DateTime.now().difference(_lastSignalAt!).inSeconds
+        : 99;
+    final label = switch (_lastSignalKind!) {
+      PatientSignalKind.blink => 'Blink',
+      PatientSignalKind.slowBlink => 'Long Blink',
+      PatientSignalKind.rapidBlink => 'Rapid Blink',
+      PatientSignalKind.smile => 'Smile',
+      PatientSignalKind.eyeLookLeft => 'Gaze Left',
+      PatientSignalKind.eyeLookRight => 'Gaze Right',
+      PatientSignalKind.eyebrowsUp => 'Brow Raise',
+      PatientSignalKind.headLeft => 'Head Left',
+      PatientSignalKind.headRight => 'Head Right',
+      _ => _lastSignalKind!.name,
+    };
+    return age < 3 ? '✓ $label' : '$label (${age}s ago)';
+  }
+
+  /// Face detection status dot color.
+  Color get _faceStatusColor {
+    final s = _liveStatus;
+    if (s == null) return const Color(0xFF64748B);
+    if (s.lifecycle == MonitorLifecycle.active && s.faceDetected) {
+      return const Color(0xFF10B981); // green
+    }
+    if (s.faceDetected) return const Color(0xFFF59E0B); // amber — face but not active
+    return const Color(0xFFFB7185); // red — no face
+  }
+
+  /// Status message below the signal graph.
+  String get _statusBannerText {
+    final s = _liveStatus;
+    if (s == null) return 'Starting camera...';
+    if (!s.faceDetected) return 'No face detected — look at camera';
+    if (s.lifecycle != MonitorLifecycle.active) return 'Camera warming up...';
+    return 'Live — face detected & tracking';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -173,18 +252,18 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
     );
   }
 
-  // --- Screen 10: Main Screen (Face Control Mode) ---
+  // ── Screen 10: Main Face Control Mode ────────────────────────────────────
   Widget _buildScreen10Main() {
     return Column(
       children: [
-        // Top Bar
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                icon: const Icon(Icons.arrow_back_ios_new,
+                    color: Colors.white, size: 20),
                 onPressed: () {
                   if (widget.onBack != null) {
                     widget.onBack!();
@@ -202,7 +281,8 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.analytics_outlined, color: Color(0xFF38BDF8)),
+                icon: const Icon(Icons.analytics_outlined,
+                    color: Color(0xFF38BDF8)),
                 tooltip: 'Live Detection Monitor',
                 onPressed: () => setState(() => _showMonitor = true),
               ),
@@ -210,7 +290,6 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
           ),
         ),
 
-        // Asha Avatar with Glowing Aura
         Container(
           width: 90,
           height: 90,
@@ -233,7 +312,6 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
 
         const SizedBox(height: 16),
 
-        // Action Cards List (Screens 10)
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -251,7 +329,8 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 18, vertical: 16),
                   decoration: BoxDecoration(
                     color: isSelected
                         ? const Color(0xFF1E293B).withValues(alpha: 0.85)
@@ -279,7 +358,8 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
                           shape: BoxShape.circle,
                           color: color.withValues(alpha: 0.2),
                         ),
-                        child: Icon(item['icon'] as IconData, color: color, size: 22),
+                        child:
+                            Icon(item['icon'] as IconData, color: color, size: 22),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -288,7 +368,9 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: isSelected ? Colors.white : const Color(0xFFE2E8F0),
+                            color: isSelected
+                                ? Colors.white
+                                : const Color(0xFFE2E8F0),
                           ),
                         ),
                       ),
@@ -305,7 +387,6 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
           ),
         ),
 
-        // Bottom Navigation Guidance Text matching Screen 10
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: Column(
@@ -325,14 +406,19 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => FacialCalibrationFlow(services: widget.services),
+                      builder: (_) =>
+                          FacialCalibrationFlow(services: widget.services),
                     ),
                   );
                 },
-                icon: const Icon(Icons.tune_rounded, size: 16, color: Color(0xFF38BDF8)),
+                icon: const Icon(Icons.tune_rounded,
+                    size: 16, color: Color(0xFF38BDF8)),
                 label: const Text(
                   'Recalibrate Facial Signals',
-                  style: TextStyle(color: Color(0xFF38BDF8), fontSize: 13, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                      color: Color(0xFF38BDF8),
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -342,113 +428,197 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
     );
   }
 
-  // --- Screen 11: Facial Input Monitor (Real-time Feedback) ---
+  // ── Screen 11: Live Facial Input Monitor ─────────────────────────────────
   Widget _buildScreen11Monitor() {
+    final faceActive = _liveStatus?.faceDetected == true &&
+        _liveStatus?.lifecycle == MonitorLifecycle.active;
+
     return Column(
       children: [
-        // Top Bar
+        // Top bar
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                icon: const Icon(Icons.arrow_back_ios_new,
+                    color: Colors.white, size: 20),
                 onPressed: () => setState(() => _showMonitor = false),
               ),
-              const Text(
-                'Live Detection',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
+              Row(
+                children: [
+                  // Live face status dot
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _faceStatusColor,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _faceStatusColor.withValues(alpha: 0.6),
+                          blurRadius: 6,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Live Detection',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 48), // balance
+              const SizedBox(width: 48),
             ],
           ),
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
-        // 4 Large Live Telemetry Cards
         Expanded(
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             children: [
-              _buildMonitorCard(
+              // ── 4 live telemetry cards ──────────────────────────────────
+
+              // 1. Eye Openness (EAR-analog %) — updates every frame
+              _buildLiveCard(
                 icon: Icons.remove_red_eye_rounded,
-                title: 'Eye Gaze',
-                value: _currentGaze,
-                valueColor: const Color(0xFF10B981),
+                title: 'Eye Openness',
+                value: _eyeOpenStr,
+                subtitle: _liveStatus?.faceDetected == true
+                    ? 'L: ${((_liveStatus!.leftEyeOpen ?? 0) * 100).round()}%  '
+                        'R: ${((_liveStatus!.rightEyeOpen ?? 0) * 100).round()}%'
+                    : 'No face',
+                valueColor: faceActive
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFF64748B),
+                active: faceActive,
               ),
+
               const SizedBox(height: 12),
-              _buildMonitorCard(
-                icon: Icons.visibility_rounded,
-                title: 'Blink',
-                value: _currentBlink,
-                valueColor: const Color(0xFF10B981),
-              ),
-              const SizedBox(height: 12),
-              _buildMonitorCard(
-                icon: Icons.face_rounded,
-                title: 'Mouth',
-                value: _currentMouth,
-                valueColor: const Color(0xFF94A3B8),
-              ),
-              const SizedBox(height: 12),
-              _buildMonitorCard(
+
+              // 2. Head Yaw — live angle with direction
+              _buildLiveCard(
                 icon: Icons.accessibility_new_rounded,
                 title: 'Head Pose',
-                value: _currentHeadPose,
-                valueColor: const Color(0xFF94A3B8),
+                value: _headYawStr,
+                subtitle: _liveStatus?.headPitch != null
+                    ? 'Pitch: ${_liveStatus!.headPitch!.toStringAsFixed(1)}°'
+                    : 'No pitch data',
+                valueColor: faceActive
+                    ? const Color(0xFF38BDF8)
+                    : const Color(0xFF64748B),
+                active: faceActive,
               ),
-              const SizedBox(height: 28),
 
-              // Live Signal Graph
+              const SizedBox(height: 12),
+
+              // 3. Smile probability — live percentage
+              _buildLiveCard(
+                icon: Icons.face_rounded,
+                title: 'Smile Probability',
+                value: _smileStr,
+                subtitle: (_liveStatus?.smileProbability ?? 0) > 0.4
+                    ? 'Smile detected!'
+                    : 'Neutral',
+                valueColor: (_liveStatus?.smileProbability ?? 0) > 0.4
+                    ? const Color(0xFFFBBF24)
+                    : faceActive
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
+                active: faceActive,
+              ),
+
+              const SizedBox(height: 12),
+
+              // 4. Last detected signal with age
+              _buildLiveCard(
+                icon: Icons.sensors_rounded,
+                title: 'Last Signal',
+                value: _lastSignalStr,
+                subtitle: _liveStatus?.lifecycle == MonitorLifecycle.active
+                    ? 'Monitor active'
+                    : 'Waiting...',
+                valueColor: _lastSignalKind != null &&
+                        _lastSignalAt != null &&
+                        DateTime.now().difference(_lastSignalAt!).inSeconds < 3
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFF94A3B8),
+                active: faceActive,
+                valueFontSize: 13,
+              ),
+
+              const SizedBox(height: 24),
+
+              // ── Live signal graph ────────────────────────────────────────
               Container(
                 height: 70,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A).withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: const Color(0xFF334155)),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                   children: List.generate(24, (i) {
-                    return Container(
-                      width: 4,
-                      height: _signalHistory[i],
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    );
-                  }),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: List.generate(24, (i) {
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 80),
+                                width: 4,
+                                height: _signalHistory[i],
+                                decoration: BoxDecoration(
+                                  color: faceActive
+                                      ? const Color(0xFF10B981)
+                                      : const Color(0xFF334155),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
 
-              // Status Banner matching Screen 11
-              const Center(
+              // ── Status banner ────────────────────────────────────────────
+              Center(
                 child: Text(
-                  'All systems working perfectly!',
+                  _statusBannerText,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF34D399),
+                    color: _faceStatusColor,
                     letterSpacing: 0.2,
                   ),
                 ),
               ),
+
+              const SizedBox(height: 20),
             ],
           ),
         ),
 
-        // Bottom Done Button
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
           child: SizedBox(
@@ -459,9 +629,11 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF3B82F6),
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24)),
               ),
-              child: const Text('Back to Controls', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text('Back to Controls',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
         ),
@@ -469,40 +641,63 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
     );
   }
 
-  Widget _buildMonitorCard({
+  Widget _buildLiveCard({
     required IconData icon,
     required String title,
     required String value,
+    required String subtitle,
     required Color valueColor,
+    required bool active,
+    double valueFontSize = 18,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B).withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF334155)),
+        border: Border.all(
+          color: active
+              ? const Color(0xFF334155)
+              : const Color(0xFF1E293B),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
             children: [
-              Icon(icon, color: const Color(0xFF38BDF8), size: 24),
+              Icon(icon,
+                  color: active
+                      ? const Color(0xFF38BDF8)
+                      : const Color(0xFF334155),
+                  size: 24),
               const SizedBox(width: 14),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           Text(
             value,
             style: TextStyle(
-              fontSize: 16,
+              fontSize: valueFontSize,
               fontWeight: FontWeight.w800,
               color: valueColor,
             ),

@@ -6,6 +6,7 @@ import 'package:fingerspeak_mobile/intent/frame_builder.dart';
 import 'package:fingerspeak_mobile/models/patient_signal.dart';
 import 'package:fingerspeak_mobile/services/face_camera_frame.dart';
 import 'package:fingerspeak_mobile/services/respiration_rate_estimator.dart';
+import 'package:fingerspeak_mobile/services/web_face_bridge.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -422,9 +423,20 @@ class MlKitPatientSignalMonitor
     final binding = WidgetsBinding.instance;
     _lifecycleIntent.update(binding.lifecycleState ?? AppLifecycleState.resumed);
     binding.addObserver(this);
+    if (kIsWeb) {
+      _webStatusSub = _webFaceBridge.statuses.listen((status) {
+        _publishStatus(status);
+      });
+      _webSignalSub = _webFaceBridge.signals.listen((signal) {
+        if (!_closed) _signals.add(signal);
+      });
+    }
   }
 
   final FaceDetector _detector;
+  final WebFaceBridge _webFaceBridge = WebFaceBridge();
+  StreamSubscription<MonitorStatus>? _webStatusSub;
+  StreamSubscription<PatientSignal>? _webSignalSub;
   final _signals = StreamController<PatientSignal>.broadcast();
   final _statuses = StreamController<MonitorStatus>.broadcast();
   final _observations = StreamController<IntentObservation>.broadcast();
@@ -579,6 +591,9 @@ class MlKitPatientSignalMonitor
   @override
   Future<void> start() async {
     if (_closed) throw StateError('Monitor has been disposed.');
+    if (kIsWeb) {
+      _webFaceBridge.start();
+    }
     _lifecycleIntent.requestStart();
     await _queueCameraTransition(_startCamera);
   }
@@ -1883,6 +1898,9 @@ class MlKitPatientSignalMonitor
 
   @override
   Future<void> stop() async {
+    if (kIsWeb) {
+      _webFaceBridge.stop();
+    }
     _lifecycleIntent.requestStop();
     ++_streamGeneration;
     _resetTemporalTracking();
@@ -1907,6 +1925,9 @@ class MlKitPatientSignalMonitor
   Future<void> dispose() async {
     if (_closed) return;
     _closed = true;
+    _webStatusSub?.cancel();
+    _webSignalSub?.cancel();
+    _webFaceBridge.dispose();
     _lifecycleIntent.dispose();
     WidgetsBinding.instance.removeObserver(this);
     ++_streamGeneration;
