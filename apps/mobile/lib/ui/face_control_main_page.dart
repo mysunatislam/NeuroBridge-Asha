@@ -30,6 +30,10 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
   String _currentMouth = 'Neutral';
   String _currentHeadPose = 'Stable';
 
+  /// Rolling 24-bar history for the live signal graph, driven by real
+  /// MonitorStatus events. Each entry is a bar height in the range [4, 45].
+  final List<double> _signalHistory = List<double>.filled(24, 4.0);
+
   final List<Map<String, dynamic>> _faceActions = [
     {
       'title': 'I need water',
@@ -96,6 +100,18 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
           if (status.headYaw != null) {
             _currentHeadPose = status.headYaw!.abs() > 15 ? 'Turned' : 'Stable';
           }
+
+          // Compute a composite signal height from real facial metrics and
+          // push it into the rolling 24-bar history buffer.
+          final smileH = (status.smileProbability ?? 0.0) * 20.0;
+          final eyeH = ((status.leftEyeOpen ?? 0.5) +
+                      (status.rightEyeOpen ?? 0.5)) /
+                  2.0 *
+                  15.0;
+          final yawH = ((status.headYaw?.abs() ?? 0.0) / 90.0) * 10.0;
+          final barH = (smileH + eyeH + yawH).clamp(4.0, 45.0);
+          _signalHistory.removeAt(0);
+          _signalHistory.add(barH);
         }
       });
     });
@@ -401,15 +417,10 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(24, (i) {
-                    final heights = [
-                      12.0, 20.0, 35.0, 18.0, 42.0, 30.0, 15.0, 28.0,
-                      38.0, 22.0, 40.0, 26.0, 14.0, 32.0, 45.0, 20.0,
-                      16.0, 34.0, 28.0, 18.0, 24.0, 38.0, 19.0, 25.0
-                    ];
+                   children: List.generate(24, (i) {
                     return Container(
                       width: 4,
-                      height: heights[i],
+                      height: _signalHistory[i],
                       decoration: BoxDecoration(
                         color: const Color(0xFF10B981),
                         borderRadius: BorderRadius.circular(2),
