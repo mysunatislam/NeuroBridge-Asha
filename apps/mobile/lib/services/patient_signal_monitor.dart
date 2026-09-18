@@ -37,6 +37,8 @@ abstract interface class PatientSignalMonitor {
   void setSignalSensitivities(
     Map<PatientSignalKind, double> sensitivities,
   );
+  void triggerWebGesture(String gesture);
+  void resetAutoCalibration();
 }
 
 @visibleForTesting
@@ -426,6 +428,24 @@ class MlKitPatientSignalMonitor
     if (kIsWeb) {
       _webStatusSub = _webFaceBridge.statuses.listen((status) {
         _publishStatus(status);
+        if (status.faceDetected && !_closed && !_observations.isClosed) {
+          _publishObservation(IntentObservation(
+            observedAt: status.observedAt ?? DateTime.now(),
+            faceDetected: status.faceDetected,
+            leftEyeOpen: status.leftEyeOpen ?? 0.85,
+            rightEyeOpen: status.rightEyeOpen ?? 0.85,
+            mouthDistance: status.mouthDistance ?? 0.08,
+            smileProbability: status.smileProbability ?? 0.05,
+            eyebrowDistance: status.eyebrowDistance ?? 0.18,
+            headYaw: status.headYaw ?? 0.0,
+            headPitch: status.headPitch ?? 0.0,
+            contourMotionEnergy: 0.05,
+            contourDirectionConsistency: 0.85,
+            lipMotion: (status.mouthDistance ?? 0.08) * 0.5,
+            mouthAsymmetry:
+                (1.0 - (status.smileProbability ?? 0.0) * 0.3).clamp(0.0, 1.0),
+          ));
+        }
       });
       _webSignalSub = _webFaceBridge.signals.listen((signal) {
         if (!_closed) _signals.add(signal);
@@ -591,10 +611,11 @@ class MlKitPatientSignalMonitor
   @override
   Future<void> start() async {
     if (_closed) throw StateError('Monitor has been disposed.');
+    _lifecycleIntent.requestStart();
     if (kIsWeb) {
       _webFaceBridge.start();
+      return;
     }
-    _lifecycleIntent.requestStart();
     await _queueCameraTransition(_startCamera);
   }
 
@@ -626,7 +647,7 @@ class MlKitPatientSignalMonitor
   }
 
   Future<void> _startCamera() async {
-    if (!_lifecycleIntent.shouldRun || _closed) return;
+    if (kIsWeb || !_lifecycleIntent.shouldRun || _closed) return;
     if (_controller?.value.isStreamingImages ?? false) {
       _publishStatus(_currentStatus);
       return;
@@ -1898,14 +1919,30 @@ class MlKitPatientSignalMonitor
 
   @override
   Future<void> stop() async {
+    _lifecycleIntent.requestStop();
     if (kIsWeb) {
       _webFaceBridge.stop();
+      _publishStatus(const MonitorStatus.stopped());
+      return;
     }
-    _lifecycleIntent.requestStop();
     ++_streamGeneration;
     _resetTemporalTracking();
     _publishStatus(const MonitorStatus.stopped());
     await _queueCameraTransition(_stopCamera);
+  }
+
+  @override
+  void triggerWebGesture(String gesture) {
+    if (kIsWeb) {
+      _webFaceBridge.triggerGesture(gesture);
+    }
+  }
+
+  @override
+  void resetAutoCalibration() {
+    if (kIsWeb) {
+      _webFaceBridge.resetCalibration();
+    }
   }
 
   Future<void> _stopCamera() async {
@@ -2039,6 +2076,12 @@ class NoOpPatientSignalMonitor implements PatientSignalMonitor {
   Future<void> stop() async {
     _publishStatus(const MonitorStatus.stopped());
   }
+
+  @override
+  void triggerWebGesture(String gesture) {}
+
+  @override
+  void resetAutoCalibration() {}
 
   @override
   Future<void> dispose() async {

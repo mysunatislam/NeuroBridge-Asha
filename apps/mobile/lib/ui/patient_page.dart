@@ -79,6 +79,22 @@ class _PatientPageState extends State<PatientPage> {
       if (!mounted) return;
       setState(() {
         _lastSignal = signal;
+        final intent = signal.metadata?['intent'] as String?;
+        if (intent == 'water') {
+          _speakQuickNeed('I want water', 'Water');
+          return;
+        } else if (intent == 'feeling_good') {
+          _speakQuickNeed('I am feeling good', 'Feeling Good');
+          return;
+        } else if (intent == 'food') {
+          _speakQuickNeed('Give me some food', 'Food');
+          return;
+        } else if (intent == 'abnormality' ||
+            signal.kind == PatientSignalKind.seizureAlert) {
+          _requestEmergencyHelp();
+          return;
+        }
+
         if (_accessMethod == PatientAccessMethod.faceEyesAndHead) {
           if (signal.kind == PatientSignalKind.eyeLookRight) {
             _faceDwellIndex = (_faceDwellIndex + 1) % 4;
@@ -87,7 +103,8 @@ class _PatientPageState extends State<PatientPage> {
             _faceDwellIndex = (_faceDwellIndex - 1 + 4) % 4;
             _faceDwellProgress = 0.0;
           } else if (signal.kind == PatientSignalKind.blink ||
-              signal.kind == PatientSignalKind.smile) {
+              signal.kind == PatientSignalKind.smile ||
+              signal.kind == PatientSignalKind.headNodSmile) {
             _triggerCurrentFaceOption();
           }
         }
@@ -1190,12 +1207,97 @@ class _PatientPageState extends State<PatientPage> {
               'Head Pose',
               !hasFace
                   ? '—'
-                  : (_monitorStatus.headYaw != null
-                      ? (_monitorStatus.headYaw!.abs() > 15 ? 'Turned' : 'Stable')
-                      : 'Stable'),
+                  : ((_monitorStatus.headPitch != null && _monitorStatus.headPitch! < -8) ||
+                          _lastSignal?.kind == PatientSignalKind.headNodSmile
+                      ? 'Nodding (${_monitorStatus.headPitch?.toStringAsFixed(0) ?? "0"}°)'
+                      : (_monitorStatus.headYaw != null
+                          ? (_monitorStatus.headYaw! > 12
+                              ? 'Right (+${_monitorStatus.headYaw!.toStringAsFixed(0)}°)'
+                              : _monitorStatus.headYaw! < -12
+                                  ? 'Left (${_monitorStatus.headYaw!.abs().toStringAsFixed(0)}°)'
+                                  : 'Stable')
+                          : 'Stable')),
               active: hasFace,
             ),
           ],
+        ),
+        const SizedBox(height: 14),
+        // Auto-Calibrated Clinical Gesture Legend & Quick Actions Card
+        LiquidGlassCard(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          borderRadius: 16,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.auto_awesome_rounded, size: 16, color: theme.waterColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Auto-Calibrated Gesture Rules',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: theme.textPrimary,
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () {
+                      widget.services.monitor.resetAutoCalibration();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Personal baseline auto-calibration reset (2s resting face).'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Recalibrate',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: theme.waterColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildGestureChip(
+                    theme,
+                    label: '💧 5 Blinks: Water',
+                    onTap: () => widget.services.monitor.triggerWebGesture('water'),
+                  ),
+                  _buildGestureChip(
+                    theme,
+                    label: '😊 Smile: Feeling Good',
+                    onTap: () => widget.services.monitor.triggerWebGesture('feeling_good'),
+                  ),
+                  _buildGestureChip(
+                    theme,
+                    label: '🍲 5 Head Right: Food',
+                    onTap: () => widget.services.monitor.triggerWebGesture('food'),
+                  ),
+                  _buildGestureChip(
+                    theme,
+                    label: '🚨 Abnormality: Emergency',
+                    isEmergency: true,
+                    onTap: () => widget.services.monitor.triggerWebGesture('abnormality'),
+                  ),
+                  _buildGestureChip(
+                    theme,
+                    label: '👍 Nod: Confirm',
+                    onTap: () => widget.services.monitor.triggerWebGesture('nod'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
         Text(
@@ -1363,6 +1465,44 @@ class _PatientPageState extends State<PatientPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGestureChip(
+    LiquidGlassThemeData theme, {
+    required String label,
+    required VoidCallback onTap,
+    bool isEmergency = false,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isEmergency
+                ? const Color(0x22EF4444)
+                : theme.pillGlass,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isEmergency
+                  ? const Color(0x66EF4444)
+                  : theme.pillBorder,
+              width: 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isEmergency ? const Color(0xFFEF4444) : theme.textPrimary,
+            ),
+          ),
+        ),
       ),
     );
   }

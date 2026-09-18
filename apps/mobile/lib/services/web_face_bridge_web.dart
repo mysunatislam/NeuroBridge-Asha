@@ -1,4 +1,4 @@
-﻿// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
+// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:async';
 import 'dart:html' as html;
 import 'dart:js' as js;
@@ -46,6 +46,8 @@ class WebFaceBridge {
       } else if (type == 'neurobridge_patient_signal') {
         final kindStr = raw['kind'] as String?;
         final confidence = (raw['confidence'] as num?)?.toDouble() ?? 0.95;
+        final intent = raw['intent'] as String?;
+        final label = raw['label'] as String?;
         if (kindStr == null) return;
 
         final kind = PatientSignalKind.values.firstWhere(
@@ -57,6 +59,11 @@ class WebFaceBridge {
           kind: kind,
           confidence: confidence,
           observedAt: DateTime.now(),
+          sourceLabel: 'web_face',
+          metadata: {
+            if (intent != null) 'intent': intent,
+            if (label != null) 'label': label,
+          },
         ));
       }
     });
@@ -73,6 +80,23 @@ class WebFaceBridge {
       if (js.context.hasProperty('NeuroBridgeFace')) {
         js.context['NeuroBridgeFace'].callMethod('stop');
       }
+    } catch (_) {}
+  }
+
+  void triggerGesture(String gesture) {
+    try {
+      html.window.postMessage({
+        'type': 'neurobridge_trigger_gesture',
+        'gesture': gesture,
+      }, '*');
+    } catch (_) {}
+  }
+
+  void resetCalibration() {
+    try {
+      html.window.postMessage({
+        'type': 'neurobridge_reset_calibration',
+      }, '*');
     } catch (_) {}
   }
 

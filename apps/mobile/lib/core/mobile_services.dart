@@ -137,7 +137,7 @@ class MobileServices {
     final monitor = MlKitPatientSignalMonitor();
     _applyNeutralBaseline(
       monitor,
-      neutralBaselineRepository.load() ?? NeutralFaceBaseline.standard,
+      neutralBaselineRepository.getEffectiveBaseline(),
     );
     final recognition = RecognitionTriggerController(
       repository: CalibratedPhraseRepository(preferences),
@@ -271,7 +271,10 @@ class MobileServices {
   bool shouldBypassIntentPipeline(PatientSignal signal) {
     if (!intentRecognition.enabled) return true;
     if (signal.kind == PatientSignalKind.seizureAlert) return true;
-    if (signal.sourceLabel == 'simulated') return true;
+    if (signal.sourceLabel == 'simulated' ||
+        signal.sourceLabel == 'web_face') {
+      return true;
+    }
     final category = signal.kind.category;
     return category != SignalCategory.eyes &&
         category != SignalCategory.face &&
@@ -448,6 +451,10 @@ class MobileServices {
       headYaw: baseline.headYaw,
       headPitch: baseline.headPitch,
     );
+  }
+
+  void applyNeutralBaseline(NeutralFaceBaseline baseline) {
+    _applyNeutralBaseline(monitor, baseline);
   }
 
   Future<void> dispose() async {

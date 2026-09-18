@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import '../models/patient_signal.dart';
 
 class WebFaceBridge {
@@ -7,5 +7,7 @@ class WebFaceBridge {
 
   void start() {}
   void stop() {}
+  void triggerGesture(String gesture) {}
+  void resetCalibration() {}
   void dispose() {}
 }

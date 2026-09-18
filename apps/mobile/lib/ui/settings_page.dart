@@ -744,7 +744,17 @@ class _SettingsPageState extends State<SettingsPage> {
                   // ignore: deprecated_member_use
                   onChanged: (val) async {
                     if (val != null) {
+                      final messenger = ScaffoldMessenger.of(context);
                       await widget.services.neutralBaselineRepository.setActiveDatasetType(val);
+                      final effective = widget.services.neutralBaselineRepository.getEffectiveBaseline();
+                      widget.services.applyNeutralBaseline(effective);
+                      if (!mounted) return;
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Standard Database active (Universal normative benchmarks: EAR 0.21, MAR 0.35, Head ±15°).'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
                       setState(() {});
                     }
                   },
@@ -763,7 +773,21 @@ class _SettingsPageState extends State<SettingsPage> {
                   // ignore: deprecated_member_use
                   onChanged: (val) async {
                     if (val != null) {
+                      final messenger = ScaffoldMessenger.of(context);
                       await widget.services.neutralBaselineRepository.setActiveDatasetType(val);
+                      final effective = widget.services.neutralBaselineRepository.getEffectiveBaseline();
+                      widget.services.applyNeutralBaseline(effective);
+                      if (!mounted) return;
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            widget.services.neutralBaselineRepository.load() != null
+                                ? 'Patient-Specific Calibrated Database active.'
+                                : 'Patient baseline not yet recorded. Standard fallback active.',
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
                       setState(() {});
                     }
                   },
@@ -780,6 +804,70 @@ class _SettingsPageState extends State<SettingsPage> {
                   },
                   icon: const Icon(Icons.tune_rounded),
                   label: const Text('Open 6-Step Facial Calibration'),
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+                const SizedBox(height: 8),
+                Text(
+                  'Auto-Calibrated Gesture Rules & Clinical Test',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF0F766E),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Auto-calibrated rules: 5 blinks = Water, smile = Feeling Good, 5 head right = Food, abnormality = Emergency SOS.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ActionChip(
+                      avatar: const Icon(Icons.water_drop, size: 16, color: Color(0xFF0284C7)),
+                      label: const Text('5 Blinks (Water)'),
+                      onPressed: () => widget.services.monitor.triggerWebGesture('water'),
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.sentiment_very_satisfied, size: 16, color: Color(0xFF10B981)),
+                      label: const Text('Smile (Feeling Good)'),
+                      onPressed: () => widget.services.monitor.triggerWebGesture('feeling_good'),
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.restaurant, size: 16, color: Color(0xFFF59E0B)),
+                      label: const Text('5 Head Right (Food)'),
+                      onPressed: () => widget.services.monitor.triggerWebGesture('food'),
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFEF4444)),
+                      label: const Text('Abnormality (Emergency)'),
+                      onPressed: () => widget.services.monitor.triggerWebGesture('abnormality'),
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF0B756A)),
+                      label: const Text('Nod (Confirm)'),
+                      onPressed: () => widget.services.monitor.triggerWebGesture('nod'),
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.refresh, size: 16, color: Color(0xFF6366F1)),
+                      label: const Text('Reset Auto-Calibration'),
+                      onPressed: () {
+                        widget.services.monitor.resetAutoCalibration();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Auto-calibration reset. Adapts to 2s resting baseline.'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),
