@@ -1,0 +1,78 @@
+name: Deploy NeuroFace web app to GitHub Pages
+
+# Prerenders the single-route FingerSpeak PWA (with the auto-calibrated
+# NeuroFace Sense face rules) to static files and publishes them to the
+# public build-only repository:
+#   https://mysunatislam.github.io/neurobridge-asha-face/
+#
+# Setup (one time):
+#   1. Create the PUBLIC repository mysunatislam/neurobridge-asha-face
+#      (GitHub Pages cannot serve this private repository on the free plan).
+#   2. Make sure the PAGES_DEPLOY_TOKEN secret can write to it
+#      (fine-grained PAT needs "contents: write" on neurobridge-asha-face).
+#   3. In neurobridge-asha-face: Settings > Pages > Deploy from a branch,
+#      branch main, folder / (root).
+#
+# After that, every push to main touching apps/web/** redeploys automatically.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/deploy-face-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-face-web
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      FACE_PAGES_REPO: neurobridge-asha-face
+      FACE_PAGES_BASE: /neurobridge-asha-face
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - working-directory: apps/web
+        run: npm ci --no-audit --no-fund
+      - working-directory: apps/web
+        run: npm run typecheck
+      - working-directory: apps/web
+        run: npm run test
+      - working-directory: apps/web
+        run: npm run build
+      - working-directory: apps/web
+        run: node ./prerender-pages.mjs ./pages-dist --base=${{ env.FACE_PAGES_BASE }} --serve-check
+      - name: Publish to ${{ env.FACE_PAGES_REPO }}
+        if: ${{ env.PAGES_DEPLOY_TOKEN != '' }}
+        env:
+          PAGES_DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+        working-directory: apps/web/pages-dist
+        run: |
+          git init -q
+          git checkout -q -b main
+          git config user.name "neurobridge-deploy[bot]"
+          git config user.email "neurobridge-deploy@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy NeuroFace Sense web app (${{ github.sha }})"
+          git remote add origin "https://x-access-token:${PAGES_DEPLOY_TOKEN}@github.com/${{ github.repository_owner }}/${{ env.FACE_PAGES_REPO }}.git"
+          git push -q --force origin main
+          echo "Deployed https://${{ github.repository_owner }}.github.io/${{ env.FACE_PAGES_REPO }}/"
+      - name: Deployment skipped
+        if: ${{ env.PAGES_DEPLOY_TOKEN == '' }}
+        env:
+          PAGES_DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+        run: echo "PAGES_DEPLOY_TOKEN secret is not set; build succeeded but was not published."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-face-pages
+          path: apps/web/pages-dist
+          retention-days: 7
