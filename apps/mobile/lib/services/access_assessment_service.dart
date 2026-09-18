@@ -11,6 +11,9 @@ class AssessmentRecommendation {
     required this.isSingleMovementOnly,
     required this.reasoning,
     required this.capabilityScores,
+    this.handFingerScore = 80,
+    this.faceGazeScore = 85,
+    this.autoFacialCalibrationTriggered = false,
   });
 
   final AccessModality primaryModality;
@@ -19,6 +22,9 @@ class AssessmentRecommendation {
   final bool isSingleMovementOnly;
   final String reasoning;
   final Map<String, int> capabilityScores;
+  final int handFingerScore;
+  final int faceGazeScore;
+  final bool autoFacialCalibrationTriggered;
 }
 
 class AccessAssessmentService {
@@ -52,6 +58,16 @@ class AccessAssessmentService {
     final isSingleMovementOnly = availableModalitiesCount <= 1 &&
         (bestHandScore >= 0.25 || headScore >= 0.25 || faceScore >= 0.25 || blinkScore >= 0.25 || singleMovementScore >= 0.25);
 
+    // Hand & finger composite score: best hand (60%), wrist (20%), touchscreen (20%)
+    final handScoreRaw = (bestHandScore * 0.60) + (wristScore * 0.20) + (touchScore * 0.20);
+    final handFingerScore = (handScoreRaw * 100).round().clamp(0, 100);
+
+    // Face & gaze composite score: blink (35%), eyes (30%), facial muscles (20%), head (15%)
+    final faceScoreRaw = (blinkScore * 0.35) + (eyesScore * 0.30) + (faceScore * 0.20) + (headScore * 0.15);
+    final faceGazeScore = (faceScoreRaw * 100).round().clamp(0, 100);
+
+    final autoFacialCalibrationTriggered = handFingerScore < 50;
+
     AccessModality primary;
     AccessModality? backup;
     String reasoning;
@@ -60,6 +76,12 @@ class AccessAssessmentService {
       primary = AccessModality.singleSwitchScanning;
       backup = blinkScore >= 0.5 ? AccessModality.eyeBlinkGaze : null;
       reasoning = 'Single voluntary movement detected. Auto-scanning interface provides effortless access with one trigger.';
+    } else if (autoFacialCalibrationTriggered) {
+      primary = (blinkScore >= 0.7 || eyesScore >= 0.7)
+          ? AccessModality.eyeBlinkGaze
+          : AccessModality.facialControls;
+      backup = headScore >= 0.5 ? AccessModality.headMovement : AccessModality.singleSwitchScanning;
+      reasoning = 'Hand/finger score is $handFingerScore% (below 50% gesture threshold). Auto Facial Calibration Mode turned ON for effortless hands-free communication.';
     } else if (touchScore >= 0.8) {
       primary = AccessModality.touchScreen;
       backup = bestHandScore >= 0.5 ? AccessModality.handGestures : AccessModality.eyeBlinkGaze;
@@ -67,7 +89,7 @@ class AccessAssessmentService {
     } else if (bestHandScore >= 0.5) {
       primary = AccessModality.handGestures;
       backup = blinkScore >= 0.5 ? AccessModality.eyeBlinkGaze : (headScore >= 0.5 ? AccessModality.headMovement : AccessModality.facialControls);
-      reasoning = 'Finger / hand control is reliable. MediaPipe 3D gesture tracking maps natural voluntary movement.';
+      reasoning = 'Finger / hand control is reliable ($handFingerScore%). MediaPipe 3D gesture tracking maps natural voluntary movement.';
     } else if (blinkScore >= 0.7 || eyesScore >= 0.7) {
       primary = AccessModality.eyeBlinkGaze;
       backup = headScore >= 0.5 ? AccessModality.headMovement : AccessModality.facialControls;
@@ -109,6 +131,9 @@ class AccessAssessmentService {
       isSingleMovementOnly: isSingleMovementOnly,
       reasoning: reasoning,
       capabilityScores: dummyProfile.capabilityScores,
+      handFingerScore: handFingerScore,
+      faceGazeScore: faceGazeScore,
+      autoFacialCalibrationTriggered: autoFacialCalibrationTriggered,
     );
   }
 }

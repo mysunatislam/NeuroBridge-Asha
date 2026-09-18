@@ -5,6 +5,7 @@ import 'package:fingerspeak_mobile/models/asha_message.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
 import 'package:fingerspeak_mobile/services/companion_controller.dart';
 import 'package:fingerspeak_mobile/services/voice_service.dart';
+import 'package:fingerspeak_mobile/ui/effects/liquid_glass.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -15,12 +16,14 @@ Future<void> showAshaChatSheet(
   PatientVoiceService? voiceService,
   MobileServices? services,
 }) {
+  final isDark = Theme.of(context).brightness == Brightness.dark ||
+      LiquidGlassThemeController.isDark;
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    backgroundColor: const Color(0xFFFFFBF5),
+    backgroundColor: isDark ? const Color(0xFF0B1324) : const Color(0xFFF8FAFC),
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
@@ -246,6 +249,8 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
     final messages = widget.companion.messages;
     final isCaregiver = widget.role == UserRole.caregiver;
     final prompts = isCaregiver ? _caregiverPrompts : _patientPrompts;
+    final isDark = Theme.of(context).brightness == Brightness.dark ||
+        LiquidGlassThemeController.isDark;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -269,7 +274,7 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                 ),
                 child: const CircleAvatar(
                   radius: 26,
-                  backgroundImage: AssetImage('assets/images/asha-avatar.webp'),
+                  backgroundImage: AssetImage('assets/images/asha_avatar_new.png'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -282,8 +287,8 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w800,
                             color: isCaregiver
-                                ? const Color(0xFFC04B67)
-                                : const Color(0xFF0B756A),
+                                ? const Color(0xFFFB7185)
+                                : const Color(0xFF38BDF8),
                           ),
                     ),
                     Builder(
@@ -292,26 +297,29 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                             .where((m) => m.role == AshaMessageRole.asha)
                             .firstOrNull;
                         final lastMode = lastAshaMsg?.mode ??
-                            (widget.companion.online ? 'online' : 'offline');
+                            (widget.companion.online ? 'online' : 'auto');
 
-                        IconData modeIcon = Icons.offline_bolt;
-                        String modeLabel = 'Offline RAG Active • \$0 API cost';
+                        IconData modeIcon = Icons.auto_awesome;
+                        String modeLabel = 'Asha AI Active • Connected';
 
                         if (lastMode.contains('ollama') || lastMode.contains('local')) {
                           modeIcon = Icons.computer;
-                          modeLabel = 'Local Gemma/Llama • \$0 cost';
+                          modeLabel = 'Asha AI Active • Local Gemma/Llama';
                         } else if (lastMode.contains('groq')) {
                           modeIcon = Icons.speed;
-                          modeLabel = 'Groq Cloud • \$0 Free Tier';
+                          modeLabel = 'Asha AI Active • Groq Cloud';
                         } else if (lastMode.contains('gemini-fallback')) {
-                          modeIcon = Icons.cloud_off;
-                          modeLabel = 'Gemini Fallback • Offline RAG';
+                          modeIcon = Icons.psychology;
+                          modeLabel = 'Asha AI Active • Clinical RAG Engine';
                         } else if (lastMode.contains('gemini')) {
                           modeIcon = Icons.auto_awesome;
-                          modeLabel = 'Gemini AI • answers spoken';
+                          modeLabel = 'Asha AI Active • Gemini Cloud Brain';
                         } else if (widget.companion.online) {
                           modeIcon = Icons.cloud_done;
-                          modeLabel = 'Online AI • answers spoken';
+                          modeLabel = 'Asha AI Active • Online Brain';
+                        } else {
+                          modeIcon = Icons.psychology;
+                          modeLabel = 'Asha AI Active • Clinical Neural RAG';
                         }
 
                         return InkWell(
@@ -332,7 +340,7 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                               Icon(
                                 modeIcon,
                                 size: 14,
-                                color: const Color(0xFF0B756A),
+                                color: const Color(0xFF38BDF8),
                               ),
                               const SizedBox(width: 4),
                               Text(
@@ -340,7 +348,7 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
-                                  color: Color(0xFF0B756A),
+                                  color: Color(0xFF38BDF8),
                                 ),
                               ),
                             ],
@@ -381,13 +389,21 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                         horizontal: 14, vertical: 12),
                     decoration: BoxDecoration(
                       color: fromAsha
-                          ? const Color(0xFFE2F3EF)
-                          : const Color(0xFF102522),
+                          ? (isDark
+                              ? const Color(0xFF1E293B)
+                              : const Color(0xFFE2F3EF))
+                          : (isDark
+                              ? const Color(0xFF0284C7)
+                              : const Color(0xFF0F766E)),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
                         color: fromAsha
-                            ? const Color(0xFFBFE5DC)
-                            : const Color(0xFF1B3B36),
+                            ? (isDark
+                                ? const Color(0xFF334155)
+                                : const Color(0xFFBFE5DC))
+                            : (isDark
+                                ? const Color(0xFF38BDF8)
+                                : const Color(0xFF115E59)),
                       ),
                     ),
                     child: Column(
@@ -418,7 +434,7 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                           message.text,
                           style: TextStyle(
                             color: fromAsha
-                                ? const Color(0xFF102522)
+                                ? (isDark ? Colors.white : const Color(0xFF102522))
                                 : Colors.white,
                             fontSize: 15,
                             height: 1.35,
@@ -650,8 +666,18 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
               itemBuilder: (context, i) {
                 final prompt = prompts[i];
                 return ActionChip(
-                  label: Text(prompt, style: const TextStyle(fontSize: 12)),
-                  backgroundColor: const Color(0xFFF3EEE5),
+                  label: Text(
+                    prompt,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                  side: BorderSide(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
                   ),
@@ -671,32 +697,47 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
               scrollDirection: Axis.horizontal,
               children: [
                 ActionChip(
-                  avatar: const Icon(Icons.tv, size: 16, color: Color(0xFF0B756A)),
-                  label: const Text('Write on Wheelchair Display',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
-                  backgroundColor: const Color(0xFFE2F3EF),
-                  side: const BorderSide(color: Color(0xFFBFE5DC)),
+                  avatar: Icon(Icons.tv, size: 16, color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0B756A)),
+                  label: Text(
+                    'Write on Wheelchair Display',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFE2F3EF),
+                  side: BorderSide(color: isDark ? const Color(0xFF38BDF8) : const Color(0xFFBFE5DC)),
                   onPressed: _writeOnPiDisplay,
                 ),
                 const SizedBox(width: 6),
                 ActionChip(
-                  avatar: const Icon(Icons.phone, size: 16, color: Color(0xFF0B756A)),
-                  label: const Text('Call Caregiver',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
-                  backgroundColor: const Color(0xFFE2F3EF),
-                  side: const BorderSide(color: Color(0xFFBFE5DC)),
+                  avatar: Icon(Icons.phone, size: 16, color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0B756A)),
+                  label: Text(
+                    'Call Caregiver',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFE2F3EF),
+                  side: BorderSide(color: isDark ? const Color(0xFF38BDF8) : const Color(0xFFBFE5DC)),
                   onPressed: _callCaregiver,
                 ),
                 const SizedBox(width: 6),
                 ActionChip(
-                  avatar: const Icon(Icons.emergency, size: 16, color: Color(0xFFB42318)),
-                  label: const Text('Emergency SOS',
-                      style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFFB42318))),
-                  backgroundColor: const Color(0xFFFEE4E2),
-                  side: const BorderSide(color: Color(0xFFFECDCA)),
+                  avatar: const Icon(Icons.emergency, size: 16, color: Color(0xFFFB7185)),
+                  label: const Text(
+                    'Emergency SOS',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFFB7185),
+                    ),
+                  ),
+                  backgroundColor: isDark ? const Color(0xFF450A0A) : const Color(0xFFFEE4E2),
+                  side: BorderSide(color: isDark ? const Color(0xFFDC2626) : const Color(0xFFFECDCA)),
                   onPressed: _triggerSos,
                 ),
               ],
@@ -711,12 +752,14 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                 style: IconButton.styleFrom(
                   backgroundColor: _listening
                       ? Colors.redAccent.withValues(alpha: 0.2)
-                      : const Color(0xFFE2F3EF),
+                      : (isDark ? const Color(0xFF1E293B) : const Color(0xFFE2F3EF)),
                 ),
                 onPressed: _toggleVoiceInput,
                 icon: Icon(
                   _listening ? Icons.mic : Icons.mic_none,
-                  color: _listening ? Colors.redAccent : const Color(0xFF0B756A),
+                  color: _listening
+                      ? Colors.redAccent
+                      : (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0B756A)),
                 ),
                 tooltip: 'Press to talk',
               ),
@@ -726,12 +769,30 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                   controller: _messageController,
                   minLines: 1,
                   maxLines: 4,
+                  style: TextStyle(color: isDark ? Colors.white : Colors.black),
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _send(),
                   decoration: InputDecoration(
+                    filled: true,
+                    fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                      ),
+                    ),
                     hintText: isCaregiver
                         ? 'Ask Asha for guidance or emergency tips…'
                         : 'Tell Asha what you need…',
+                    hintStyle: TextStyle(
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 12),
                   ),
@@ -741,8 +802,8 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
               IconButton.filled(
                 style: IconButton.styleFrom(
                   backgroundColor: isCaregiver
-                      ? const Color(0xFFC04B67)
-                      : const Color(0xFF0B756A),
+                      ? const Color(0xFFFB7185)
+                      : (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0B756A)),
                 ),
                 onPressed: widget.companion.sending ? null : () => _send(),
                 icon: const Icon(Icons.send),

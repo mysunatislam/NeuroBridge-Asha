@@ -6,6 +6,7 @@ import '../core/mobile_services.dart';
 import '../models/patient_access_method.dart';
 import '../models/personal_access_profile.dart';
 import '../services/access_assessment_service.dart';
+import 'facial_calibration_flow.dart';
 
 class AbilityAssessmentPage extends StatefulWidget {
   const AbilityAssessmentPage({
@@ -104,6 +105,25 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
     }
 
     if (!mounted) return;
+
+    if (rec.autoFacialCalibrationTriggered) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Hand/Finger score < 50%: Auto Facial Calibration Mode Activated.',
+          ),
+          backgroundColor: Color(0xFF0F766E),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => FacialCalibrationFlow(services: widget.services),
+        ),
+      );
+      if (!mounted) return;
+    }
+
     if (widget.onCompleted != null) {
       widget.onCompleted!();
     } else {
@@ -392,6 +412,29 @@ class _AbilityAssessmentPageState extends State<AbilityAssessmentPage> {
               if (rec.backupModality != null) ...[
                 const SizedBox(height: 10),
                 Text('Backup Input: ${rec.backupModality!.title}', style: const TextStyle(color: Color(0xFF99F6E4), fontSize: 13, fontWeight: FontWeight.w600)),
+              ],
+              if (rec.autoFacialCalibrationTriggered) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFF59E0B)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.face_retouching_natural_rounded, color: Color(0xFFFBBF24), size: 22),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Hand/Finger score is below 50%. Auto Facial Calibration Mode will turn on next.',
+                          style: TextStyle(color: Color(0xFFFEF3C7), fontSize: 12.5, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ],
           ),

@@ -97,11 +97,42 @@ class NeutralFaceBaseline {
   }
 }
 
+enum FacialCalibrationDatasetType {
+  standardDatabase,
+  patientSpecificCalibratedDatabase,
+}
+
 class NeutralFaceBaselineRepository {
   NeutralFaceBaselineRepository(this._preferences);
 
   static const _key = 'monitor.neutral_face_baseline';
+  static const _activeDatasetKey = 'monitor.facial_active_dataset_type';
   final SharedPreferences _preferences;
+
+  FacialCalibrationDatasetType getActiveDatasetType() {
+    final val = _preferences.getString(_activeDatasetKey);
+    if (val == 'patient') {
+      return FacialCalibrationDatasetType.patientSpecificCalibratedDatabase;
+    }
+    return FacialCalibrationDatasetType.standardDatabase;
+  }
+
+  Future<void> setActiveDatasetType(FacialCalibrationDatasetType type) async {
+    await _preferences.setString(
+      _activeDatasetKey,
+      type == FacialCalibrationDatasetType.patientSpecificCalibratedDatabase
+          ? 'patient'
+          : 'standard',
+    );
+  }
+
+  NeutralFaceBaseline getEffectiveBaseline() {
+    if (getActiveDatasetType() ==
+        FacialCalibrationDatasetType.patientSpecificCalibratedDatabase) {
+      return load() ?? NeutralFaceBaseline.standard;
+    }
+    return NeutralFaceBaseline.standard;
+  }
 
   NeutralFaceBaseline? load() {
     final raw = _preferences.getString(_key);
@@ -119,9 +150,15 @@ class NeutralFaceBaselineRepository {
 
   Future<void> save(NeutralFaceBaseline baseline) async {
     await _preferences.setString(_key, jsonEncode(baseline.toJson()));
+    await setActiveDatasetType(
+      FacialCalibrationDatasetType.patientSpecificCalibratedDatabase,
+    );
   }
 
-  Future<void> clear() => _preferences.remove(_key);
+  Future<void> clear() async {
+    await _preferences.remove(_key);
+    await setActiveDatasetType(FacialCalibrationDatasetType.standardDatabase);
+  }
 }
 
 class CalibratedPhraseRepository {

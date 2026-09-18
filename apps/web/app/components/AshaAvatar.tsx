@@ -10,7 +10,7 @@ export function AshaAvatar({ variant = "compact", decorative = false, eager = fa
   return (
     <span className={`asha-avatar asha-avatar-${variant}`}>
       <Image
-        src="/asha-avatar-face.webp"
+        src="/asha-avatar-new.png"
         width={512}
         height={512}
         alt={decorative ? "" : "Asha, the FingerSpeak companion"}

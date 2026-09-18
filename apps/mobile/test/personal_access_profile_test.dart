@@ -2,6 +2,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fingerspeak_mobile/models/personal_access_profile.dart';
 import 'package:fingerspeak_mobile/services/access_assessment_service.dart';
+import 'package:fingerspeak_mobile/services/calibration_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   group('PersonalAccessProfile Tests', () {
@@ -91,6 +93,56 @@ void main() {
 
       expect(rec.primaryModality, equals(AccessModality.eyeBlinkGaze));
       expect(rec.backupModality, equals(AccessModality.headMovement));
+    });
+
+    test('Auto triggers facial calibration when handFingerScore < 50%', () {
+      final rec = service.evaluate({
+        BodyPart.rightHand: CapabilityGrade.limited,
+        BodyPart.leftHand: CapabilityGrade.unavailable,
+        BodyPart.wrist: CapabilityGrade.limited,
+        BodyPart.head: CapabilityGrade.good,
+        BodyPart.facialMuscles: CapabilityGrade.good,
+        BodyPart.eyes: CapabilityGrade.good,
+        BodyPart.blink: CapabilityGrade.good,
+        BodyPart.touchScreen: CapabilityGrade.unavailable,
+      });
+
+      expect(rec.handFingerScore, lessThan(50));
+      expect(rec.autoFacialCalibrationTriggered, isTrue);
+      expect(
+        rec.primaryModality,
+        isIn([AccessModality.facialControls, AccessModality.eyeBlinkGaze]),
+      );
+    });
+
+    test('Two-tier facial calibration database returns standard and calibrated correctly', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final repo = NeutralFaceBaselineRepository(prefs);
+
+      // Default should be standard database
+      expect(repo.getActiveDatasetType(), FacialCalibrationDatasetType.standardDatabase);
+      final standard = repo.getEffectiveBaseline();
+      expect(standard.leftEyeOpenness, 0.85);
+      expect(standard.mouthDistance, 0.08);
+
+      // Switch to patient-specific calibrated database
+      await repo.setActiveDatasetType(FacialCalibrationDatasetType.patientSpecificCalibratedDatabase);
+      expect(repo.getActiveDatasetType(), FacialCalibrationDatasetType.patientSpecificCalibratedDatabase);
+
+      // Save custom patient baseline
+      const custom = NeutralFaceBaseline(
+        eyebrowDistance: 0.20,
+        mouthDistance: 0.12,
+        leftEyeOpenness: 0.75,
+        rightEyeOpenness: 0.75,
+        headYaw: 2.5,
+        headPitch: -1.0,
+      );
+      await repo.save(custom);
+      final effective = repo.getEffectiveBaseline();
+      expect(effective.leftEyeOpenness, 0.75);
+      expect(effective.mouthDistance, 0.12);
     });
   });
 }

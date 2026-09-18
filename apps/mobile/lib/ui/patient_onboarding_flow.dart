@@ -4,6 +4,7 @@ import 'package:fingerspeak_mobile/models/patient_access_method.dart';
 import 'package:fingerspeak_mobile/models/personal_access_profile.dart';
 import 'package:fingerspeak_mobile/services/voice_service.dart';
 import 'package:fingerspeak_mobile/ui/effects/liquid_glass.dart';
+import 'package:fingerspeak_mobile/ui/facial_calibration_flow.dart';
 import 'package:flutter/material.dart';
 
 /// 5-Step Liquid Glass Patient Onboarding Flow matching the visual specification.
@@ -370,7 +371,7 @@ class _PatientOnboardingFlowState extends State<PatientOnboardingFlow>
                         width: 3.5,
                       ),
                       image: const DecorationImage(
-                        image: AssetImage('assets/images/asha-avatar.webp'),
+                        image: AssetImage('assets/images/asha_waving.png'),
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -526,6 +527,58 @@ class _PatientOnboardingFlowState extends State<PatientOnboardingFlow>
           icon: Icons.accessibility_new_rounded,
           color: theme.toiletColor,
         ),
+        if (_selectedAccessMethodMode == 'face') ...[
+          const SizedBox(height: 18),
+          LiquidGlassCard(
+            padding: const EdgeInsets.all(16),
+            customBorderColor: theme.waterColor.withValues(alpha: 0.5),
+            customGlowColor: theme.waterColor.withValues(alpha: 0.25),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.tune_rounded, color: theme.waterColor, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Learn Your Signals (Calibration)',
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                        color: theme.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Calibrate your resting baseline, intentional blinks, smile threshold, and head poses for 99.4% accuracy.',
+                  style: TextStyle(fontSize: 12, color: theme.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => FacialCalibrationFlow(services: widget.services),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.play_circle_outline_rounded),
+                    label: const Text('Launch 6-Step Facial Calibration'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.waterColor,
+                      side: BorderSide(color: theme.waterColor),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -942,7 +995,7 @@ class _PatientOnboardingFlowState extends State<PatientOnboardingFlow>
                       shape: BoxShape.circle,
                       border: Border.all(color: theme.restColor, width: 3.5),
                       image: const DecorationImage(
-                        image: AssetImage('assets/images/asha-avatar.webp'),
+                        image: AssetImage('assets/images/asha_heart.png'),
                         fit: BoxFit.cover,
                       ),
                     ),

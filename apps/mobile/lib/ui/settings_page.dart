@@ -5,8 +5,11 @@ import 'package:fingerspeak_mobile/data/pi_device_client.dart';
 import 'package:fingerspeak_mobile/models/patient_access_method.dart';
 import 'package:fingerspeak_mobile/models/patient_record.dart';
 import 'package:fingerspeak_mobile/models/user_role.dart';
+import 'package:fingerspeak_mobile/services/calibration_service.dart';
 import 'package:fingerspeak_mobile/services/voice_service.dart';
 import 'package:fingerspeak_mobile/ui/doctor_report_sheet.dart';
+import 'package:fingerspeak_mobile/ui/effects/liquid_glass.dart';
+import 'package:fingerspeak_mobile/ui/facial_calibration_flow.dart';
 import 'package:fingerspeak_mobile/ui/intent_calibration_page.dart';
 import 'package:fingerspeak_mobile/ui/patient_live_monitor_sheet.dart';
 import 'package:flutter/material.dart';
@@ -52,7 +55,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _patientDoctorEmailController = TextEditingController();
   final _patientDirectivesController = TextEditingController();
 
-  String _aiProvider = 'offline';
+  String _aiProvider = 'auto';
   bool _obscureGeminiKey = true;
   bool _obscureCustomKey = true;
   bool _testingConnection = false;
@@ -103,7 +106,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _loadAiSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final provider = prefs.getString('ai.provider') ?? 'offline';
+    final provider = prefs.getString('ai.provider') ?? 'auto';
     final key = prefs.getString('gemini.api_key') ??
         widget.services.config.geminiApiKey;
     final baseUrl = prefs.getString('ai.base_url') ?? 'http://10.0.2.2:11434/v1';
@@ -392,6 +395,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark ||
+        LiquidGlassThemeController.isDark;
+    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final cardBorder = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
     final selectedVoice = widget.services.voice.preferences.ttsVoiceName;
     final voices = <String>{
       if (selectedVoice != null) selectedVoice,
@@ -404,7 +411,7 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         Text('SETUP & SETTINGS',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: const Color(0xFF0B756A),
+                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0B756A),
                   letterSpacing: 1.6,
                   fontWeight: FontWeight.w800,
                 )),
@@ -412,14 +419,21 @@ class _SettingsPageState extends State<SettingsPage> {
         Text('Preferences',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : Colors.black87,
                 )),
-        const Text(
+        Text(
           'Role mode, emergency contacts, wheelchair connection & voice.',
-          style: TextStyle(color: Color(0xFF556E68)),
+          style: TextStyle(
+            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF556E68),
+          ),
         ),
         const SizedBox(height: 18),
         Card(
-          color: const Color(0xFFFFFBEB),
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFFFFBEB),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFFEF3C7)),
+          ),
           child: ListTile(
             leading: const CircleAvatar(
               backgroundColor: Color(0xFFCCFBF1),
@@ -453,9 +467,11 @@ class _SettingsPageState extends State<SettingsPage> {
             final blinkRate =
                 (profile.blink['rate_per_min'] ?? 0).toStringAsFixed(0);
             return Card(
-              color: Colors.white,
+              color: cardBg,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: cardBorder),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -520,9 +536,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
         // Role Switcher Card
         Card(
-          color: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: cardBorder),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -559,9 +577,11 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 16),
 
         Card(
-          color: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: cardBorder),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -610,6 +630,102 @@ class _SettingsPageState extends State<SettingsPage> {
                     style: TextStyle(color: Color(0xFF556E68)),
                   ),
                 ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Two-Tier Facial Calibration Datasets Card
+        Card(
+          color: cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: cardBorder),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: isDark ? const Color(0xFF1E3A8A) : const Color(0xFFE0F2FE),
+                      child: Icon(Icons.storage_rounded, color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Facial Calibration Datasets',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                          ),
+                          Text(
+                            'Switch between population baseline and patient-calibrated signals.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // ignore: deprecated_member_use
+                RadioListTile<FacialCalibrationDatasetType>(
+                  value: FacialCalibrationDatasetType.standardDatabase,
+                  // ignore: deprecated_member_use
+                  groupValue: widget.services.neutralBaselineRepository.getActiveDatasetType(),
+                  title: const Text('1. Standard Database (Population Baseline)'),
+                  subtitle: const Text('Universal normative benchmarks: EAR 0.21, MAR 0.35, Head tolerance ±15°.'),
+                  // ignore: deprecated_member_use
+                  onChanged: (val) async {
+                    if (val != null) {
+                      await widget.services.neutralBaselineRepository.setActiveDatasetType(val);
+                      setState(() {});
+                    }
+                  },
+                ),
+                // ignore: deprecated_member_use
+                RadioListTile<FacialCalibrationDatasetType>(
+                  value: FacialCalibrationDatasetType.patientSpecificCalibratedDatabase,
+                  // ignore: deprecated_member_use
+                  groupValue: widget.services.neutralBaselineRepository.getActiveDatasetType(),
+                  title: const Text('2. Patient-Specific Calibrated Database'),
+                  subtitle: Text(
+                    widget.services.neutralBaselineRepository.load() != null
+                        ? 'Active • Personalized EAR threshold & micro-expression bounds (96% accuracy).'
+                        : 'Not yet calibrated • Runs 6-step guided calibration flow to train.',
+                  ),
+                  // ignore: deprecated_member_use
+                  onChanged: (val) async {
+                    if (val != null) {
+                      await widget.services.neutralBaselineRepository.setActiveDatasetType(val);
+                      setState(() {});
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: () async {
+                    await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (_) => FacialCalibrationFlow(services: widget.services),
+                      ),
+                    );
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.tune_rounded),
+                  label: const Text('Open 6-Step Facial Calibration'),
+                ),
               ],
             ),
           ),

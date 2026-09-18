@@ -18,6 +18,9 @@ import 'package:fingerspeak_mobile/ui/intent_confirmation_banner.dart';
 import 'package:fingerspeak_mobile/ui/guide/asha_guide_host.dart';
 import 'package:fingerspeak_mobile/ui/patient_onboarding_flow.dart';
 import 'package:fingerspeak_mobile/ui/single_switch_scanning_view.dart';
+import 'package:fingerspeak_mobile/ui/face_control_main_page.dart';
+import 'package:fingerspeak_mobile/ui/facial_calibration_flow.dart';
+import 'package:fingerspeak_mobile/ui/widgets/draggable_asha_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -412,59 +415,64 @@ class _PatientPageState extends State<PatientPage> {
           body: Container(
             decoration: BoxDecoration(gradient: theme.bgGradient),
             child: SafeArea(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+              child: Stack(
                 children: [
-                  _buildTopHeader(theme),
-                  const SizedBox(height: 12),
-                  _buildCaregiverIncomingAlerts(theme),
-                  const SizedBox(height: 12),
-                  LiquidGlassCard(
-                    padding: const EdgeInsets.all(22),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.accessibility_new,
-                          size: 52,
-                          color: theme.speakColor,
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'Choose the patient’s reliable movement',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: theme.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'NeuroBridge Asha will open either hand-gesture communication or face, eye, and head monitoring.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: theme.textSecondary, fontSize: 13.5),
-                        ),
-                        const SizedBox(height: 18),
-                        AshaGuideTarget(
-                          step: AshaGuideStep.profile,
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: _openAssessmentWizard,
-                              icon: const Icon(Icons.accessibility_new),
-                              label: const Text('Open Patient Ability Profile'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: theme.speakColor,
-                                side: BorderSide(color: theme.speakColor),
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ListView(
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                    children: [
+                      _buildTopHeader(theme),
+                      const SizedBox(height: 12),
+                      _buildCaregiverIncomingAlerts(theme),
+                      const SizedBox(height: 12),
+                      LiquidGlassCard(
+                        padding: const EdgeInsets.all(22),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.accessibility_new,
+                              size: 52,
+                              color: theme.speakColor,
+                            ),
+                            const SizedBox(height: 14),
+                            Text(
+                              'Choose the patient’s reliable movement',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: theme.textPrimary,
                               ),
                             ),
-                          ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'NeuroBridge Asha will open either hand-gesture communication or face, eye, and head monitoring.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: theme.textSecondary, fontSize: 13.5),
+                            ),
+                            const SizedBox(height: 18),
+                            AshaGuideTarget(
+                              step: AshaGuideStep.profile,
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _openAssessmentWizard,
+                                  icon: const Icon(Icons.accessibility_new),
+                                  label: const Text('Open Patient Ability Profile'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: theme.speakColor,
+                                    side: BorderSide(color: theme.speakColor),
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                  DraggableAshaAvatar(services: widget.services),
                 ],
               ),
             ),
@@ -526,61 +534,66 @@ class _PatientPageState extends State<PatientPage> {
             decoration: BoxDecoration(gradient: theme.bgGradient),
             child: SafeArea(
               bottom: false,
-              child: CustomScrollView(
-                slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 110),
-                    sliver: SliverList(
-                      delegate: SliverChildListDelegate([
-                        _buildTopHeader(theme),
-                        const SizedBox(height: 14),
-                        _buildCaregiverIncomingAlerts(theme),
-                        IntentConfirmationBanner(services: widget.services),
-                        _buildAshaReassuranceCard(theme),
-                        const SizedBox(height: 16),
-                        _buildHeroActions(theme),
-                        const SizedBox(height: 20),
-                        AshaGuideTarget(
-                          step: AshaGuideStep.profile,
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: _openAssessmentWizard,
-                              icon: const Icon(Icons.accessibility_new),
-                              label: const Text('Open Patient Ability Profile'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: theme.speakColor,
-                                side: BorderSide(color: theme.speakColor),
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Stack(
+                children: [
+                  CustomScrollView(
+                    slivers: [
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(18, 14, 18, 110),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            _buildTopHeader(theme),
+                            const SizedBox(height: 14),
+                            _buildCaregiverIncomingAlerts(theme),
+                            IntentConfirmationBanner(services: widget.services),
+                            _buildAshaReassuranceCard(theme),
+                            const SizedBox(height: 16),
+                            _buildHeroActions(theme),
+                            const SizedBox(height: 20),
+                            AshaGuideTarget(
+                              step: AshaGuideStep.profile,
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _openAssessmentWizard,
+                                  icon: const Icon(Icons.accessibility_new),
+                                  label: const Text('Open Patient Ability Profile'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: theme.speakColor,
+                                    side: BorderSide(color: theme.speakColor),
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                            const SizedBox(height: 16),
+                            if (_accessMethod == PatientAccessMethod.faceEyesAndHead)
+                              _buildFaceScanningSection(theme)
+                            else
+                              _buildHandModeSection(theme),
+                            const SizedBox(height: 20),
+                            _buildDailyNeedsGrid(theme),
+                            const SizedBox(height: 20),
+                            _buildBottomVitalsBar(theme),
+                            const SizedBox(height: 18),
+                            _PhraseCard(
+                              phrases: widget.services.recognition.phrases,
+                              lastPhrase: _lastPhrase,
+                              onSpeak: widget.services.recognition.speakNow,
+                              theme: theme,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildHydrationReminderCard(theme),
+                            const SizedBox(height: 14),
+                            _buildOnboardingReplayButton(theme),
+                            const SizedBox(height: 20),
+                          ]),
                         ),
-                        const SizedBox(height: 16),
-                        if (_accessMethod == PatientAccessMethod.faceEyesAndHead)
-                          _buildFaceScanningSection(theme)
-                        else
-                          _buildHandModeSection(theme),
-                        const SizedBox(height: 20),
-                        _buildDailyNeedsGrid(theme),
-                        const SizedBox(height: 20),
-                        _buildBottomVitalsBar(theme),
-                        const SizedBox(height: 18),
-                        _PhraseCard(
-                          phrases: widget.services.recognition.phrases,
-                          lastPhrase: _lastPhrase,
-                          onSpeak: widget.services.recognition.speakNow,
-                          theme: theme,
-                        ),
-                        const SizedBox(height: 16),
-                        _buildHydrationReminderCard(theme),
-                        const SizedBox(height: 14),
-                        _buildOnboardingReplayButton(theme),
-                        const SizedBox(height: 20),
-                      ]),
-                    ),
+                      ),
+                    ],
                   ),
+                  DraggableAshaAvatar(services: widget.services),
                 ],
               ),
             ),
@@ -599,26 +612,36 @@ class _PatientPageState extends State<PatientPage> {
       children: [
         Row(
           children: [
-            // Asha Avatar with Live Glow Ring
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: theme.speakColor,
-                  width: 2.2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: theme.speakColor.withValues(alpha: 0.35),
-                    blurRadius: 14,
-                    spreadRadius: 2,
+            // Asha Avatar with Live Glow Ring (Tap to open companion chat)
+            GestureDetector(
+              onTap: () => showAshaChatSheet(
+                context,
+                widget.services.companion,
+                services: widget.services,
+              ),
+              child: Tooltip(
+                message: 'Tap to chat with Asha',
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: theme.speakColor,
+                      width: 2.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: theme.speakColor.withValues(alpha: 0.35),
+                        blurRadius: 14,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                    image: const DecorationImage(
+                      image: AssetImage('assets/images/asha_avatar_new.png'),
+                      fit: BoxFit.cover,
+                    ),
                   ),
-                ],
-                image: const DecorationImage(
-                  image: AssetImage('assets/images/asha-avatar.webp'),
-                  fit: BoxFit.cover,
                 ),
               ),
             ),
@@ -1184,6 +1207,54 @@ class _PatientPageState extends State<PatientPage> {
               ),
             );
           },
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => FaceControlMainPage(services: widget.services),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.fullscreen_rounded),
+                label: const Text('Open Face Control UI (Screen 10 & 11)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.waterColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => FacialCalibrationFlow(services: widget.services),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.tune_rounded),
+                label: const Text('6-Step Facial Calibration (Screen 9)'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.waterColor,
+                  side: BorderSide(color: theme.waterColor),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
