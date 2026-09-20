@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:fingerspeak_mobile/data/asha_api_client.dart';
-import 'package:fingerspeak_mobile/models/asha_message.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

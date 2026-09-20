@@ -45,8 +45,6 @@ class _SettingsPageState extends State<SettingsPage> {
   final _customBaseUrlController = TextEditingController();
   final _customModelController = TextEditingController();
   final _customApiKeyController = TextEditingController();
-<<<<<<< HEAD
-
   String? _selectedPatientId;
   final _patientNameController = TextEditingController();
   final _patientAgeController = TextEditingController();
@@ -58,10 +56,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _patientDoctorEmailController = TextEditingController();
   final _patientDirectivesController = TextEditingController();
 
-  String _aiProvider = 'auto';
-=======
   String _aiProvider = 'maira';
->>>>>>> 50892a5 (feat(ai): integrate Gigalogy Maira Specialist AI with live failover and out-of-the-box configuration)
   bool _obscureGeminiKey = true;
   bool _obscureMairaApiKey = true;
   bool _obscureMairaProjectKey = true;
