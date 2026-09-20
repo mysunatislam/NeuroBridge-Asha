@@ -95,6 +95,22 @@ class MobileServices {
         await preferences.setString('gemini.api_key', config.geminiApiKey);
       }
     }
+    final savedMairaApiKey = preferences.getString('maira.api_key');
+    if (savedMairaApiKey == null || savedMairaApiKey.trim().isEmpty) {
+      if (config.mairaApiKey.isNotEmpty) {
+        await preferences.setString('maira.api_key', config.mairaApiKey);
+      }
+    }
+    final savedMairaProjKey = preferences.getString('maira.project_key');
+    if (savedMairaProjKey == null || savedMairaProjKey.trim().isEmpty) {
+      if (config.mairaProjectKey.isNotEmpty) {
+        await preferences.setString('maira.project_key', config.mairaProjectKey);
+      }
+    }
+    final savedAiProvider = preferences.getString('ai.provider');
+    if (savedAiProvider == null || savedAiProvider.trim().isEmpty) {
+      await preferences.setString('ai.provider', 'maira');
+    }
     final roleRepository = UserRoleRepository(preferences);
     final patientAccessMethodRepository =
         PatientAccessMethodRepository(preferences);
@@ -158,7 +174,24 @@ class MobileServices {
           return config.geminiApiKey.isNotEmpty ? config.geminiApiKey : null;
         },
         geminiModel: config.geminiModel,
-        aiProviderProvider: () async => preferences.getString('ai.provider'),
+        mairaApiKeyProvider: () async {
+          final storedKey = preferences.getString('maira.api_key');
+          if (storedKey != null && storedKey.trim().isNotEmpty) {
+            return storedKey.trim();
+          }
+          return config.mairaApiKey.isNotEmpty ? config.mairaApiKey : null;
+        },
+        mairaProjectKeyProvider: () async {
+          final storedProj = preferences.getString('maira.project_key');
+          if (storedProj != null && storedProj.trim().isNotEmpty) {
+            return storedProj.trim();
+          }
+          return config.mairaProjectKey.isNotEmpty
+              ? config.mairaProjectKey
+              : null;
+        },
+        aiProviderProvider: () async =>
+            preferences.getString('ai.provider') ?? 'maira',
         customBaseUrlProvider: () async => preferences.getString('ai.base_url'),
         customApiKeyProvider: () async => preferences.getString('ai.api_key'),
         customModelProvider: () async => preferences.getString('ai.model'),

@@ -302,7 +302,10 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                         IconData modeIcon = Icons.auto_awesome;
                         String modeLabel = 'Asha AI Active • Connected';
 
-                        if (lastMode.contains('ollama') || lastMode.contains('local')) {
+                        if (lastMode.contains('maira')) {
+                          modeIcon = Icons.stars;
+                          modeLabel = '✨ Maira AI Active • Specialist Intelligence';
+                        } else if (lastMode.contains('ollama') || lastMode.contains('local')) {
                           modeIcon = Icons.computer;
                           modeLabel = 'Asha AI Active • Local Gemma/Llama';
                         } else if (lastMode.contains('groq')) {
@@ -315,8 +318,8 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                           modeIcon = Icons.auto_awesome;
                           modeLabel = 'Asha AI Active • Gemini Cloud Brain';
                         } else if (widget.companion.online) {
-                          modeIcon = Icons.cloud_done;
-                          modeLabel = 'Asha AI Active • Online Brain';
+                          modeIcon = Icons.stars;
+                          modeLabel = '✨ Maira AI Active • Specialist Intelligence';
                         } else {
                           modeIcon = Icons.psychology;
                           modeLabel = 'Asha AI Active • Clinical Neural RAG';
@@ -328,7 +331,7 @@ class _AshaChatSheetState extends State<_AshaChatSheet> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  'Asha Engine: $modeLabel. Grounded in 20+ clinical domains with Samantha TTS voice output.',
+                                  'Asha Engine: $modeLabel. Grounded in Gigalogy Maira Specialist AI with Samantha TTS voice output.',
                                 ),
                                 duration: const Duration(seconds: 3),
                               ),

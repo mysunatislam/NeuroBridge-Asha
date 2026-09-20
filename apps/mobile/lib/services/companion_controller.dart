@@ -37,9 +37,9 @@ class CompanionController extends ChangeNotifier {
     if (_started) return;
     _started = true;
     var greeting = role == UserRole.patient
-        ? 'Asha is here. If you need anything, I am listening.'
-        : 'Hello. I am Asha, ready to support you with patient care and emergency guidance.';
-    var mode = 'offline';
+        ? 'Asha is here with Maira Specialist AI. If you need anything, I am listening.'
+        : 'Hello. I am Asha powered by Maira Specialist AI, ready to support you with patient care and emergency guidance.';
+    var mode = 'maira-specialist';
     try {
       final prompt = role == UserRole.patient
           ? 'Give the patient a warm, reassuring welcome in one short sentence.'

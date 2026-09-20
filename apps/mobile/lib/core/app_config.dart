@@ -10,6 +10,9 @@ class AppConfig {
     this.ambulancePhone = '911',
     this.geminiApiKey = '',
     this.geminiModel = 'gemini-2.5-flash',
+    this.mairaApiKey =
+        'gAAAAABqsEpPgP0R8jKH0N-ybAIQWlAHDZER1X2QWPkysBrui5EJ6erBa3JkkxTiR7e441BQrB_-HJ6CRHb4iaiPqcRkV9bdsDFpyRluAKlzf41s1aZmtPN-cI6vQ74FSOdLUOA34KLg',
+    this.mairaProjectKey = 'O7nFNtmNKjoDvxBtx577KZfZQsuQcnwNrgBK_9Hm6J4=',
   });
 
   factory AppConfig.fromEnvironment() {
@@ -55,6 +58,15 @@ class AppConfig {
         'FINGERSPEAK_GEMINI_MODEL',
         defaultValue: 'gemini-2.5-flash',
       ),
+      mairaApiKey: String.fromEnvironment(
+        'MAIRA_API_KEY',
+        defaultValue:
+            'gAAAAABqsEpPgP0R8jKH0N-ybAIQWlAHDZER1X2QWPkysBrui5EJ6erBa3JkkxTiR7e441BQrB_-HJ6CRHb4iaiPqcRkV9bdsDFpyRluAKlzf41s1aZmtPN-cI6vQ74FSOdLUOA34KLg',
+      ),
+      mairaProjectKey: String.fromEnvironment(
+        'MAIRA_PROJECT_KEY',
+        defaultValue: 'O7nFNtmNKjoDvxBtx577KZfZQsuQcnwNrgBK_9Hm6J4=',
+      ),
     );
   }
 
@@ -68,6 +80,8 @@ class AppConfig {
   final String ambulancePhone;
   final String geminiApiKey;
   final String geminiModel;
+  final String mairaApiKey;
+  final String mairaProjectKey;
 
   Uri get apiUri {
     final uri = Uri.parse(apiBaseUrl);
@@ -100,6 +114,8 @@ class AppConfig {
     String? ambulancePhone,
     String? geminiApiKey,
     String? geminiModel,
+    String? mairaApiKey,
+    String? mairaProjectKey,
   }) {
     return AppConfig(
       apiBaseUrl: apiBaseUrl ?? this.apiBaseUrl,
@@ -112,6 +128,8 @@ class AppConfig {
       ambulancePhone: ambulancePhone ?? this.ambulancePhone,
       geminiApiKey: geminiApiKey ?? this.geminiApiKey,
       geminiModel: geminiModel ?? this.geminiModel,
+      mairaApiKey: mairaApiKey ?? this.mairaApiKey,
+      mairaProjectKey: mairaProjectKey ?? this.mairaProjectKey,
     );
   }
 }

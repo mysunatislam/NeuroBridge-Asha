@@ -180,12 +180,14 @@ class AshaReply {
 
   bool get isOnline =>
       mode == 'llm' ||
+      mode == 'maira-specialist' ||
       mode == 'gemini-agent' ||
       mode == 'gemini-brain' ||
       mode == 'openai-agent' ||
       mode == 'local-llm-agent';
 
   bool get isAgentMode =>
+      mode == 'maira-specialist' ||
       mode == 'gemini-agent' ||
       mode == 'gemini-brain' ||
       mode == 'openai-agent' ||
