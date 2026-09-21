@@ -83,13 +83,16 @@ class _PatientPageState extends State<PatientPage> {
         _lastSignal = signal;
         final intent = signal.metadata?['intent'] as String?;
         if (intent == 'water') {
-          _speakQuickNeed('I want water', 'Water');
-          return;
-        } else if (intent == 'feeling_good') {
-          _speakQuickNeed('I am feeling good', 'Feeling Good');
+          _speakQuickNeed('I need water', 'Water');
           return;
         } else if (intent == 'food') {
-          _speakQuickNeed('Give me some food', 'Food');
+          _speakQuickNeed('I need food', 'Food');
+          return;
+        } else if (intent == 'toilet') {
+          _speakQuickNeed('I need to go to toilet', 'Toilet');
+          return;
+        } else if (intent == 'okay') {
+          _speakQuickNeed('I am okay, thank you', 'Okay');
           return;
         } else if (intent == 'abnormality' ||
             signal.kind == PatientSignalKind.seizureAlert) {

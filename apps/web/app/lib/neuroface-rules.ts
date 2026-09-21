@@ -3,13 +3,7 @@
  *
  * Replaces the old single-gesture face mode with four auto-calibrated
  * patient communication rules built from the NeuroFace Sense pipeline
- * (MediaPipe Face Mesh geometry + a per-patient neutral baseline twin):
- *
- * - 5 blinks in a row            -> "I want water"
- * - sustained smile              -> "I am feeling good"
- * - sustained abnormality        -> "Emergency help needed"
- *   (lateral lip deviation, or a pain/distress movement pattern)
- * - 5 rightward head turns       -> "Give me some food"
+ * (MediaPipe Face Mesh geometry + a per-patient neutral baseline twin).
  *
  * Calibration is fully automatic: the first 60 face frames (~2 seconds of
  * relaxed face) become the patient's neutral baseline. No manual step.
@@ -19,34 +13,33 @@
  */
 
 export const NEUROFACE_RULE_IDS = [
-  "water-5-blinks",
-  "feeling-good-smile",
-  "emergency-abnormality",
-  "food-5-head-right",
+  "water-3-blinks",
+  "food-3-head-left",
+  "toilet-3-head-right",
+  "okay-nod-smile",
 ] as const;
 
 export type NeuroFaceRuleId = (typeof NEUROFACE_RULE_IDS)[number];
 
 export const NEUROFACE_RULE_LABELS: Record<NeuroFaceRuleId, string> = Object.freeze({
-  "water-5-blinks": "Blink 5 times",
-  "feeling-good-smile": "Smile",
-  "emergency-abnormality": "Abnormality alert",
-  "food-5-head-right": "Head right 5 times",
+  "water-3-blinks": "Blink 3 times (looking at camera)",
+  "food-3-head-left": "Head left 3 times",
+  "toilet-3-head-right": "Head right 3 times",
+  "okay-nod-smile": "Nod while smiling",
 });
 
 export const NEUROFACE_RULE_PHRASES: Record<NeuroFaceRuleId, string> = Object.freeze({
-  "water-5-blinks": "I want water",
-  "feeling-good-smile": "I am feeling good",
-  "emergency-abnormality": "Emergency help needed",
-  "food-5-head-right": "Give me some food",
+  "water-3-blinks": "I need water",
+  "food-3-head-left": "I need food",
+  "toilet-3-head-right": "I need to go to toilet",
+  "okay-nod-smile": "I am okay, thank you",
 });
 
-/** Default profile-gesture bindings; null falls back to the built-in phrase. */
 export const DEFAULT_NEUROFACE_BINDINGS: Record<NeuroFaceRuleId, string | null> = Object.freeze({
-  "water-5-blinks": "water",
-  "feeling-good-smile": null,
-  "emergency-abnormality": "emergency",
-  "food-5-head-right": null,
+  "water-3-blinks": "water",
+  "food-3-head-left": null,
+  "toilet-3-head-right": null,
+  "okay-nod-smile": null,
 });
 
 export type NeuroFacePoint = { x: number; y: number };
@@ -95,27 +88,29 @@ export type NeuroFaceStatus = {
   navEvent?: NeuroFaceNavEvent;
 };
 
-/* Tuning: mirrors the proven mobile clinical runtime. */
 const AUTO_CAL_FRAMES = 60;
-const BLINK_WINDOW_MS = 4_000;
-const BLINKS_FOR_WATER = 5;
+const BLINK_WINDOW_MS = 3_500;
+const BLINKS_FOR_WATER = 3;
+const BLINK_GAZE_YAW_LIMIT_DEG = 8;
+const BLINK_GAZE_PITCH_LIMIT_DEG = 8;
 const BLINK_MIN_DUR_S = 0.06;
 const BLINK_MAX_DUR_S = 0.65;
-const SMILE_THRESHOLD = 0.4;
-const SMILE_HOLD_MS = 800;
-const SMILE_COOLDOWN_MS = 4_000;
-const DEV_THRESHOLD = 0.035;
-const DEV_RELEASE = 0.02;
-const DEV_HOLD_MS = 4_000;
-const DEV_YAW_GATE_DEG = 14;
-const PAIN_THRESHOLD = 0.6;
-const PAIN_RELEASE = 0.4;
-const PAIN_HOLD_MS = 3_000;
+
+const HEAD_LEFT_ENTER_DEG = 12; // yaw < -12 to enter
+const HEAD_LEFT_EXIT_DEG = 6;  // yaw > -6 to exit (return to center)
+const HEAD_TURNS_FOR_FOOD = 3;
+const HEAD_LEFT_WINDOW_MS = 5_000;
+
 const HEAD_RIGHT_ENTER_DEG = 12;
 const HEAD_RIGHT_EXIT_DEG = 6;
-const HEAD_TURNS_FOR_FOOD = 5;
-const HEAD_WINDOW_MS = 6_000;
-const ABNORMALITY_RECOOLDOWN_MS = 10_000;
+const HEAD_TURNS_FOR_TOILET = 3;
+const HEAD_RIGHT_WINDOW_MS = 5_000;
+
+const NOD_PITCH_THRESHOLD_DEG = 5; // pitch reversal must exceed this amplitude
+const NOD_WINDOW_MS = 2_000;
+const NOD_REVERSALS_REQUIRED = 3;
+const NOD_SMILE_THRESHOLD = 0.35;
+const NOD_COOLDOWN_MS = 4_000;
 
 const IDX = Object.freeze({
   eyeLOuter: 33, eyeLInner: 133, eyeLUp1: 160, eyeLUp2: 158, eyeLLow1: 153, eyeLLow2: 144,
@@ -273,13 +268,16 @@ export class NeuroFaceRuleEngine {
   private blinkClosed = false;
   private blinkT0 = 0;
   private recentBlinks: number[] = [];
-  private smileHoldMs = 0;
-  private lastSmileAt = Number.NEGATIVE_INFINITY;
-  private devHoldMs = 0;
-  private painHoldMs = 0;
-  private lastAbnormalityAt = Number.NEGATIVE_INFINITY;
-  private headRightArmed = false;
-  private recentHeadTurns: number[] = [];
+  
+  private headLeftArmedForFood = false;
+  private recentHeadLeftTurns: number[] = [];
+  
+  private headRightArmedForToilet = false;
+  private recentHeadRightTurns: number[] = [];
+
+  private pitchHistory: Array<{pitch: number, t: number}> = [];
+  private lastNodSmileAt = Number.NEGATIVE_INFINITY;
+  
   private headNavLeftArmed = true;
   private headNavRightArmed = true;
   private lastLeftNavAt = 0;
@@ -379,71 +377,106 @@ export class NeuroFaceRuleEngine {
       }
     }
 
-    // Rule 1: 5 blinks in a row -> "I want water".
+    // Rule 1: 3 blinks looking at camera -> "I need water".
     const thClose = Math.max(0.12, baseEar * 0.55);
     const thOpen = Math.max(0.16, baseEar * 0.8);
+    const gazeGate = Math.abs(metrics.yawDeg) < BLINK_GAZE_YAW_LIMIT_DEG && Math.abs(metrics.pitchDeg) < BLINK_GAZE_PITCH_LIMIT_DEG;
+
     if (!this.blinkClosed && metrics.earAvg < thClose) {
-      this.blinkClosed = true;
-      this.blinkT0 = at / 1000;
+      if (gazeGate) {
+        this.blinkClosed = true;
+        this.blinkT0 = at / 1000;
+      }
     } else if (this.blinkClosed && metrics.earAvg > thOpen) {
       this.blinkClosed = false;
       const durS = at / 1000 - this.blinkT0;
-      if (durS >= BLINK_MIN_DUR_S && durS <= BLINK_MAX_DUR_S) {
+      if (durS >= BLINK_MIN_DUR_S && durS <= BLINK_MAX_DUR_S && gazeGate) {
         this.recentBlinks.push(at);
         this.recentBlinks = this.recentBlinks.filter((blinkAt) => at - blinkAt <= BLINK_WINDOW_MS);
         if (this.recentBlinks.length >= BLINKS_FOR_WATER) {
           this.recentBlinks = [];
-          return { trigger: this.fire("water-5-blinks", at, 0.95, `${BLINKS_FOR_WATER} consecutive blinks`), navEvent };
+          return { trigger: this.fire("water-3-blinks", at, 0.95, `${BLINKS_FOR_WATER} blinks`), navEvent };
         }
       }
     }
 
-    // Rule 2: sustained smile -> "I am feeling good".
-    if (metrics.smile > SMILE_THRESHOLD) {
-      this.smileHoldMs += dtMs;
-      if (this.smileHoldMs >= SMILE_HOLD_MS && at - this.lastSmileAt > SMILE_COOLDOWN_MS) {
-        this.lastSmileAt = at;
-        this.smileHoldMs = -1500;
-        return { trigger: this.fire("feeling-good-smile", at, 0.9, `smile held ${(SMILE_HOLD_MS / 1000).toFixed(1)}s`), navEvent };
+    // Rule 2: 3 leftward head turns -> "I need food".
+    if (metrics.yawDeg < -HEAD_LEFT_ENTER_DEG) {
+      this.headLeftArmedForFood = true;
+    } else if (this.headLeftArmedForFood && metrics.yawDeg > -HEAD_LEFT_EXIT_DEG) {
+      this.headLeftArmedForFood = false;
+      this.recentHeadLeftTurns.push(at);
+      this.recentHeadLeftTurns = this.recentHeadLeftTurns.filter((turnAt) => at - turnAt <= HEAD_LEFT_WINDOW_MS);
+      if (this.recentHeadLeftTurns.length >= HEAD_TURNS_FOR_FOOD) {
+        this.recentHeadLeftTurns = [];
+        return { trigger: this.fire("food-3-head-left", at, 0.9, `${HEAD_TURNS_FOR_FOOD} leftward turns`), navEvent };
       }
-    } else {
-      this.smileHoldMs = 0;
+    } else if (metrics.yawDeg > HEAD_LEFT_ENTER_DEG) {
+      this.headLeftArmedForFood = false;
     }
 
-    // Rule 3: sustained abnormality -> "Emergency help needed".
-    const devMag = Math.abs(metrics.lateralDeviation);
-    if (devMag >= DEV_THRESHOLD && Math.abs(metrics.yawDeg) < DEV_YAW_GATE_DEG) {
-      this.devHoldMs += dtMs;
-    } else if (devMag < DEV_RELEASE) {
-      this.devHoldMs = 0;
-    }
-    if (metrics.painScore >= PAIN_THRESHOLD) {
-      this.painHoldMs += dtMs;
-    } else if (metrics.painScore < PAIN_RELEASE) {
-      this.painHoldMs = 0;
-    }
-    if ((this.devHoldMs >= DEV_HOLD_MS || this.painHoldMs >= PAIN_HOLD_MS) && at - this.lastAbnormalityAt > ABNORMALITY_RECOOLDOWN_MS) {
-      this.lastAbnormalityAt = at;
-      const reason = this.devHoldMs >= DEV_HOLD_MS
-        ? `lateral deviation ${(devMag * 100).toFixed(1)}%`
-        : `distress movement ${(metrics.painScore * 100).toFixed(0)}%`;
-      return { trigger: this.fire("emergency-abnormality", at, 0.9, reason), navEvent };
-    }
-
-    // Rule 4: 5 rightward head turns -> "Give me some food".
+    // Rule 3: 3 rightward head turns -> "I need to go to toilet".
     if (metrics.yawDeg > HEAD_RIGHT_ENTER_DEG) {
-      this.headRightArmed = true;
-    } else if (this.headRightArmed && metrics.yawDeg < HEAD_RIGHT_EXIT_DEG) {
-      this.headRightArmed = false;
-      this.recentHeadTurns.push(at);
-      this.recentHeadTurns = this.recentHeadTurns.filter((turnAt) => at - turnAt <= HEAD_WINDOW_MS);
-      if (this.recentHeadTurns.length >= HEAD_TURNS_FOR_FOOD) {
-        this.recentHeadTurns = [];
-        return { trigger: this.fire("food-5-head-right", at, 0.9, `${HEAD_TURNS_FOR_FOOD} rightward turns`), navEvent };
+      this.headRightArmedForToilet = true;
+    } else if (this.headRightArmedForToilet && metrics.yawDeg < HEAD_RIGHT_EXIT_DEG) {
+      this.headRightArmedForToilet = false;
+      this.recentHeadRightTurns.push(at);
+      this.recentHeadRightTurns = this.recentHeadRightTurns.filter((turnAt) => at - turnAt <= HEAD_RIGHT_WINDOW_MS);
+      if (this.recentHeadRightTurns.length >= HEAD_TURNS_FOR_TOILET) {
+        this.recentHeadRightTurns = [];
+        return { trigger: this.fire("toilet-3-head-right", at, 0.9, `${HEAD_TURNS_FOR_TOILET} rightward turns`), navEvent };
       }
     } else if (metrics.yawDeg < -HEAD_RIGHT_ENTER_DEG) {
-      this.headRightArmed = false;
+      this.headRightArmedForToilet = false;
     }
+
+    // Rule 4: okay-nod-smile
+    this.pitchHistory.push({ pitch: metrics.pitchDeg, t: at });
+    this.pitchHistory = this.pitchHistory.filter(p => at - p.t <= NOD_WINDOW_MS);
+    
+    if (metrics.smile > NOD_SMILE_THRESHOLD) {
+      let reversals = 0;
+      if (this.pitchHistory.length > 2) {
+        let lastExtrema = this.pitchHistory[0].pitch;
+        let direction = 0; 
+        
+        for (let i = 1; i < this.pitchHistory.length; i++) {
+          const p = this.pitchHistory[i].pitch;
+          const diff = p - lastExtrema;
+          
+          if (direction === 0) {
+            if (Math.abs(diff) > NOD_PITCH_THRESHOLD_DEG) {
+              direction = Math.sign(diff);
+              lastExtrema = p;
+              reversals++;
+            }
+          } else if (direction === 1) { 
+            if (p > lastExtrema) {
+              lastExtrema = p; 
+            } else if (lastExtrema - p > NOD_PITCH_THRESHOLD_DEG) {
+              direction = -1;
+              lastExtrema = p;
+              reversals++;
+            }
+          } else { 
+            if (p < lastExtrema) {
+              lastExtrema = p; 
+            } else if (p - lastExtrema > NOD_PITCH_THRESHOLD_DEG) {
+              direction = 1;
+              lastExtrema = p;
+              reversals++;
+            }
+          }
+        }
+      }
+      
+      if (reversals >= NOD_REVERSALS_REQUIRED && at - this.lastNodSmileAt > NOD_COOLDOWN_MS) {
+        this.lastNodSmileAt = at;
+        this.pitchHistory = []; 
+        return { trigger: this.fire("okay-nod-smile", at, 0.9, `nod with smile`), navEvent };
+      }
+    }
+
     return { trigger: null, navEvent };
   }
 
@@ -453,7 +486,8 @@ export class NeuroFaceRuleEngine {
 
   private resetTransient(): void {
     this.blinkClosed = false;
-    this.headRightArmed = false;
+    this.headLeftArmedForFood = false;
+    this.headRightArmedForToilet = false;
     this.singleBlinkClosed = false;
     this.headNavLeftArmed = true;
     this.headNavRightArmed = true;
@@ -462,12 +496,10 @@ export class NeuroFaceRuleEngine {
   private resetDetectors(): void {
     this.resetTransient();
     this.recentBlinks = [];
-    this.smileHoldMs = 0;
-    this.lastSmileAt = Number.NEGATIVE_INFINITY;
-    this.devHoldMs = 0;
-    this.painHoldMs = 0;
-    this.lastAbnormalityAt = Number.NEGATIVE_INFINITY;
-    this.recentHeadTurns = [];
+    this.recentHeadLeftTurns = [];
+    this.recentHeadRightTurns = [];
+    this.pitchHistory = [];
+    this.lastNodSmileAt = Number.NEGATIVE_INFINITY;
     this.lastLeftNavAt = 0;
     this.lastRightNavAt = 0;
     this.lastBlinkSelectAt = 0;

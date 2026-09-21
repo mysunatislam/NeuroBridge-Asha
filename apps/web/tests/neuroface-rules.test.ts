@@ -45,6 +45,24 @@ function closedEyes(face: NeuroFacePoint[]): NeuroFacePoint[] {
   return next;
 }
 
+function headTurnedClosedEyes(): NeuroFacePoint[] {
+  const next = closedEyes(neutralFace());
+  set(next, 1, 0.58, 0.52); // Yaw offset
+  return next;
+}
+
+function headRightFace(): NeuroFacePoint[] {
+  const next = neutralFace();
+  set(next, 1, 0.58, 0.52);
+  return next;
+}
+
+function headLeftFace(): NeuroFacePoint[] {
+  const next = neutralFace();
+  set(next, 1, 0.42, 0.52);
+  return next;
+}
+
 function smilingFace(): NeuroFacePoint[] {
   const next = neutralFace();
   set(next, 61, 0.4, 0.645); set(next, 291, 0.6, 0.645);
@@ -52,28 +70,27 @@ function smilingFace(): NeuroFacePoint[] {
   return next;
 }
 
-function deviatedFace(): NeuroFacePoint[] {
-  const next = neutralFace();
-  set(next, 61, 0.46, 0.66); set(next, 291, 0.62, 0.66);
+function smilingNodUpFace(): NeuroFacePoint[] {
+  const next = smilingFace();
+  set(next, 1, 0.5, 0.48);
   return next;
 }
 
-function painFace(): NeuroFacePoint[] {
-  const next = neutralFace();
-  // squeezed eyes
-  set(next, 160, 0.33, 0.394); set(next, 153, 0.33, 0.406);
-  set(next, 158, 0.39, 0.394); set(next, 144, 0.39, 0.406);
-  set(next, 385, 0.67, 0.394); set(next, 373, 0.67, 0.406);
-  set(next, 387, 0.61, 0.394); set(next, 380, 0.61, 0.406);
-  // pressed lips + downturned corners
-  set(next, 13, 0.5, 0.652); set(next, 14, 0.5, 0.66);
-  set(next, 61, 0.42, 0.68); set(next, 291, 0.58, 0.68);
+function smilingNodDownFace(): NeuroFacePoint[] {
+  const next = smilingFace();
+  set(next, 1, 0.5, 0.56);
   return next;
 }
 
-function headRightFace(): NeuroFacePoint[] {
+function nodUpFace(): NeuroFacePoint[] {
   const next = neutralFace();
-  set(next, 1, 0.58, 0.52);
+  set(next, 1, 0.5, 0.48);
+  return next;
+}
+
+function nodDownFace(): NeuroFacePoint[] {
+  const next = neutralFace();
+  set(next, 1, 0.5, 0.56);
   return next;
 }
 
@@ -87,19 +104,18 @@ function calibrateTwin(): NeuroFaceTwin {
   return calibrator.finish();
 }
 
-test("rule catalogue covers the four patient intents", () => {
+test("rule catalogue covers the four NeuroSense intents", () => {
   assert.deepEqual([...NEUROFACE_RULE_IDS], [
-    "water-5-blinks",
-    "feeling-good-smile",
-    "emergency-abnormality",
-    "food-5-head-right",
+    "water-3-blinks",
+    "food-3-head-left",
+    "toilet-3-head-right",
+    "okay-nod-smile",
   ]);
-  assert.equal(NEUROFACE_RULE_PHRASES["water-5-blinks"], "I want water");
-  assert.equal(NEUROFACE_RULE_PHRASES["feeling-good-smile"], "I am feeling good");
-  assert.equal(NEUROFACE_RULE_PHRASES["emergency-abnormality"], "Emergency help needed");
-  assert.equal(NEUROFACE_RULE_PHRASES["food-5-head-right"], "Give me some food");
-  assert.equal(DEFAULT_NEUROFACE_BINDINGS["water-5-blinks"], "water");
-  assert.equal(DEFAULT_NEUROFACE_BINDINGS["emergency-abnormality"], "emergency");
+  assert.equal(NEUROFACE_RULE_PHRASES["water-3-blinks"], "I need water");
+  assert.equal(NEUROFACE_RULE_PHRASES["food-3-head-left"], "I need food");
+  assert.equal(NEUROFACE_RULE_PHRASES["toilet-3-head-right"], "I need to go to toilet");
+  assert.equal(NEUROFACE_RULE_PHRASES["okay-nod-smile"], "I am okay, thank you");
+  assert.equal(DEFAULT_NEUROFACE_BINDINGS["water-3-blinks"], "water");
 });
 
 test("neutral metrics are sane and auto-calibration builds a twin", () => {
@@ -122,24 +138,23 @@ test("auto-calibrator rejects frames without a face", () => {
   assert.throws(() => calibrator.finish(), /needs 60/);
 });
 
-test("five blinks in a row request water; four do not", () => {
-  const twin = calibrateTwin();
-  const engine = new NeuroFaceRuleEngine(twin);
+test("three blinks looking at camera request water; two do not", () => {
+  const engine = new NeuroFaceRuleEngine(calibrateTwin());
   let now = 1_000;
   let trigger = null;
-  for (let blink = 0; blink < 5; blink += 1) {
+  for (let blink = 0; blink < 3; blink += 1) {
     engine.step(neutralFace(), now); now += 100;
     engine.step(closedEyes(neutralFace()), now); now += 100;
     const out = engine.step(neutralFace(), now); now += 400;
     trigger = out.trigger;
   }
   assert.ok(trigger);
-  assert.equal(trigger?.rule, "water-5-blinks");
+  assert.equal(trigger?.rule, "water-3-blinks");
 
-  const short = new NeuroFaceRuleEngine(twin);
+  const short = new NeuroFaceRuleEngine(calibrateTwin());
   now = 10_000;
   let last = null;
-  for (let blink = 0; blink < 4; blink += 1) {
+  for (let blink = 0; blink < 2; blink += 1) {
     short.step(neutralFace(), now); now += 100;
     short.step(closedEyes(neutralFace()), now); now += 100;
     last = short.step(neutralFace(), now).trigger; now += 400;
@@ -147,78 +162,89 @@ test("five blinks in a row request water; four do not", () => {
   assert.equal(last, null);
 });
 
-test("sustained smile means feeling good; brief smile does not fire", () => {
+test("blinks with head turned do NOT fire water (gaze-gate)", () => {
   const engine = new NeuroFaceRuleEngine(calibrateTwin());
   let now = 1_000;
   let trigger = null;
-  for (let frame = 0; frame < 10; frame += 1) {
-    now += 100;
-    trigger = engine.step(smilingFace(), now).trigger ?? trigger;
+  for (let blink = 0; blink < 3; blink += 1) {
+    engine.step(headRightFace(), now); now += 100;
+    engine.step(headTurnedClosedEyes(), now); now += 100;
+    const out = engine.step(headRightFace(), now); now += 400;
+    trigger = out.trigger;
   }
-  assert.ok(trigger);
-  assert.equal(trigger?.rule, "feeling-good-smile");
-
-  const brief = new NeuroFaceRuleEngine(calibrateTwin());
-  now = 20_000;
-  let fired = null;
-  for (let frame = 0; frame < 3; frame += 1) {
-    now += 100;
-    fired = brief.step(smilingFace(), now).trigger;
-  }
-  assert.equal(fired, null);
+  assert.equal(trigger, null);
 });
 
-test("sustained one-sided deviation raises the emergency abnormality", () => {
+test("three leftward head turns request food", () => {
   const engine = new NeuroFaceRuleEngine(calibrateTwin());
   let now = 1_000;
   let trigger = null;
-  for (let frame = 0; frame < 45; frame += 1) {
-    now += 100;
-    trigger = engine.step(deviatedFace(), now).trigger ?? trigger;
+  for (let turn = 0; turn < 3; turn += 1) {
+    engine.step(headLeftFace(), now); now += 200;
+    const out = engine.step(neutralFace(), now); now += 200;
+    trigger = out.trigger;
   }
   assert.ok(trigger);
-  assert.equal(trigger?.rule, "emergency-abnormality");
-
-  const centered = new NeuroFaceRuleEngine(calibrateTwin());
-  now = 30_000;
-  let calm = null;
-  for (let frame = 0; frame < 45; frame += 1) {
-    now += 100;
-    calm = centered.step(neutralFace(), now).trigger;
-  }
-  assert.equal(calm, null);
+  assert.equal(trigger?.rule, "food-3-head-left");
 });
 
-test("pain/distress movement pattern raises the emergency abnormality", () => {
+test("three rightward head turns request toilet", () => {
   const engine = new NeuroFaceRuleEngine(calibrateTwin());
   let now = 1_000;
   let trigger = null;
-  for (let frame = 0; frame < 35; frame += 1) {
-    now += 100;
-    trigger = engine.step(painFace(), now).trigger ?? trigger;
-  }
-  assert.ok(trigger);
-  assert.equal(trigger?.rule, "emergency-abnormality");
-});
-
-test("five rightward head turns request food", () => {
-  const engine = new NeuroFaceRuleEngine(calibrateTwin());
-  let now = 1_000;
-  let trigger = null;
-  for (let turn = 0; turn < 5; turn += 1) {
+  for (let turn = 0; turn < 3; turn += 1) {
     engine.step(headRightFace(), now); now += 200;
     const out = engine.step(neutralFace(), now); now += 200;
     trigger = out.trigger;
   }
   assert.ok(trigger);
-  assert.equal(trigger?.rule, "food-5-head-right");
+  assert.equal(trigger?.rule, "toilet-3-head-right");
 });
 
-function headLeftFace(): NeuroFacePoint[] {
-  const next = neutralFace();
-  set(next, 1, 0.42, 0.52);
-  return next;
-}
+test("nodding while smiling fires okay", () => {
+  const engine = new NeuroFaceRuleEngine(calibrateTwin());
+  let now = 1_000;
+  let trigger = null;
+  
+  // Neutral smile start
+  engine.step(smilingFace(), now); now += 200;
+  
+  // Nod oscillation: up -> down -> up -> down (each takes some frames)
+  for (let step of [smilingNodUpFace(), smilingNodDownFace(), smilingNodUpFace(), smilingNodDownFace(), smilingFace()]) {
+    const out = engine.step(step, now); now += 200;
+    if (out.trigger) trigger = out.trigger;
+  }
+  
+  assert.ok(trigger);
+  assert.equal(trigger?.rule, "okay-nod-smile");
+});
+
+test("nodding without smile does NOT fire", () => {
+  const engine = new NeuroFaceRuleEngine(calibrateTwin());
+  let now = 1_000;
+  let trigger = null;
+  
+  engine.step(neutralFace(), now); now += 200;
+  
+  for (let step of [nodUpFace(), nodDownFace(), nodUpFace(), nodDownFace(), neutralFace()]) {
+    const out = engine.step(step, now); now += 200;
+    if (out.trigger) trigger = out.trigger;
+  }
+  
+  assert.equal(trigger, null);
+});
+
+test("smile without nodding does NOT fire", () => {
+  const engine = new NeuroFaceRuleEngine(calibrateTwin());
+  let now = 1_000;
+  let trigger = null;
+  for (let frame = 0; frame < 10; frame += 1) {
+    now += 100;
+    const out = engine.step(smilingFace(), now);
+    if (out.trigger) trigger = out.trigger;
+  }
+  assert.equal(trigger, null);
+});
 
 test("lost tracking never fires and never crashes", () => {
   const engine = new NeuroFaceRuleEngine(calibrateTwin());
@@ -230,43 +256,34 @@ test("lost tracking never fires and never crashes", () => {
   assert.equal(uncalibrated.snapshot().calibrated, false);
 });
 
-test("single deliberate blink emits blink-select once with hysteresis", () => {
+test("single deliberate blink emits blink-select", () => {
   const engine = new NeuroFaceRuleEngine(calibrateTwin());
   let now = 1_000;
   engine.step(neutralFace(), now); now += 50;
-  // Eye closure:
   engine.step(closedEyes(neutralFace()), now); now += 250;
-  // Eye opening:
   const openResult = engine.step(neutralFace(), now); now += 50;
   assert.equal(openResult.status.navEvent, "blink-select");
 
-  // Next frame should not repeat blink-select
   const nextFrame = engine.step(neutralFace(), now);
   assert.equal(nextFrame.status.navEvent, null);
 });
 
-test("head turn emits edge-triggered single-step nav-left and nav-right without strobing", () => {
+test("head turn emits edge-triggered nav-left and nav-right", () => {
   const engine = new NeuroFaceRuleEngine(calibrateTwin());
   let now = 1_000;
   engine.step(neutralFace(), now); now += 100;
 
-  // Turn left:
   const left1 = engine.step(headLeftFace(), now); now += 100;
   assert.equal(left1.status.navEvent, "nav-left");
 
-  // Holding left should NOT emit additional nav-left (no 60 FPS strobing!)
   const left2 = engine.step(headLeftFace(), now); now += 100;
   assert.equal(left2.status.navEvent, null);
 
-  // Return to center to re-arm:
   engine.step(neutralFace(), now); now += 200;
 
-  // Turn right:
   const right1 = engine.step(headRightFace(), now); now += 100;
   assert.equal(right1.status.navEvent, "nav-right");
 
-  // Holding right should NOT emit additional nav-right:
   const right2 = engine.step(headRightFace(), now);
   assert.equal(right2.status.navEvent, null);
 });
-

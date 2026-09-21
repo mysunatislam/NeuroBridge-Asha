@@ -42,33 +42,32 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
       'title': 'I need water',
       'icon': Icons.water_drop_rounded,
       'color': const Color(0xFF38BDF8),
-      'phrase': 'I need some water please.',
+      'phrase': 'I need water.',
+      'gesture': 'Blink 3 times (look at camera)',
     },
     {
-      'title': 'I have pain',
-      'icon': Icons.healing_rounded,
-      'color': const Color(0xFFFB7185),
-      'phrase': 'I am experiencing pain.',
+      'title': 'I need food',
+      'icon': Icons.restaurant_rounded,
+      'color': const Color(0xFFFBBF24),
+      'phrase': 'I need food.',
+      'gesture': 'Head left 3 times',
     },
     {
-      'title': 'I want to rest',
-      'icon': Icons.bed_rounded,
+      'title': 'I need to go to toilet',
+      'icon': Icons.wc_rounded,
       'color': const Color(0xFFA78BFA),
-      'phrase': 'I would like to rest and sleep.',
+      'phrase': 'I need to go to toilet.',
+      'gesture': 'Head right 3 times',
     },
     {
-      'title': 'Call my family',
-      'icon': Icons.phone_rounded,
-      'color': const Color(0xFFF472B6),
-      'phrase': 'Please call my family or caregiver.',
-    },
-    {
-      'title': '... More options',
-      'icon': Icons.more_horiz_rounded,
-      'color': const Color(0xFF94A3B8),
-      'phrase': 'I need more communication options.',
+      'title': 'I am okay, thank you',
+      'icon': Icons.sentiment_satisfied_alt_rounded,
+      'color': const Color(0xFF10B981),
+      'phrase': 'I am okay, thank you.',
+      'gesture': 'Nod while smiling',
     },
   ];
+
 
   @override
   void initState() {
@@ -408,7 +407,7 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
           child: Column(
             children: [
               Text(
-                'Look Right / Left to navigate\nBlink or Smile to select',
+                'Blink 3× → Water · Head Left 3× → Food\nHead Right 3× → Toilet · Nod + Smile → OK',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,

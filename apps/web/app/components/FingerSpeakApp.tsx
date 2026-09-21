@@ -320,7 +320,7 @@ export function FingerSpeakApp() {
       name: NEUROFACE_RULE_LABELS[rule],
       phrase: NEUROFACE_RULE_PHRASES[rule],
       icon: "◉",
-      risk: rule === "emergency-abnormality" ? "emergency" : "routine",
+      risk: "routine" as const,
       dwellMs: 0,
       samples: [],
     };
@@ -932,7 +932,7 @@ export function FingerSpeakApp() {
       name: NEUROFACE_RULE_LABELS[rule],
       phrase: NEUROFACE_RULE_PHRASES[rule],
       icon: "◉",
-      risk: rule === "emergency-abnormality" ? "emergency" : "routine",
+      risk: "routine" as const,
       dwellMs: 0,
       samples: [],
     };
