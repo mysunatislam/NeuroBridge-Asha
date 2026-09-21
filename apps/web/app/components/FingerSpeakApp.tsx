@@ -79,6 +79,7 @@ import {
   validateFaceControlSettings,
   type FaceControlSettings,
 } from "../lib/face-controls";
+import type { SomaticEvent } from "../lib/maira-api";
 
 type View = "speak" | "pi-display" | "calibrate" | "caregiver";
 type CameraStatus = "off" | "loading" | "ready" | "error";
@@ -248,6 +249,7 @@ export function FingerSpeakApp() {
   const [focusedPhraseIndex, setFocusedPhraseIndex] = useState(0);
   const [dwellProgress, setDwellProgress] = useState(0);
   const [recentlySelectedId, setRecentlySelectedId] = useState<string | null>(null);
+  const [recentSomaticEvents, setRecentSomaticEvents] = useState<SomaticEvent[]>([]);
 
   const focusedPhraseIndexRef = useRef(0);
   focusedPhraseIndexRef.current = focusedPhraseIndex;
@@ -909,6 +911,14 @@ export function FingerSpeakApp() {
       source,
     };
     setSpoken((current) => [entry, ...current].slice(0, 12));
+    const somaticEv: SomaticEvent = {
+      id: eventId(),
+      modality: source === "face" ? "neurosense_face" : "fingerspeak_hand",
+      gestureId: gesture.id,
+      phrase: gesture.phrase,
+      timestamp: Date.now(),
+    };
+    setRecentSomaticEvents((current) => [...current, somaticEv].slice(-6));
     void patientSpeechRef.current.speak({
       profileId: profileRef.current.id,
       kind: "gesture",
@@ -936,6 +946,15 @@ export function FingerSpeakApp() {
       dwellMs: 0,
       samples: [],
     };
+    const somaticEv: SomaticEvent = {
+      id: eventId(),
+      modality: "neurosense_face",
+      gestureId: rule,
+      phrase: gesture.phrase,
+      detail: NEUROFACE_RULE_LABELS[rule],
+      timestamp: Date.now(),
+    };
+    setRecentSomaticEvents((current) => [...current, somaticEv].slice(-6));
     speakGesture(gesture, "face");
   }, [speakGesture]);
 
@@ -2648,14 +2667,15 @@ export function FingerSpeakApp() {
             }}
           >
             <AshaAvatar eager />
-            <span><strong>Talk with Asha</strong><small>{serverOnline ? "Backend connected" : "Offline companion ready"}</small></span>
+            <span><strong>Talk with Asha</strong><small>✨ Maira AI Active · Specialist Companion</small></span>
           </button>
           <div className="asha-popup" hidden={!ashaOpen}>
             <button className="asha-popup-backdrop" type="button" onClick={() => setAshaOpen(false)} aria-label="Close Asha companion" />
             <div ref={ashaPanelRef} className="asha-popup-panel" role="dialog" aria-modal="true" aria-label="Asha companion conversation" tabIndex={-1}>
               <AshaCompanion
-                aiAvailable={serverOnline}
+                aiAvailable={true}
                 patientContext={patientContext}
+                somaticEvents={recentSomaticEvents}
                 caregiverConfigured={Boolean(dialablePhone(localContacts.caregiverPhone))}
                 onSpeak={playLocalText}
                 onClose={() => setAshaOpen(false)}

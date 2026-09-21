@@ -84,15 +84,39 @@ class _PatientPageState extends State<PatientPage> {
         final intent = signal.metadata?['intent'] as String?;
         if (intent == 'water') {
           _speakQuickNeed('I need water', 'Water');
+          widget.services.companion.send(
+            'Patient signaled: I need water',
+            gestureModality: 'neurosense_face',
+            gestureConfidence: signal.confidence,
+            physicalEffortObserved: true,
+          );
           return;
         } else if (intent == 'food') {
           _speakQuickNeed('I need food', 'Food');
+          widget.services.companion.send(
+            'Patient signaled: I need food',
+            gestureModality: 'neurosense_face',
+            gestureConfidence: signal.confidence,
+            physicalEffortObserved: true,
+          );
           return;
         } else if (intent == 'toilet') {
           _speakQuickNeed('I need to go to toilet', 'Toilet');
+          widget.services.companion.send(
+            'Patient signaled: I need to go to toilet',
+            gestureModality: 'neurosense_face',
+            gestureConfidence: signal.confidence,
+            physicalEffortObserved: true,
+          );
           return;
         } else if (intent == 'okay') {
           _speakQuickNeed('I am okay, thank you', 'Okay');
+          widget.services.companion.send(
+            'Patient signaled: I am okay, thank you',
+            gestureModality: 'neurosense_face',
+            gestureConfidence: signal.confidence,
+            physicalEffortObserved: true,
+          );
           return;
         } else if (intent == 'abnormality' ||
             signal.kind == PatientSignalKind.seizureAlert) {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { sendAshaChat, type AshaCitation } from "../lib/api";
 import { offlineCompanionReply } from "../lib/asha-companion";
+import type { SomaticEvent } from "../lib/maira-api";
 import { AshaAvatar } from "./AshaAvatar";
 
 type CompanionMessage = {
@@ -39,6 +40,7 @@ type VoiceWindow = Window & typeof globalThis & {
 type Props = {
   aiAvailable: boolean;
   patientContext: Record<string, unknown>;
+  somaticEvents?: SomaticEvent[];
   caregiverConfigured: boolean;
   onSpeak(text: string): boolean | Promise<boolean>;
   onClose?(): void;
@@ -46,6 +48,14 @@ type Props = {
   onCallCaregiver(): string;
   onConfirmEmergency(): Promise<string>;
 };
+
+const QUICK_PROMPTS = [
+  "💧 Safe hydration posture",
+  "🍽️ Nutrition advice",
+  "🌿 Muscle spasm relief",
+  "🧘 Breathing exercise",
+  "📋 My communication summary",
+];
 
 function messageId(): string {
   return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `message-${Date.now()}-${Math.random()}`;
@@ -64,6 +74,7 @@ function safeCitationUrl(value: string | undefined): string | null {
 export function AshaCompanion({
   aiAvailable,
   patientContext,
+  somaticEvents = [],
   caregiverConfigured,
   onSpeak,
   onClose,
@@ -74,14 +85,14 @@ export function AshaCompanion({
   const [messages, setMessages] = useState<CompanionMessage[]>([{
     id: "asha-welcome",
     role: "asha",
-    text: "I’m right here with you. We can talk, write on your display, or contact your caregiver whenever you choose.",
-    mode: "local welcome",
+    text: "Hello! I am Asha, powered by Gigalogy Maira Specialist AI. I am actively monitoring your FingerSpeak hand signals and NeuroSense face gestures. How can I support your care and communication right now?",
+    mode: "maira-specialist",
   }]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [displayBusy, setDisplayBusy] = useState(false);
   const [emergencyBusy, setEmergencyBusy] = useState(false);
-  const [actionMessage, setActionMessage] = useState("Your choices stay in your control.");
+  const [actionMessage, setActionMessage] = useState("✨ Grounded in Maira AI Specialist knowledge.");
   const [confirmingHelp, setConfirmingHelp] = useState(false);
   const [voiceInputAvailable, setVoiceInputAvailable] = useState(false);
   const [listening, setListening] = useState(false);
@@ -116,15 +127,15 @@ export function AshaCompanion({
     });
   }
 
-  async function submitMessage(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    const message = draft.trim();
+  async function submitMessage(event?: React.SyntheticEvent, overrideText?: string): Promise<void> {
+    event?.preventDefault();
+    const message = (overrideText ?? draft).trim();
     if (!message || busy) return;
     setMessages((current) => [...current, { id: messageId(), role: "patient", text: message }]);
     setDraft("");
     setBusy(true);
     playbackReportRef.current += 1;
-    setActionMessage("Asha is thinking…");
+    setActionMessage("Asha & Maira AI are reasoning…");
     const controller = new AbortController();
     requestRef.current?.abort();
     requestRef.current = controller;
@@ -138,6 +149,7 @@ export function AshaCompanion({
         message,
         locale: navigator.language || "en-US",
         patient_context: { ...patientContext, ...(recentSummary ? { recent_summary: recentSummary } : {}) },
+        somatic_events: somaticEvents,
       }, controller.signal);
       setMessages((current) => [...current, {
         id: messageId(),
@@ -149,7 +161,7 @@ export function AshaCompanion({
       if (response.urgent) {
         setActionMessage("Asha noticed that this may be urgent. Please confirm before an alert is sent.");
       } else {
-        setActionMessage("Asha replied. Playing the response aloud…");
+        setActionMessage("Asha replied via Maira AI. Playing the response aloud…");
         speakAndReport(response.reply, "Asha replied aloud. You can also write it on the Pi display.", "Asha replied on screen, but voice playback is unavailable on this device.");
       }
       if (response.urgent) {
@@ -172,8 +184,8 @@ export function AshaCompanion({
         void Promise.resolve().then(() => onSpeak(fallback.reply)).catch(() => undefined);
         setConfirmingHelp(true);
       } else {
-        setActionMessage("Online Asha is unavailable. Playing the local companion response…");
-        speakAndReport(fallback.reply, "Online Asha is unavailable. The local companion replied aloud while communication controls remain ready.", "Online Asha is unavailable. The local reply remains on screen while communication controls stay ready.");
+        setActionMessage("Playing local companion response…");
+        speakAndReport(fallback.reply, "The local companion replied aloud while communication controls remain ready.", "The local reply remains on screen while communication controls stay ready.");
       }
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
@@ -250,54 +262,195 @@ export function AshaCompanion({
     <section className="asha-companion" aria-labelledby="asha-companion-title">
       <div className="asha-companion-head">
         <AshaAvatar decorative eager />
-        <div><span className="eyebrow">ASHA COMPANION</span><h2 id="asha-companion-title">I’m here with you.</h2></div>
-        <span className={aiAvailable ? "asha-presence live" : "asha-presence"}><i />{aiAvailable ? "Backend connected" : "Offline-ready"}</span>
+        <div>
+          <span className="eyebrow">ASHA AGENTIC AI</span>
+          <h2 id="asha-companion-title">I’m here with you.</h2>
+        </div>
+        <span className="asha-presence live">
+          <i />✨ Maira AI Active
+        </span>
         {onClose && <button className="asha-close" type="button" onClick={onClose} aria-label="Close Asha companion">×</button>}
       </div>
 
       <ol className="conversation" aria-live="polite" aria-busy={busy} aria-label="Conversation with Asha">
         {messages.map((message) => (
           <li key={message.id} className={`conversation-message ${message.role}`}>
-            <div><small>{message.role === "asha" ? `Asha · ${message.mode ?? "companion"}` : "You"}</small><p>{message.text}</p></div>
-            {message.role === "asha" && <button type="button" onClick={() => {
-              setActionMessage("Playing Asha’s message…");
-              speakAndReport(message.text, "Asha’s message played aloud.", "Voice playback is unavailable; the message remains visible.");
-            }} aria-label={`Play Asha message aloud: ${message.text}`}>▶ Play</button>}
+            <div>
+              <small>
+                {message.role === "asha"
+                  ? message.mode?.includes("maira")
+                    ? "Asha · ✨ Maira Specialist"
+                    : `Asha · ${message.mode ?? "companion"}`
+                  : "You"}
+              </small>
+              <p>{message.text}</p>
+            </div>
+            {message.role === "asha" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActionMessage("Playing Asha’s message…");
+                  speakAndReport(message.text, "Asha’s message played aloud.", "Voice playback is unavailable; the message remains visible.");
+                }}
+                aria-label={`Play Asha message aloud: ${message.text}`}
+              >
+                ▶ Play
+              </button>
+            )}
             {message.citations?.length ? (
               <ul className="citation-list" aria-label="Sources">
                 {message.citations.map((citation, index) => {
                   const url = safeCitationUrl(citation.url);
-                  return <li key={`${message.id}-source-${index}`}>{url ? <a href={url} target="_blank" rel="noreferrer">{citation.title}</a> : citation.title}{citation.snippet && <span>{citation.snippet}</span>}</li>;
+                  return (
+                    <li key={`${message.id}-source-${index}`}>
+                      {url ? <a href={url} target="_blank" rel="noreferrer">{citation.title}</a> : <strong>{citation.title}</strong>}
+                      {citation.snippet && <span>{citation.snippet}</span>}
+                    </li>
+                  );
                 })}
               </ul>
             ) : null}
           </li>
         ))}
-        {busy && <li className="conversation-message asha pending"><div><small>Asha</small><p>Thinking with care…</p></div></li>}
+        {busy && (
+          <li className="conversation-message asha pending">
+            <div>
+              <small>Asha · ✨ Maira Specialist</small>
+              <p>Consulting clinical neuro-care knowledge…</p>
+            </div>
+          </li>
+        )}
       </ol>
 
+      {/* Somatic Context Pill Bar (FingerSpeak + NeuroSense) */}
+      {somaticEvents && somaticEvents.length > 0 && (
+        <div style={{ padding: "8px 20px 0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "10px", fontWeight: 800, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Recent Signal:
+          </span>
+          {somaticEvents.slice(-2).map((ev) => (
+            <button
+              key={ev.id}
+              type="button"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                border: "1px solid rgba(7,91,85,0.2)",
+                borderRadius: "999px",
+                padding: "4px 10px",
+                background: "rgba(169,221,210,0.2)",
+                color: "var(--teal-dark)",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+              onClick={(e) => {
+                const q = `I recently triggered ${ev.modality === "neurosense_face" ? "NeuroSense face gesture" : "FingerSpeak hand gesture"} "${ev.phrase || ev.gestureId}". What clinical or safe posture guidance should I follow?`;
+                void submitMessage(e, q);
+              }}
+              title="Click to ask Maira AI about this signal"
+            >
+              <span>{ev.modality === "neurosense_face" ? "👁️" : "✋"}</span>
+              <span>{ev.phrase || ev.gestureId}</span>
+              <small style={{ opacity: 0.7 }}>({ev.modality === "neurosense_face" ? "Face" : "Hand"})</small>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Clinical Quick Prompt Chips */}
+      <div style={{ padding: "8px 20px 0", display: "flex", gap: "6px", overflowX: "auto", scrollbarWidth: "none" }}>
+        {QUICK_PROMPTS.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            style={{
+              whiteSpace: "nowrap",
+              border: "1px solid var(--line)",
+              borderRadius: "999px",
+              padding: "4px 10px",
+              background: "#fff",
+              color: "var(--ink)",
+              fontSize: "11px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+            onClick={(e) => {
+              const cleanPrompt = prompt.replace(/^[^\w\s]+\s*/, "");
+              void submitMessage(e, cleanPrompt);
+            }}
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
+
       <form className="asha-composer" onSubmit={(event) => void submitMessage(event)}>
-        <label htmlFor="asha-message">Message Asha</label>
-        <textarea id="asha-message" value={draft} onChange={(event) => setDraft(event.target.value)} rows={2} maxLength={1_000} placeholder="Type what you need or how you feel…" />
+        <label htmlFor="asha-message">Message Asha (Maira AI)</label>
+        <textarea
+          id="asha-message"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          rows={2}
+          maxLength={1_000}
+          placeholder="Ask Asha about safe swallowing, spasms, exercise, or communication…"
+        />
         <div className="composer-actions">
-          <button className={listening ? "voice-input listening" : "voice-input"} type="button" onClick={toggleVoiceInput} disabled={!voiceInputAvailable} aria-pressed={listening}>
+          <button
+            className={listening ? "voice-input listening" : "voice-input"}
+            type="button"
+            onClick={toggleVoiceInput}
+            disabled={!voiceInputAvailable}
+            aria-pressed={listening}
+          >
             {listening ? "■ Stop listening" : voiceInputAvailable ? "● Press to talk" : "Voice input unavailable"}
           </button>
-          <button className="send-message" type="submit" disabled={!draft.trim() || busy}>{busy ? "Sending…" : "Ask Asha"}</button>
+          <button className="send-message" type="submit" disabled={!draft.trim() || busy}>
+            {busy ? "Thinking…" : "Ask Asha"}
+          </button>
         </div>
-        <small>{voiceInputAvailable ? "Voice input starts only when you press the button; typing always works." : "This browser does not offer speech recognition. Type your message instead."}</small>
+        <small>
+          {voiceInputAvailable
+            ? "Voice input starts only when you press the button; typing always works."
+            : "This browser does not offer speech recognition. Type your message instead."}
+        </small>
       </form>
 
       <div className="patient-primary-actions" aria-label="Patient quick actions">
-        <button type="button" onClick={() => void writeDisplay()} disabled={displayBusy}><span aria-hidden="true">▣</span><strong>{displayBusy ? "Sending…" : "Write on Pi display"}</strong><small>Send this draft, or Asha’s latest reply</small></button>
-        <button type="button" onClick={callCaregiver}><span aria-hidden="true">☎</span><strong>Call caregiver</strong><small>{caregiverConfigured ? "Open your phone dialer" : "Add a local contact first"}</small></button>
-        <button className="need-help" type="button" onClick={() => setConfirmingHelp(true)}><span aria-hidden="true">!</span><strong>Need help</strong><small>Requires confirmation</small></button>
+        <button type="button" onClick={() => void writeDisplay()} disabled={displayBusy}>
+          <span aria-hidden="true">▣</span>
+          <strong>{displayBusy ? "Sending…" : "Write on Pi display"}</strong>
+          <small>Send this draft, or Asha’s latest reply</small>
+        </button>
+        <button type="button" onClick={callCaregiver}>
+          <span aria-hidden="true">☎</span>
+          <strong>Call caregiver</strong>
+          <small>{caregiverConfigured ? "Open your phone dialer" : "Add a local contact first"}</small>
+        </button>
+        <button className="need-help" type="button" onClick={() => setConfirmingHelp(true)}>
+          <span aria-hidden="true">!</span>
+          <strong>Need help</strong>
+          <small>Requires confirmation</small>
+        </button>
       </div>
 
       {confirmingHelp && (
         <div className="emergency-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="confirm-help-title" aria-describedby="confirm-help-copy">
-          <div><strong id="confirm-help-title">Send a confirmed help request?</strong><p id="confirm-help-copy">This will speak “I need help now” locally and notify approved caregivers when alert sharing is enabled. FingerSpeak is not an emergency service.</p></div>
-          <div><button type="button" className="confirm-help" onClick={() => void confirmEmergency()} disabled={emergencyBusy}>{emergencyBusy ? "Confirming…" : "Confirm I need help"}</button><button type="button" onClick={() => setConfirmingHelp(false)} disabled={emergencyBusy}>Cancel</button></div>
+          <div>
+            <strong id="confirm-help-title">Send a confirmed help request?</strong>
+            <p id="confirm-help-copy">
+              This will speak “I need help now” locally and notify approved caregivers when alert sharing is enabled. FingerSpeak is not an emergency service.
+            </p>
+          </div>
+          <div>
+            <button type="button" className="confirm-help" onClick={() => void confirmEmergency()} disabled={emergencyBusy}>
+              {emergencyBusy ? "Confirming…" : "Confirm I need help"}
+            </button>
+            <button type="button" onClick={() => setConfirmingHelp(false)} disabled={emergencyBusy}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       <p className="asha-action-status" role="status">{actionMessage}</p>

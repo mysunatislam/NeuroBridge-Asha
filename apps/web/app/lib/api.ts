@@ -1,5 +1,6 @@
 import type { FingerSpeakProfile } from "./fingerspeak";
 import { deviceStorage, type OutboxEvent, type RemoteLink } from "./storage";
+import { askMaira, type SomaticEvent } from "./maira-api";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/v1").replace(/\/$/, "");
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -29,6 +30,7 @@ export type AshaChatRequest = {
   previous_response_id?: string;
   locale?: string;
   patient_context?: Record<string, unknown>;
+  somatic_events?: SomaticEvent[];
 };
 
 export type AshaChatResponse = {
@@ -86,23 +88,38 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function sendAshaChat(input: AshaChatRequest, signal?: AbortSignal): Promise<AshaChatResponse> {
-  const response = await requestJson<AshaChatResponse>("/asha/chat", {
-    method: "POST",
-    body: JSON.stringify(input),
-    signal,
-  });
-  if (!response || typeof response.reply !== "string" || !response.reply.trim() || typeof response.mode !== "string") {
-    throw new Error("Asha returned an invalid response.");
+  try {
+    return await askMaira({
+      message: input.message,
+      locale: input.locale,
+      patientContext: input.patient_context,
+      recentSomaticEvents: input.somatic_events,
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    try {
+      const response = await requestJson<AshaChatResponse>("/asha/chat", {
+        method: "POST",
+        body: JSON.stringify(input),
+        signal,
+      });
+      if (response && typeof response.reply === "string" && response.reply.trim()) {
+        return {
+          reply: response.reply.trim(),
+          mode: response.mode,
+          previous_response_id: typeof response.previous_response_id === "string" ? response.previous_response_id : undefined,
+          citations: Array.isArray(response.citations)
+            ? response.citations.filter((c): c is AshaCitation => Boolean(c) && typeof c.title === "string")
+            : [],
+          urgent: response.urgent === true,
+        };
+      }
+    } catch {
+      // Ignore secondary error and rethrow main error
+    }
+    throw error;
   }
-  return {
-    reply: response.reply.trim(),
-    mode: response.mode,
-    previous_response_id: typeof response.previous_response_id === "string" ? response.previous_response_id : undefined,
-    citations: Array.isArray(response.citations)
-      ? response.citations.filter((citation): citation is AshaCitation => Boolean(citation) && typeof citation.title === "string")
-      : [],
-    urgent: response.urgent === true,
-  };
 }
 
 export async function loadRemoteDevices(profileId: string): Promise<RemoteDevice[]> {
