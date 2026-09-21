@@ -86,15 +86,19 @@ export type NeuroFaceStatus = {
   lastTrigger: NeuroFaceTrigger | null;
   metrics: NeuroFaceMetrics | null;
   navEvent?: NeuroFaceNavEvent;
+  recentBlinkCount?: number;
+  recentHeadLeftCount?: number;
+  recentHeadRightCount?: number;
+  nodReversalsCount?: number;
 };
 
 const AUTO_CAL_FRAMES = 60;
 const BLINK_WINDOW_MS = 3_500;
 const BLINKS_FOR_WATER = 3;
-const BLINK_GAZE_YAW_LIMIT_DEG = 8;
-const BLINK_GAZE_PITCH_LIMIT_DEG = 8;
-const BLINK_MIN_DUR_S = 0.06;
-const BLINK_MAX_DUR_S = 0.65;
+const BLINK_GAZE_YAW_LIMIT_DEG = 11;
+const BLINK_GAZE_PITCH_LIMIT_DEG = 22;
+const BLINK_MIN_DUR_S = 0.08;
+const BLINK_MAX_DUR_S = 0.90;
 
 const HEAD_LEFT_ENTER_DEG = 12; // yaw < -12 to enter
 const HEAD_LEFT_EXIT_DEG = 6;  // yaw > -6 to exit (return to center)
@@ -130,7 +134,7 @@ function eyeAspect(landmarks: ReadonlyArray<NeuroFacePoint>, outer: number, inne
 }
 
 function hasLandmarks(landmarks: ReadonlyArray<NeuroFacePoint>): boolean {
-  if (!Array.isArray(landmarks) || landmarks.length < 478) return false;
+  if (!Array.isArray(landmarks) || landmarks.length < 468) return false;
   for (const index of [33, 133, 263, 362, 1, 10, 152, 234, 454, 61, 291, 13, 14] as const) {
     const point = landmarks[index];
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
@@ -277,6 +281,7 @@ export class NeuroFaceRuleEngine {
 
   private pitchHistory: Array<{pitch: number, t: number}> = [];
   private lastNodSmileAt = Number.NEGATIVE_INFINITY;
+  private lastNodReversals = 0;
   
   private headNavLeftArmed = true;
   private headNavRightArmed = true;
@@ -313,6 +318,10 @@ export class NeuroFaceRuleEngine {
       lastTrigger: this.lastTrigger ? { ...this.lastTrigger } : null,
       metrics: this.lastMetrics ? { ...this.lastMetrics } : null,
       navEvent,
+      recentBlinkCount: this.recentBlinks.length,
+      recentHeadLeftCount: this.recentHeadLeftTurns.length,
+      recentHeadRightCount: this.recentHeadRightTurns.length,
+      nodReversalsCount: this.lastNodReversals,
     };
   }
 
@@ -378,8 +387,8 @@ export class NeuroFaceRuleEngine {
     }
 
     // Rule 1: 3 blinks looking at camera -> "I need water".
-    const thClose = Math.max(0.12, baseEar * 0.55);
-    const thOpen = Math.max(0.16, baseEar * 0.8);
+    const thClose = Math.max(0.13, baseEar * 0.65);
+    const thOpen = Math.max(0.17, baseEar * 0.78);
     const gazeGate = Math.abs(metrics.yawDeg) < BLINK_GAZE_YAW_LIMIT_DEG && Math.abs(metrics.pitchDeg) < BLINK_GAZE_PITCH_LIMIT_DEG;
 
     if (!this.blinkClosed && metrics.earAvg < thClose) {
@@ -469,12 +478,15 @@ export class NeuroFaceRuleEngine {
           }
         }
       }
+      this.lastNodReversals = reversals;
       
       if (reversals >= NOD_REVERSALS_REQUIRED && at - this.lastNodSmileAt > NOD_COOLDOWN_MS) {
         this.lastNodSmileAt = at;
         this.pitchHistory = []; 
         return { trigger: this.fire("okay-nod-smile", at, 0.9, `nod with smile`), navEvent };
       }
+    } else {
+      this.lastNodReversals = 0;
     }
 
     return { trigger: null, navEvent };

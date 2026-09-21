@@ -4,6 +4,7 @@ import type { FaceLandmarker, HandLandmarker } from "@mediapipe/tasks-vision";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AshaAvatar } from "./AshaAvatar";
 import { AshaCompanion } from "./AshaCompanion";
+import { NeuroSenseDashboard } from "./NeuroSenseDashboard";
 import { PiDisplayView } from "./PiDisplayView";
 import { usePiDevice } from "../hooks/usePiDevice";
 import {
@@ -250,6 +251,7 @@ export function FingerSpeakApp() {
   const [dwellProgress, setDwellProgress] = useState(0);
   const [recentlySelectedId, setRecentlySelectedId] = useState<string | null>(null);
   const [recentSomaticEvents, setRecentSomaticEvents] = useState<SomaticEvent[]>([]);
+  const [showNeuroSenseDashboard, setShowNeuroSenseDashboard] = useState(false);
 
   const focusedPhraseIndexRef = useRef(0);
   focusedPhraseIndexRef.current = focusedPhraseIndex;
@@ -1160,7 +1162,7 @@ export function FingerSpeakApp() {
     const facePresent = Boolean(faceResult.faceLandmarks?.[0]?.length || faceResult.faceBlendshapes?.[0]?.categories.length);
     setFaceTracking(facePresent);
     const faceLandmarks = faceResult.faceLandmarks?.[0] ?? null;
-    if (faceLandmarks && faceLandmarks.length >= 478) {
+    if (faceLandmarks && faceLandmarks.length >= 468) {
       const calibrator = neurofaceCalibratorRef.current;
       if (calibrator) {
         if (calibrator.add(faceLandmarks)) setFaceCalibrationProgress(calibrator.progress);
@@ -1848,6 +1850,29 @@ export function FingerSpeakApp() {
         <div className="system-badges">
           <button
             type="button"
+            className="neuroface-studio-btn"
+            onClick={() => setShowNeuroSenseDashboard(true)}
+            title="Open full NeuroSense Face Studio with dynamic curves and camera screen"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 14px",
+              borderRadius: "999px",
+              background: "linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(14, 165, 233, 0.2))",
+              border: "1px solid #10b981",
+              color: "#34d399",
+              fontSize: "12px",
+              fontWeight: 800,
+              cursor: "pointer",
+              boxShadow: "0 0 12px rgba(16, 185, 129, 0.2)",
+            }}
+          >
+            <span aria-hidden="true">👁️</span>
+            <span>NeuroSense Studio</span>
+          </button>
+          <button
+            type="button"
             className="theme-toggle-switch"
             onClick={toggleTheme}
             aria-label={`Switch to ${isDark ? "bright" : "dark"} mode`}
@@ -1918,7 +1943,34 @@ export function FingerSpeakApp() {
           <section className="workspace speak-workspace" aria-labelledby="speak-title">
             <div className="patient-hero section-heading">
               <div className="patient-hero-copy">
-                <div><span className="eyebrow">PATIENT COMPANION</span><h1 id="speak-title">You’re not alone. Asha is right here.</h1><p className="patient-lead">Talk on your phone, write on the wheelchair display, or reach your caregiver—with every important action kept in your control.</p></div>
+                <div><span className="eyebrow">PATIENT COMPANION</span><h1 id="speak-title">You’re not alone. Asha is right here.</h1><p className="patient-lead">Talk on your phone, write on the wheelchair display, or reach your caregiver—with every important action kept in your control.</p>
+                  <div style={{ marginTop: "12px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowNeuroSenseDashboard(true)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "8px 16px",
+                        borderRadius: "12px",
+                        background: "linear-gradient(135deg, #075b55, #118378)",
+                        border: "1px solid rgba(169, 221, 210, 0.5)",
+                        color: "#ffffff",
+                        fontSize: "13px",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        boxShadow: "0 4px 14px rgba(7, 91, 85, 0.25)",
+                      }}
+                    >
+                      <span>👁️</span>
+                      <span>Open NeuroSense™ Face Dashboard &amp; Dynamic Curves</span>
+                      <span style={{ fontSize: "10px", padding: "2px 7px", background: "rgba(255, 255, 255, 0.2)", borderRadius: "999px" }}>
+                        Live Camera
+                      </span>
+                    </button>
+                  </div>
+                </div>
               </div>
               <span className={tracking || faceTracking ? "tracking-pill live" : "tracking-pill"}>{tracking && faceTracking ? "Hand + face found" : faceTracking ? "Face found" : tracking ? "Hand found" : cameraStatus === "ready" ? "Monitoring active" : "Camera idle"}</span>
             </div>
@@ -2686,6 +2738,20 @@ export function FingerSpeakApp() {
             </div>
           </div>
         </>
+      )}
+
+      {showNeuroSenseDashboard && (
+        <NeuroSenseDashboard
+          videoRef={videoRef}
+          cameraActive={cameraStatus === "ready"}
+          neurofaceStatus={neurofaceStatus}
+          faceCalibrationProgress={faceCalibrationProgress}
+          onRecalibrate={startFaceCalibration}
+          onClose={() => setShowNeuroSenseDashboard(false)}
+          onSpeakPhrase={(phrase) => void playLocalText(phrase)}
+          onStartCamera={() => void startCamera()}
+          recentSomaticEvents={recentSomaticEvents}
+        />
       )}
 
       <footer><span>NeuroBridge Asha prototype · not a validated medical device</span><span>Local inference → immediate speech → optional secure sync</span></footer>
