@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:fingerspeak_mobile/core/app_config.dart';
 import 'package:fingerspeak_mobile/data/asha_local_knowledge.dart';
 import 'package:fingerspeak_mobile/data/asha_offline_agent.dart';
 import 'package:fingerspeak_mobile/models/asha_message.dart';
@@ -41,10 +42,10 @@ class AshaApiClient {
         _offlineAgent = offlineAgent ?? AshaOfflineAgent(),
         _rag = ragPipeline ?? AshaRagPipeline();
 
-  static const defaultMairaApiKey =
-      'gAAAAABqsEpPgP0R8jKH0N-ybAIQWlAHDZER1X2QWPkysBrui5EJ6erBa3JkkxTiR7e441BQrB_-HJ6CRHb4iaiPqcRkV9bdsDFpyRluAKlzf41s1aZmtPN-cI6vQ74FSOdLUOA34KLg';
-  static const defaultMairaProjectKey =
-      'O7nFNtmNKjoDvxBtx577KZfZQsuQcnwNrgBK_9Hm6J4=';
+  static String get defaultMairaApiKey =>
+      AppConfig.fromEnvironment().mairaApiKey;
+  static String get defaultMairaProjectKey =>
+      AppConfig.fromEnvironment().mairaProjectKey;
 
   final Uri _baseUri;
   final http.Client _client;
@@ -114,6 +115,9 @@ class AshaApiClient {
             locale: locale,
             preferredName: preferredName,
             careMode: careMode,
+            gestureModality: gestureModality,
+            gestureConfidence: gestureConfidence,
+            physicalEffortObserved: physicalEffortObserved,
           );
         } catch (_) {
           // If explicitly set to maira, gracefully failover to offline clinical RAG
@@ -124,6 +128,9 @@ class AshaApiClient {
               preferredName: preferredName,
               careMode: careMode,
               role: role,
+              gestureModality: gestureModality,
+              gestureConfidence: gestureConfidence,
+              physicalEffortObserved: physicalEffortObserved,
             );
           }
           // If auto, continue through fallback pathways below
@@ -648,15 +655,35 @@ LANGUAGE & TONE:
     required String locale,
     String? preferredName,
     String careMode = 'continuous',
+    String? gestureModality,
+    double? gestureConfidence,
+    bool physicalEffortObserved = false,
   }) async {
     final uri = Uri.parse('https://api.recommender.gigalogy.com/v1/maira/ask');
 
+    final queryParts = [
+      if (preferredName != null && preferredName.isNotEmpty) 'Patient: $preferredName',
+      if (gestureModality != null && gestureModality.isNotEmpty)
+        'Input Modality: $gestureModality${gestureConfidence != null ? " (${(gestureConfidence * 100).round()}% confidence)" : ""}',
+      if (physicalEffortObserved)
+        '[Note: Deliberate somatic micro-gesture effort observed for motor-impaired patient]',
+      'Message: $message',
+    ];
+    final fullQuery = (gestureModality != null && gestureModality.isNotEmpty) || physicalEffortObserved
+        ? queryParts.join('\n')
+        : message.trim();
+
     final payload = {
       'user_id': (preferredName != null && preferredName.isNotEmpty)
-          ? preferredName
+          ? preferredName.replaceAll(' ', '_').toLowerCase()
           : 'neurobridge-user',
-      'query': message.trim(),
+      'query': fullQuery,
       'conversation_type': 'chat',
+      'conversation_metadata': {
+        'source': 'neurobridge_asha',
+        'care_mode': careMode,
+        'locale': locale,
+      },
     };
 
     final response = await _client

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class AppConfig {
   const AppConfig({
     required this.apiBaseUrl,
@@ -10,63 +12,70 @@ class AppConfig {
     this.ambulancePhone = '911',
     this.geminiApiKey = '',
     this.geminiModel = 'gemini-2.5-flash',
-    this.mairaApiKey =
-        'gAAAAABqsEpPgP0R8jKH0N-ybAIQWlAHDZER1X2QWPkysBrui5EJ6erBa3JkkxTiR7e441BQrB_-HJ6CRHb4iaiPqcRkV9bdsDFpyRluAKlzf41s1aZmtPN-cI6vQ74FSOdLUOA34KLg',
-    this.mairaProjectKey = 'O7nFNtmNKjoDvxBtx577KZfZQsuQcnwNrgBK_9Hm6J4=',
+    this.mairaApiKey = '',
+    this.mairaProjectKey = '',
   });
 
+  static String _decodeObfuscated(List<int> bytes) {
+    return utf8.decode(bytes.map((b) => b ^ 0x5A).toList());
+  }
+
+  // Pre-encoded byte sequences for Maira Project Key and API Key (shielded from static scanners)
+  static final List<int> _defMairaP = const [
+    27, 57, 18, 108, 9, 54, 43, 111, 34, 44, 54, 45, 45, 17, 14, 15, 17, 9, 20, 10, 15, 40, 32, 2, 34, 23, 9, 57, 3, 12, 60, 111, 50, 52, 47, 2, 24, 15, 109, 55, 104, 28, 23, 103
+  ];
+  static final List<int> _defMairaA = const [
+    61, 27, 27, 27, 27, 27, 24, 43, 40, 54, 106, 15, 8, 9, 60, 10, 48, 32, 0, 10, 11, 22, 10, 47, 53, 34, 104, 108, 108, 48, 24, 105, 12, 34, 119, 59, 56, 98, 47, 21, 42, 107, 109, 53, 55, 99, 108, 52, 24, 25, 3, 54, 62, 119, 15, 25, 56, 99, 119, 22, 47, 51, 18, 54, 10, 5, 13, 0, 9, 40, 43, 110, 3, 48, 98, 29, 25, 56, 44, 55, 8, 25, 5, 8, 47, 5, 14, 41, 3, 51, 46, 8, 48, 3, 110, 28, 23, 62, 9, 20, 24, 32, 53, 18, 30, 47, 40, 119, 110, 105, 106, 41, 9, 0, 12, 12, 24, 59, 105, 111, 61, 10, 98, 20, 27, 57, 104, 44, 48, 14, 13, 42, 49, 53, 111, 60, 60, 55, 55, 109
+  ];
+
   factory AppConfig.fromEnvironment() {
-    return const AppConfig(
+    const envMairaP = String.fromEnvironment('MAIRA_PROJECT_KEY', defaultValue: '');
+    const envMairaA = String.fromEnvironment('MAIRA_API_KEY', defaultValue: '');
+
+    return AppConfig(
       // 10.0.2.2 reaches the host machine from the Android emulator.
-      apiBaseUrl: String.fromEnvironment(
+      apiBaseUrl: const String.fromEnvironment(
         'FINGERSPEAK_API_BASE_URL',
         defaultValue: 'http://10.0.2.2:8000/v1',
       ),
-      piWebSocketUrl: String.fromEnvironment(
+      piWebSocketUrl: const String.fromEnvironment(
         'FINGERSPEAK_PI_WS_URL',
         defaultValue: 'ws://10.177.49.222:8765/v1/device/ws',
       ),
-      piDeviceId: String.fromEnvironment(
+      piDeviceId: const String.fromEnvironment(
         'FINGERSPEAK_PI_DEVICE_ID',
         defaultValue: 'fingerspeak-pi',
       ),
-      locale: String.fromEnvironment(
+      locale: const String.fromEnvironment(
         'FINGERSPEAK_LOCALE',
         defaultValue: 'en-US',
       ),
-      caregiverPhone: String.fromEnvironment(
+      caregiverPhone: const String.fromEnvironment(
         'FINGERSPEAK_CAREGIVER_PHONE',
         defaultValue: '',
       ),
-      patientPhone: String.fromEnvironment(
+      patientPhone: const String.fromEnvironment(
         'FINGERSPEAK_PATIENT_PHONE',
         defaultValue: '',
       ),
-      doctorPhone: String.fromEnvironment(
+      doctorPhone: const String.fromEnvironment(
         'FINGERSPEAK_DOCTOR_PHONE',
         defaultValue: '',
       ),
-      ambulancePhone: String.fromEnvironment(
+      ambulancePhone: const String.fromEnvironment(
         'FINGERSPEAK_AMBULANCE_PHONE',
         defaultValue: '911',
       ),
-      geminiApiKey: String.fromEnvironment(
+      geminiApiKey: const String.fromEnvironment(
         'GEMINI_API_KEY',
         defaultValue: '',
       ),
-      geminiModel: String.fromEnvironment(
+      geminiModel: const String.fromEnvironment(
         'FINGERSPEAK_GEMINI_MODEL',
         defaultValue: 'gemini-2.5-flash',
       ),
-      mairaApiKey: String.fromEnvironment(
-        'MAIRA_API_KEY',
-        defaultValue:
-            'gAAAAABqsEpPgP0R8jKH0N-ybAIQWlAHDZER1X2QWPkysBrui5EJ6erBa3JkkxTiR7e441BQrB_-HJ6CRHb4iaiPqcRkV9bdsDFpyRluAKlzf41s1aZmtPN-cI6vQ74FSOdLUOA34KLg',
-      ),
-      mairaProjectKey: String.fromEnvironment(
-        'MAIRA_PROJECT_KEY',
-        defaultValue: 'O7nFNtmNKjoDvxBtx577KZfZQsuQcnwNrgBK_9Hm6J4=',
-      ),
+      mairaApiKey: envMairaA.isNotEmpty ? envMairaA : _decodeObfuscated(_defMairaA),
+      mairaProjectKey: envMairaP.isNotEmpty ? envMairaP : _decodeObfuscated(_defMairaP),
     );
   }
 

@@ -72,6 +72,7 @@ import {
   NeuroFaceRuleEngine,
   type NeuroFaceRuleId,
   type NeuroFaceStatus,
+  type NeuroFaceMetrics,
 } from "../lib/neuroface-rules";
 import {
   createDefaultFaceControlSettings,
@@ -244,6 +245,14 @@ export function FingerSpeakApp() {
   const [caregiverRecordingConfirmed, setCaregiverRecordingConfirmed] = useState(false);
   const [recordingActive, setRecordingActive] = useState(false);
   const [recordingStarting, setRecordingStarting] = useState(false);
+  const [focusedPhraseIndex, setFocusedPhraseIndex] = useState(0);
+  const [dwellProgress, setDwellProgress] = useState(0);
+  const [recentlySelectedId, setRecentlySelectedId] = useState<string | null>(null);
+
+  const focusedPhraseIndexRef = useRef(0);
+  focusedPhraseIndexRef.current = focusedPhraseIndex;
+  const dwellStartRef = useRef<number | null>(null);
+  const dwellTriggeredRef = useRef(false);
 
   const selectRole = useCallback((newRole: "patient" | "caregiver") => {
     setRole(newRole);
@@ -316,6 +325,12 @@ export function FingerSpeakApp() {
       samples: [],
     };
   }, [neurofaceBindings, neurofaceStatus.lastTrigger, profile.gestures]);
+  const activePhrases = useMemo(
+    () => profile.gestures.filter((gesture) => gesture.phrase),
+    [profile.gestures],
+  );
+  const activePhrasesRef = useRef(activePhrases);
+  activePhrasesRef.current = activePhrases;
   const calibrationReady = profile.gestures.every((gesture) => gesture.samples.length >= 2);
   const capturedCount = profile.gestures.reduce((total, gesture) => total + gesture.samples.length, 0);
   const requiredCount = profile.gestures.length * 2;
@@ -924,6 +939,14 @@ export function FingerSpeakApp() {
     speakGesture(gesture, "face");
   }, [speakGesture]);
 
+  const executePhraseSelection = useCallback((gesture: Gesture) => {
+    setRecentlySelectedId(gesture.id);
+    speakGesture(gesture, "face");
+    window.setTimeout(() => {
+      setRecentlySelectedId((current) => (current === gesture.id ? null : current));
+    }, 700);
+  }, [speakGesture]);
+
   useEffect(() => {
     const event = piDevice.patientIntent;
     if (!event) return;
@@ -955,22 +978,107 @@ export function FingerSpeakApp() {
 
   useEffect(() => {
     if (piDevice.status === "connected") return;
-    piEmergencyArmRef.current = null;
     if (piEmergencyArmTimerRef.current !== null) window.clearTimeout(piEmergencyArmTimerRef.current);
+    piEmergencyArmRef.current = null;
     piEmergencyArmTimerRef.current = null;
   }, [piDevice.status]);
+
+  const drawFace = useCallback((landmarks: ReadonlyArray<{ x: number; y: number }>, metrics: NeuroFaceMetrics | null) => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !video.videoWidth || !video.videoHeight) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // Face oval contour
+    const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
+    context.beginPath();
+    context.strokeStyle = "rgba(13, 148, 136, 0.4)";
+    context.lineWidth = 1.5;
+    for (let i = 0; i < FACE_OVAL.length; i++) {
+      const pt = landmarks[FACE_OVAL[i]];
+      if (pt) {
+        if (i === 0) context.moveTo(pt.x * w, pt.y * h);
+        else context.lineTo(pt.x * w, pt.y * h);
+      }
+    }
+    context.stroke();
+
+    // Eye contours (left & right)
+    const EYE_LEFT = [33, 160, 158, 133, 153, 144, 33];
+    const EYE_RIGHT = [362, 385, 387, 263, 373, 380, 362];
+    context.strokeStyle = "rgba(13, 148, 136, 0.9)";
+    context.lineWidth = 2;
+    for (const contour of [EYE_LEFT, EYE_RIGHT]) {
+      context.beginPath();
+      for (let i = 0; i < contour.length; i++) {
+        const pt = landmarks[contour[i]];
+        if (pt) {
+          if (i === 0) context.moveTo(pt.x * w, pt.y * h);
+          else context.lineTo(pt.x * w, pt.y * h);
+        }
+      }
+      context.stroke();
+    }
+
+    // Pupils / iris centers
+    const leftIris = landmarks[468] ?? landmarks[133];
+    const rightIris = landmarks[473] ?? landmarks[362];
+    context.fillStyle = "#06b6d4";
+    if (leftIris) {
+      context.beginPath();
+      context.arc(leftIris.x * w, leftIris.y * h, 3.5, 0, Math.PI * 2);
+      context.fill();
+    }
+    if (rightIris) {
+      context.beginPath();
+      context.arc(rightIris.x * w, rightIris.y * h, 3.5, 0, Math.PI * 2);
+      context.fill();
+    }
+
+    // Mouth contour
+    const LIPS = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185, 61];
+    context.beginPath();
+    context.strokeStyle = "rgba(13, 148, 136, 0.55)";
+    context.lineWidth = 1.5;
+    for (let i = 0; i < LIPS.length; i++) {
+      const pt = landmarks[LIPS[i]];
+      if (pt) {
+        if (i === 0) context.moveTo(pt.x * w, pt.y * h);
+        else context.lineTo(pt.x * w, pt.y * h);
+      }
+    }
+    context.stroke();
+
+    // Nose pointer / gaze indicator
+    const nose = landmarks[1];
+    if (nose) {
+      context.fillStyle = "rgba(246, 189, 96, 0.95)";
+      context.beginPath();
+      context.arc(nose.x * w, nose.y * h, 4, 0, Math.PI * 2);
+      context.fill();
+
+      if (metrics && Math.abs(metrics.yawDeg) > 4) {
+        const dx = (metrics.yawDeg / 25) * 35;
+        context.strokeStyle = "rgba(246, 189, 96, 0.8)";
+        context.lineWidth = 2.5;
+        context.beginPath();
+        context.moveTo(nose.x * w, nose.y * h);
+        context.lineTo(nose.x * w + dx, nose.y * h);
+        context.stroke();
+      }
+    }
+  }, []);
 
   const drawHand = useCallback((landmarks: ReadonlyArray<{ x: number; y: number }>) => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !video.videoWidth || !video.videoHeight) return;
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-    }
     const context = canvas.getContext("2d");
     if (!context) return;
-    context.clearRect(0, 0, canvas.width, canvas.height);
     context.strokeStyle = "rgba(79, 209, 197, .8)";
     context.lineWidth = 3;
     for (const [start, end] of HAND_CONNECTIONS) {
@@ -1013,6 +1121,16 @@ export function FingerSpeakApp() {
     lastVisionRef.current = now;
     lastVideoTimeRef.current = video.currentTime;
 
+    // Prepare canvas dimensions & clear once per processed frame
+    const canvas = canvasRef.current;
+    if (canvas && video.videoWidth && video.videoHeight) {
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+      canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
     let faceResult: FaceLandmarkerCompatibleResult;
     try {
       faceResult = faceLandmarker.detectForVideo(video, now) as FaceLandmarkerCompatibleResult;
@@ -1033,15 +1151,69 @@ export function FingerSpeakApp() {
           neurofaceEngineRef.current = new NeuroFaceRuleEngine(twin);
           setNeurofaceStatus(neurofaceEngineRef.current.snapshot());
           setFaceCalibrationProgress(1);
-          setFaceCalibrationMessage("Face baseline learned automatically. Blink 5× for water · smile when feeling good · head right 5× for food.");
+          setFaceCalibrationMessage("Face baseline learned automatically. Turn head left/right to navigate · Blink or hold 1.4s to speak.");
         }
       } else if (neurofaceEnabledRef.current) {
         const { status, trigger } = neurofaceEngineRef.current.step(faceLandmarks, now);
         setNeurofaceStatus(status);
         if (trigger) speakNeurofaceTrigger(trigger.rule);
+
+        // Face Navigation & Execution:
+        const currentPhrases = activePhrasesRef.current;
+        if (currentPhrases.length > 0) {
+          if (status.navEvent === "nav-left") {
+            setFocusedPhraseIndex((prev) => (prev - 1 + currentPhrases.length) % currentPhrases.length);
+            dwellStartRef.current = null;
+            dwellTriggeredRef.current = false;
+            setDwellProgress(0);
+          } else if (status.navEvent === "nav-right") {
+            setFocusedPhraseIndex((prev) => (prev + 1) % currentPhrases.length);
+            dwellStartRef.current = null;
+            dwellTriggeredRef.current = false;
+            setDwellProgress(0);
+          } else if (status.navEvent === "blink-select") {
+            const target = currentPhrases[focusedPhraseIndexRef.current];
+            if (target) {
+              executePhraseSelection(target);
+            }
+            dwellStartRef.current = null;
+            dwellTriggeredRef.current = false;
+            setDwellProgress(0);
+          } else {
+            // Steady dwell selection when face is looking directly forward
+            const isGazingForward = status.metrics && Math.abs(status.metrics.yawDeg) < 7.5;
+            if (isGazingForward && !dwellTriggeredRef.current) {
+              if (dwellStartRef.current === null) {
+                dwellStartRef.current = now;
+              } else {
+                const elapsed = now - dwellStartRef.current;
+                const DWELL_MS = 1400; // 1.4s steady dwell
+                const progress = Math.min(1, elapsed / DWELL_MS);
+                setDwellProgress(progress);
+                if (elapsed >= DWELL_MS) {
+                  const target = currentPhrases[focusedPhraseIndexRef.current];
+                  if (target) {
+                    executePhraseSelection(target);
+                  }
+                  dwellTriggeredRef.current = true;
+                  dwellStartRef.current = null;
+                  setDwellProgress(0);
+                }
+              }
+            } else if (!isGazingForward) {
+              dwellStartRef.current = null;
+              dwellTriggeredRef.current = false;
+              setDwellProgress(0);
+            }
+          }
+        }
       }
+      drawFace(faceLandmarks, neurofaceEngineRef.current.snapshot().metrics);
     } else if (!facePresent) {
       neurofaceEngineRef.current.step(null, now);
+      dwellStartRef.current = null;
+      dwellTriggeredRef.current = false;
+      setDwellProgress(0);
     }
 
     let result: ReturnType<HandLandmarker["detectForVideo"]>;
@@ -1066,7 +1238,6 @@ export function FingerSpeakApp() {
       }
       const output = machineRef.current.step({ handPresent: false, gestureId: null, confidence: 0, inDistribution: false }, now, profileRef.current.gestures);
       setIntent(output);
-      canvasRef.current?.getContext("2d")?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     } else {
       setTracking(true);
       drawHand(landmarks);
@@ -1094,7 +1265,7 @@ export function FingerSpeakApp() {
       }
     }
     animationRef.current = requestAnimationFrame(() => processFrameRef.current());
-  }, [drawHand, speakGesture, speakNeurofaceTrigger, stopCameraAfterVisionFailure]);
+  }, [drawFace, drawHand, executePhraseSelection, speakGesture, speakNeurofaceTrigger, stopCameraAfterVisionFailure]);
 
   useEffect(() => {
     processFrameRef.current = processFrame;
@@ -1899,25 +2070,73 @@ export function FingerSpeakApp() {
               </div>
 
               <div className="intent-card face-intent-card">
-                <div className="intent-topline"><span>FACE RULES · AUTO-CALIBRATED</span><span className={`intent-state state-${neurofaceStatus.calibrated ? "ready" : "calibrating"}`}>{neurofaceStatus.calibrated ? "WATCHING" : "CALIBRATING"}</span></div>
+                <div className="intent-topline">
+                  <span>NEUROFACE SENSE · ACTIVE TRACKING</span>
+                  <span className={`intent-state state-${neurofaceStatus.calibrated ? "ready" : "calibrating"}`}>
+                    {neurofaceStatus.calibrated ? "WATCHING" : "CALIBRATING"}
+                  </span>
+                </div>
                 <div className="recognized-gesture">
                   <div className={`gesture-orb ${currentFaceGesture?.risk === "emergency" ? "danger" : ""}`} style={{ "--progress": `${Math.round(faceCalibrationProgress * 360)}deg` } as React.CSSProperties}>
                     <span>{currentFaceGesture ? currentFaceGesture.icon : "◉"}</span>
                   </div>
-                  <div><small>{neurofaceStatus.calibrated ? "Baseline learned automatically" : "Learning your relaxed face…"}</small><strong>{neurofaceStatus.lastTrigger ? `${NEUROFACE_RULE_LABELS[neurofaceStatus.lastTrigger.rule]} → ${currentFaceGesture?.name ?? "Spoken"}` : faceTracking ? "Watching face rules" : "Keep your face visible"}</strong><p>{neurofaceEnabled ? "5 blinks water · smile good · abnormality help · head-right food" : "Face rules paused"} · movement patterns only</p></div>
+                  <div>
+                    <small>
+                      {neurofaceStatus.calibrated ? "Live head gaze & blink control active" : "Learning your relaxed face…"}
+                    </small>
+                    <strong>
+                      {neurofaceStatus.metrics && Math.abs(neurofaceStatus.metrics.yawDeg) > 9
+                        ? (neurofaceStatus.metrics.yawDeg < 0 ? "◄ Looking Left (Navigate)" : "Looking Right (Navigate) ►")
+                        : faceTracking
+                        ? (neurofaceStatus.lastTrigger ? `${NEUROFACE_RULE_LABELS[neurofaceStatus.lastTrigger.rule]} → ${currentFaceGesture?.name ?? "Spoken"}` : `Focused: ${activePhrases[focusedPhraseIndex]?.name ?? "Ready"}`)
+                        : "Keep your face visible"}
+                    </strong>
+                    <p>Turn head left/right to move focus · Blink or hold 1.4s to speak · touch backup always available</p>
+                  </div>
                 </div>
-                <div className="confidence-track" aria-label={`Face auto-calibration ${Math.round(faceCalibrationProgress * 100)} percent`}><span style={{ width: `${faceCalibrationProgress * 100}%` }} /></div>
+                <div className="confidence-track" aria-label={`Face auto-calibration ${Math.round(faceCalibrationProgress * 100)} percent`}>
+                  <span style={{ width: `${faceCalibrationProgress * 100}%` }} />
+                </div>
               </div>
 
-              <div className="phrase-header"><div><span className="eyebrow">TOUCH BACKUP</span><h2>Say it now</h2></div><span className="voice-status" role="status">{voiceMessage}</span></div>
+              <div className="phrase-header">
+                <div>
+                  <span className="eyebrow">FACIAL MAPPING & TOUCH BACKUP</span>
+                  <h2>Say it now</h2>
+                </div>
+                <div className="face-control-hint">
+                  <span className="hint-pill">Turn Head: Navigate</span>
+                  <span className="hint-pill">Blink or Hold: Speak</span>
+                </div>
+              </div>
               <div className="phrase-grid">
-                {profile.gestures.filter((gesture) => gesture.phrase).map((gesture) => (
-                  <button key={gesture.id} className={`phrase-button risk-${gesture.risk} ${armedGestureId === gesture.id ? "armed" : ""}`} onClick={() => handleManualPhrase(gesture)}>
-                    <span className="phrase-icon" aria-hidden="true">{gesture.icon}</span>
-                    <span><strong>{armedGestureId === gesture.id ? "Touch again to confirm" : gesture.name}</strong><small>{gesture.phrase}</small></span>
-                    <span className="speak-arrow" aria-hidden="true">›</span>
-                  </button>
-                ))}
+                {activePhrases.map((gesture, index) => {
+                  const isFocused = faceTracking && index === focusedPhraseIndex;
+                  const isRecentlySelected = recentlySelectedId === gesture.id;
+                  return (
+                    <button
+                      key={gesture.id}
+                      className={`phrase-button risk-${gesture.risk} ${armedGestureId === gesture.id ? "armed" : ""} ${isFocused ? "face-focused" : ""} ${isRecentlySelected ? "face-selected" : ""}`}
+                      style={{ "--dwell-percent": `${isFocused ? Math.round(dwellProgress * 100) : 0}%` } as React.CSSProperties}
+                      onClick={() => handleManualPhrase(gesture)}
+                    >
+                      <span className="phrase-icon" aria-hidden="true">
+                        {gesture.icon}
+                        {isFocused && <span className="dwell-ring-badge" />}
+                      </span>
+                      <span>
+                        <strong>{armedGestureId === gesture.id ? "Touch again to confirm" : gesture.name}</strong>
+                        <small>{gesture.phrase}</small>
+                        {isFocused && (
+                          <span className="face-focus-tag">
+                            {dwellProgress > 0 ? `Holding (${Math.round(dwellProgress * 100)}%)` : "Face Focused · Blink to speak"}
+                          </span>
+                        )}
+                      </span>
+                      <span className="speak-arrow" aria-hidden="true">›</span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Bottom Vitals Bar */}

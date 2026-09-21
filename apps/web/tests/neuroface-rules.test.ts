@@ -214,6 +214,12 @@ test("five rightward head turns request food", () => {
   assert.equal(trigger?.rule, "food-5-head-right");
 });
 
+function headLeftFace(): NeuroFacePoint[] {
+  const next = neutralFace();
+  set(next, 1, 0.42, 0.52);
+  return next;
+}
+
 test("lost tracking never fires and never crashes", () => {
   const engine = new NeuroFaceRuleEngine(calibrateTwin());
   const out = engine.step(null, 1_000);
@@ -223,3 +229,44 @@ test("lost tracking never fires and never crashes", () => {
   assert.equal(uncalibrated.step(neutralFace(), 1_000).trigger, null);
   assert.equal(uncalibrated.snapshot().calibrated, false);
 });
+
+test("single deliberate blink emits blink-select once with hysteresis", () => {
+  const engine = new NeuroFaceRuleEngine(calibrateTwin());
+  let now = 1_000;
+  engine.step(neutralFace(), now); now += 50;
+  // Eye closure:
+  engine.step(closedEyes(neutralFace()), now); now += 250;
+  // Eye opening:
+  const openResult = engine.step(neutralFace(), now); now += 50;
+  assert.equal(openResult.status.navEvent, "blink-select");
+
+  // Next frame should not repeat blink-select
+  const nextFrame = engine.step(neutralFace(), now);
+  assert.equal(nextFrame.status.navEvent, null);
+});
+
+test("head turn emits edge-triggered single-step nav-left and nav-right without strobing", () => {
+  const engine = new NeuroFaceRuleEngine(calibrateTwin());
+  let now = 1_000;
+  engine.step(neutralFace(), now); now += 100;
+
+  // Turn left:
+  const left1 = engine.step(headLeftFace(), now); now += 100;
+  assert.equal(left1.status.navEvent, "nav-left");
+
+  // Holding left should NOT emit additional nav-left (no 60 FPS strobing!)
+  const left2 = engine.step(headLeftFace(), now); now += 100;
+  assert.equal(left2.status.navEvent, null);
+
+  // Return to center to re-arm:
+  engine.step(neutralFace(), now); now += 200;
+
+  // Turn right:
+  const right1 = engine.step(headRightFace(), now); now += 100;
+  assert.equal(right1.status.navEvent, "nav-right");
+
+  // Holding right should NOT emit additional nav-right:
+  const right2 = engine.step(headRightFace(), now);
+  assert.equal(right2.status.navEvent, null);
+});
+

@@ -85,11 +85,14 @@ export type NeuroFaceTrigger = {
   detail: string;
 };
 
+export type NeuroFaceNavEvent = "nav-left" | "nav-right" | "blink-select" | null;
+
 export type NeuroFaceStatus = {
   calibrated: boolean;
   calibrationProgress: number;
   lastTrigger: NeuroFaceTrigger | null;
   metrics: NeuroFaceMetrics | null;
+  navEvent?: NeuroFaceNavEvent;
 };
 
 /* Tuning: mirrors the proven mobile clinical runtime. */
@@ -172,10 +175,11 @@ export function extractNeuroFaceMetrics(
   const pitchDeg = ((landmarks[IDX.noseTip].y - midEyeY) / faceH) * 120 - 8 - (twin?.pitchDeg ?? 0);
 
   const mar = dist(landmarks[IDX.lipUp], landmarks[IDX.lipLow]) / mouthW;
-  const squint = Math.max(0, Math.min(1, (0.28 - earAvg) * 4));
-  const tension = Math.max(0, Math.min(1, (0.09 - mar) * 6));
+  const baseEar = twin?.earMean && twin.earMean > 0 ? twin.earMean : 0.25;
+  const squint = Math.max(0, Math.min(1, ((baseEar * 0.70) - earAvg) / (baseEar * 0.45)));
+  const tension = Math.max(0, Math.min(1, (0.08 - mar) * 6));
   const depressNorm = Math.max(0, Math.min(1, (((landmarks[IDX.mouthL].y + landmarks[IDX.mouthR].y) / 2 - midY) / faceW) / 0.03));
-  const painScore = Math.max(0, Math.min(1, 0.35 * squint + 0.35 * tension + 0.3 * depressNorm));
+  const painScore = Math.max(0, Math.min(1, 0.4 * squint + 0.3 * tension + 0.3 * depressNorm));
 
   return { facePresent: true, earAvg, smile, lateralDeviation, yawDeg, pitchDeg, painScore };
 }
@@ -276,6 +280,13 @@ export class NeuroFaceRuleEngine {
   private lastAbnormalityAt = Number.NEGATIVE_INFINITY;
   private headRightArmed = false;
   private recentHeadTurns: number[] = [];
+  private headNavLeftArmed = true;
+  private headNavRightArmed = true;
+  private lastLeftNavAt = 0;
+  private lastRightNavAt = 0;
+  private singleBlinkClosed = false;
+  private singleBlinkT0 = 0;
+  private lastBlinkSelectAt = 0;
   private lastNow = Number.NEGATIVE_INFINITY;
   private lastTrigger: NeuroFaceTrigger | null = null;
   private lastMetrics: NeuroFaceMetrics | null = null;
@@ -297,12 +308,13 @@ export class NeuroFaceRuleEngine {
     this.lastNow = Number.NEGATIVE_INFINITY;
   }
 
-  snapshot(): NeuroFaceStatus {
+  snapshot(navEvent: NeuroFaceNavEvent = null): NeuroFaceStatus {
     return {
       calibrated: this.twin !== null,
       calibrationProgress: this.twin ? 1 : 0,
       lastTrigger: this.lastTrigger ? { ...this.lastTrigger } : null,
       metrics: this.lastMetrics ? { ...this.lastMetrics } : null,
+      navEvent,
     };
   }
 
@@ -318,14 +330,56 @@ export class NeuroFaceRuleEngine {
       const status = this.snapshot();
       return { status, trigger: null };
     }
-    const trigger = this.detect(metrics, at, dtMs);
+    const { trigger, navEvent } = this.detect(metrics, at, dtMs);
     if (trigger) this.lastTrigger = { ...trigger };
-    return { status: this.snapshot(), trigger };
+    return { status: this.snapshot(navEvent), trigger };
   }
 
-  private detect(metrics: NeuroFaceMetrics, at: number, dtMs: number): NeuroFaceTrigger | null {
-    // Rule 1: 5 blinks in a row -> "I want water".
+  private detect(metrics: NeuroFaceMetrics, at: number, dtMs: number): { trigger: NeuroFaceTrigger | null; navEvent: NeuroFaceNavEvent } {
+    let navEvent: NeuroFaceNavEvent = null;
+
+    // Edge-triggered head navigation with center re-arm
+    if (metrics.yawDeg < -10) {
+      if (this.headNavLeftArmed && at - this.lastLeftNavAt >= 450) {
+        navEvent = "nav-left";
+        this.headNavLeftArmed = false;
+        this.lastLeftNavAt = at;
+      }
+    } else if (metrics.yawDeg > 10) {
+      if (this.headNavRightArmed && at - this.lastRightNavAt >= 450) {
+        navEvent = "nav-right";
+        this.headNavRightArmed = false;
+        this.lastRightNavAt = at;
+      }
+    }
+    if (metrics.yawDeg > -5) {
+      this.headNavLeftArmed = true;
+    }
+    if (metrics.yawDeg < 5) {
+      this.headNavRightArmed = true;
+    }
+
+    // Single deliberate blink detector for item selection:
     const baseEar = this.twin && this.twin.earMean > 0 ? this.twin.earMean : 0.27;
+    const singleCloseTh = Math.max(0.12, baseEar * 0.65);
+    const singleOpenTh = Math.max(0.16, baseEar * 0.78);
+    if (!this.singleBlinkClosed && metrics.earAvg < singleCloseTh) {
+      this.singleBlinkClosed = true;
+      this.singleBlinkT0 = at;
+    } else if (this.singleBlinkClosed) {
+      const durMs = at - this.singleBlinkT0;
+      if (metrics.earAvg > singleOpenTh) {
+        this.singleBlinkClosed = false;
+        if (durMs >= 120 && durMs <= 850 && at - this.lastBlinkSelectAt >= 650) {
+          navEvent = "blink-select";
+          this.lastBlinkSelectAt = at;
+        }
+      } else if (durMs > 1200) {
+        this.singleBlinkClosed = false;
+      }
+    }
+
+    // Rule 1: 5 blinks in a row -> "I want water".
     const thClose = Math.max(0.12, baseEar * 0.55);
     const thOpen = Math.max(0.16, baseEar * 0.8);
     if (!this.blinkClosed && metrics.earAvg < thClose) {
@@ -339,7 +393,7 @@ export class NeuroFaceRuleEngine {
         this.recentBlinks = this.recentBlinks.filter((blinkAt) => at - blinkAt <= BLINK_WINDOW_MS);
         if (this.recentBlinks.length >= BLINKS_FOR_WATER) {
           this.recentBlinks = [];
-          return this.fire("water-5-blinks", at, 0.95, `${BLINKS_FOR_WATER} consecutive blinks`);
+          return { trigger: this.fire("water-5-blinks", at, 0.95, `${BLINKS_FOR_WATER} consecutive blinks`), navEvent };
         }
       }
     }
@@ -350,7 +404,7 @@ export class NeuroFaceRuleEngine {
       if (this.smileHoldMs >= SMILE_HOLD_MS && at - this.lastSmileAt > SMILE_COOLDOWN_MS) {
         this.lastSmileAt = at;
         this.smileHoldMs = -1500;
-        return this.fire("feeling-good-smile", at, 0.9, `smile held ${(SMILE_HOLD_MS / 1000).toFixed(1)}s`);
+        return { trigger: this.fire("feeling-good-smile", at, 0.9, `smile held ${(SMILE_HOLD_MS / 1000).toFixed(1)}s`), navEvent };
       }
     } else {
       this.smileHoldMs = 0;
@@ -373,7 +427,7 @@ export class NeuroFaceRuleEngine {
       const reason = this.devHoldMs >= DEV_HOLD_MS
         ? `lateral deviation ${(devMag * 100).toFixed(1)}%`
         : `distress movement ${(metrics.painScore * 100).toFixed(0)}%`;
-      return this.fire("emergency-abnormality", at, 0.9, reason);
+      return { trigger: this.fire("emergency-abnormality", at, 0.9, reason), navEvent };
     }
 
     // Rule 4: 5 rightward head turns -> "Give me some food".
@@ -385,12 +439,12 @@ export class NeuroFaceRuleEngine {
       this.recentHeadTurns = this.recentHeadTurns.filter((turnAt) => at - turnAt <= HEAD_WINDOW_MS);
       if (this.recentHeadTurns.length >= HEAD_TURNS_FOR_FOOD) {
         this.recentHeadTurns = [];
-        return this.fire("food-5-head-right", at, 0.9, `${HEAD_TURNS_FOR_FOOD} rightward turns`);
+        return { trigger: this.fire("food-5-head-right", at, 0.9, `${HEAD_TURNS_FOR_FOOD} rightward turns`), navEvent };
       }
     } else if (metrics.yawDeg < -HEAD_RIGHT_ENTER_DEG) {
       this.headRightArmed = false;
     }
-    return null;
+    return { trigger: null, navEvent };
   }
 
   private fire(rule: NeuroFaceRuleId, at: number, confidence: number, detail: string): NeuroFaceTrigger {
@@ -400,6 +454,9 @@ export class NeuroFaceRuleEngine {
   private resetTransient(): void {
     this.blinkClosed = false;
     this.headRightArmed = false;
+    this.singleBlinkClosed = false;
+    this.headNavLeftArmed = true;
+    this.headNavRightArmed = true;
   }
 
   private resetDetectors(): void {
@@ -411,5 +468,8 @@ export class NeuroFaceRuleEngine {
     this.painHoldMs = 0;
     this.lastAbnormalityAt = Number.NEGATIVE_INFINITY;
     this.recentHeadTurns = [];
+    this.lastLeftNavAt = 0;
+    this.lastRightNavAt = 0;
+    this.lastBlinkSelectAt = 0;
   }
 }

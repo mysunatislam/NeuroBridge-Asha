@@ -31,6 +31,8 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
   // Last detected signal — shown with a timestamp label
   PatientSignalKind? _lastSignalKind;
   DateTime? _lastSignalAt;
+  DateTime? _lastFaceNavAt;
+  DateTime? _lastFaceSelectAt;
 
   /// Rolling 24-bar signal history for the graph, driven by real MonitorStatus.
   final List<double> _signalHistory = List<double>.filled(24, 4.0);
@@ -79,14 +81,28 @@ class _FaceControlMainPageState extends State<FaceControlMainPage> {
         _lastSignalKind = signal.kind;
         _lastSignalAt = DateTime.now();
 
+        final now = DateTime.now();
         if (signal.kind == PatientSignalKind.eyeLookRight) {
-          _selectedIndex = (_selectedIndex + 1) % _faceActions.length;
+          if (_lastFaceNavAt == null ||
+              now.difference(_lastFaceNavAt!).inMilliseconds > 400) {
+            _lastFaceNavAt = now;
+            _selectedIndex = (_selectedIndex + 1) % _faceActions.length;
+          }
         } else if (signal.kind == PatientSignalKind.eyeLookLeft) {
-          _selectedIndex =
-              (_selectedIndex - 1 + _faceActions.length) % _faceActions.length;
+          if (_lastFaceNavAt == null ||
+              now.difference(_lastFaceNavAt!).inMilliseconds > 400) {
+            _lastFaceNavAt = now;
+            _selectedIndex =
+                (_selectedIndex - 1 + _faceActions.length) % _faceActions.length;
+          }
         } else if (signal.kind == PatientSignalKind.blink ||
+            signal.kind == PatientSignalKind.headNodSmile ||
             signal.kind == PatientSignalKind.smile) {
-          _triggerSelectedAction();
+          if (_lastFaceSelectAt == null ||
+              now.difference(_lastFaceSelectAt!).inMilliseconds > 700) {
+            _lastFaceSelectAt = now;
+            _triggerSelectedAction();
+          }
         }
       });
     });

@@ -62,6 +62,8 @@ class _PatientPageState extends State<PatientPage> {
   int _faceDwellIndex = 0;
   double _faceDwellProgress = 0.0;
   Timer? _faceDwellTimer;
+  DateTime? _lastFaceNavAt;
+  DateTime? _lastFaceSelectAt;
 
   @override
   void initState() {
@@ -96,14 +98,29 @@ class _PatientPageState extends State<PatientPage> {
         }
 
         if (_accessMethod == PatientAccessMethod.faceEyesAndHead) {
+          final now = DateTime.now();
           if (signal.kind == PatientSignalKind.eyeLookRight) {
-            _faceDwellIndex = (_faceDwellIndex + 1) % 4;
-            _faceDwellProgress = 0.0;
+            if (_lastFaceNavAt == null ||
+                now.difference(_lastFaceNavAt!).inMilliseconds > 400) {
+              _lastFaceNavAt = now;
+              _faceDwellIndex = (_faceDwellIndex + 1) % 4;
+              _faceDwellProgress = 0.0;
+            }
           } else if (signal.kind == PatientSignalKind.eyeLookLeft) {
-            _faceDwellIndex = (_faceDwellIndex - 1 + 4) % 4;
-            _faceDwellProgress = 0.0;
-          } else if (signal.kind == PatientSignalKind.headNodSmile) {
-            _triggerCurrentFaceOption();
+            if (_lastFaceNavAt == null ||
+                now.difference(_lastFaceNavAt!).inMilliseconds > 400) {
+              _lastFaceNavAt = now;
+              _faceDwellIndex = (_faceDwellIndex - 1 + 4) % 4;
+              _faceDwellProgress = 0.0;
+            }
+          } else if (signal.kind == PatientSignalKind.blink ||
+              signal.kind == PatientSignalKind.headNodSmile ||
+              signal.kind == PatientSignalKind.smile) {
+            if (_lastFaceSelectAt == null ||
+                now.difference(_lastFaceSelectAt!).inMilliseconds > 700) {
+              _lastFaceSelectAt = now;
+              _triggerCurrentFaceOption();
+            }
           }
         }
       });

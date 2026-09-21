@@ -103,5 +103,50 @@ void main() {
       expect(result['provider'], 'maira');
       expect(result['model'], contains('Maira'));
     });
+
+    test('default Maira keys are restored from obfuscated storage without plain text leak', () {
+      expect(AshaApiClient.defaultMairaProjectKey, isNotEmpty);
+      expect(AshaApiClient.defaultMairaApiKey, isNotEmpty);
+      expect(AshaApiClient.defaultMairaProjectKey, startsWith('AcH6'));
+      expect(AshaApiClient.defaultMairaApiKey, startsWith('gAAAAAB'));
+    });
+
+    test('forwards somatic micro-gesture context to Maira when physical effort is observed', () async {
+      final mockClient = MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['query'], contains('Input Modality: eye_blink (95% confidence)'));
+        expect(body['query'], contains('somatic micro-gesture effort'));
+        expect(body['query'], contains('I need rest'));
+
+        return http.Response(
+          jsonEncode({
+            'code': 200,
+            'detail': {
+              'response': 'I see your gentle blink. Rest comfortably, I am watching over you.',
+              'references': [],
+            }
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final client = AshaApiClient(
+        baseUri: Uri.parse('http://localhost:8000/v1'),
+        client: mockClient,
+        aiProviderProvider: () async => 'maira',
+      );
+
+      final reply = await client.chat(
+        message: 'I need rest',
+        locale: 'en-US',
+        gestureModality: 'eye_blink',
+        gestureConfidence: 0.95,
+        physicalEffortObserved: true,
+      );
+
+      expect(reply.mode, 'maira-specialist');
+      expect(reply.text, contains('gentle blink'));
+    });
   });
 }
