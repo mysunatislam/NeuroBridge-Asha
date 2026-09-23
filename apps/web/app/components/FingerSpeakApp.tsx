@@ -66,6 +66,7 @@ import {
 } from "../lib/face-intent";
 import {
   DEFAULT_NEUROFACE_BINDINGS,
+  DEFAULT_NEUROFACE_TWIN,
   NEUROFACE_RULE_IDS,
   NEUROFACE_RULE_LABELS,
   NEUROFACE_RULE_PHRASES,
@@ -189,7 +190,7 @@ export function FingerSpeakApp() {
   const [remoteDeviceMessage, setRemoteDeviceMessage] = useState("No verified patient-device heartbeat yet.");
   const [ashaOpen, setAshaOpen] = useState(false);
   const [faceTracking, setFaceTracking] = useState(false);
-  const [neurofaceStatus, setNeurofaceStatus] = useState<NeuroFaceStatus>(() => new NeuroFaceRuleEngine().snapshot());
+  const [neurofaceStatus, setNeurofaceStatus] = useState<NeuroFaceStatus>(() => new NeuroFaceRuleEngine(DEFAULT_NEUROFACE_TWIN).snapshot());
   const [faceCalibrationMessage, setFaceCalibrationMessage] = useState("Face rules auto-calibrate from your relaxed face — no setup needed.");
   const [faceCalibrationProgress, setFaceCalibrationProgress] = useState(0);
   const [neurofaceBindings, setNeurofaceBindings] = useState<Record<NeuroFaceRuleId, string | null>>(() => {
@@ -295,7 +296,7 @@ export function FingerSpeakApp() {
   const localContactsRef = useRef(localContacts);
   const faceControlsRef = useRef(faceControls);
   const neurofaceCalibratorRef = useRef<NeuroFaceAutoCalibrator | null>(new NeuroFaceAutoCalibrator());
-  const neurofaceEngineRef = useRef(new NeuroFaceRuleEngine());
+  const neurofaceEngineRef = useRef(new NeuroFaceRuleEngine(DEFAULT_NEUROFACE_TWIN));
   const neurofaceBindingsRef = useRef(neurofaceBindings);
   const neurofaceEnabledRef = useRef(neurofaceEnabled);
   const patientSpeechRef = useRef(createPatientSpeechService());
@@ -1169,13 +1170,14 @@ export function FingerSpeakApp() {
         if (calibrator.ready) {
           const twin = calibrator.finish();
           neurofaceCalibratorRef.current = null;
-          neurofaceEngineRef.current = new NeuroFaceRuleEngine(twin);
-          setNeurofaceStatus(neurofaceEngineRef.current.snapshot());
+          neurofaceEngineRef.current.setTwin(twin);
           setFaceCalibrationProgress(1);
           setFaceCalibrationMessage("Face baseline learned automatically. Turn head left/right to navigate · Blink or hold 1.4s to speak.");
         }
-      } else if (neurofaceEnabledRef.current) {
-        const { status, trigger } = neurofaceEngineRef.current.step(faceLandmarks, now);
+      }
+      if (neurofaceEnabledRef.current) {
+        const blendshapes = faceResult.faceBlendshapes?.[0]?.categories ?? null;
+        const { status, trigger } = neurofaceEngineRef.current.step(faceLandmarks, now, blendshapes);
         setNeurofaceStatus(status);
         if (trigger) speakNeurofaceTrigger(trigger.rule);
 
@@ -1935,6 +1937,32 @@ export function FingerSpeakApp() {
                 <span>Step-by-step calibration wizard, wheelchair Pi telemetry, display captions, alert feed, and emergency first-aid protocols.</span>
                 <button className="select-btn" type="button">Enter Caregiver Mode</button>
               </div>
+            </div>
+            <div style={{ marginTop: "24px", display: "flex", justifyContent: "center" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  selectRole("patient");
+                  setShowNeuroSenseDashboard(true);
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "11px 24px",
+                  borderRadius: "999px",
+                  background: "linear-gradient(135deg, #065f46, #047857)",
+                  border: "2px solid #34d399",
+                  color: "#ffffff",
+                  fontSize: "13px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  boxShadow: "0 6px 20px rgba(4, 120, 87, 0.45)",
+                }}
+              >
+                <span>👁️</span>
+                <span>Open NeuroSense™ Face Studio (Live Camera &amp; Dynamic Curves)</span>
+              </button>
             </div>
           </div>
         )}
@@ -2704,6 +2732,19 @@ export function FingerSpeakApp() {
           </section>
         )}
       </main>
+
+      {/* Permanent Floating Quick Launcher for NeuroSense Face Studio */}
+      <button
+        type="button"
+        className="neuroface-floating-fab"
+        onClick={() => setShowNeuroSenseDashboard(true)}
+        aria-label="Open NeuroSense Face Studio with live dynamic curves"
+        title="Open full NeuroSense Face Studio with dynamic curves and camera screen"
+      >
+        <span className="fab-icon" aria-hidden="true">👁️</span>
+        <span>NeuroSense Studio</span>
+        <span className="fab-tag">Dynamic Curves</span>
+      </button>
 
       {view === "speak" && (
         <>

@@ -37,6 +37,12 @@ export function NeuroSenseDashboard({
 }: Props) {
   const internalVideoRef = useRef<HTMLVideoElement | null>(null);
   const historyRef = useRef<TelemetrySample[]>([]);
+  if (historyRef.current.length === 0) {
+    const now = Date.now();
+    for (let i = 0; i < 40; i++) {
+      historyRef.current.push({ t: now - (40 - i) * 60, ear: 0.25, yaw: 0, pitch: 0, smile: 0.02 });
+    }
+  }
   const earCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const headCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const smileCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -65,14 +71,19 @@ export function NeuroSenseDashboard({
 
   // Synchronize internal video element with camera stream without hijacking videoRef
   useEffect(() => {
-    const video = videoRef.current;
-    const internal = internalVideoRef.current;
-    if (cameraActive && video && internal && video.srcObject) {
-      if (internal.srcObject !== video.srcObject) {
-        internal.srcObject = video.srcObject;
-        internal.play().catch(() => {});
+    const syncVideo = () => {
+      const video = videoRef.current;
+      const internal = internalVideoRef.current;
+      if (cameraActive && video && internal && video.srcObject) {
+        if (internal.srcObject !== video.srcObject) {
+          internal.srcObject = video.srcObject;
+          internal.play().catch(() => {});
+        }
       }
-    }
+    };
+    syncVideo();
+    const interval = window.setInterval(syncVideo, 400);
+    return () => window.clearInterval(interval);
   }, [cameraActive, videoRef]);
 
   // Record telemetry sample every frame

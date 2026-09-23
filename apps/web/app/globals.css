@@ -1198,4 +1198,79 @@ footer { min-height: 58px; border-top: 1px solid rgba(12,23,22,.12); display: fl
   }
 }
 
+/* ── Persistent NeuroSense Face Studio Floating Button & Banner ── */
+.neuroface-floating-fab {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 999;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 50%, #047857 100%);
+  border: 2px solid #34d399;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  box-shadow: 0 8px 30px rgba(6, 78, 59, 0.6), 0 0 16px rgba(52, 211, 153, 0.4);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neuroface-floating-fab:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 12px 35px rgba(6, 78, 59, 0.75), 0 0 24px rgba(52, 211, 153, 0.6);
+  border-color: #6ee7b7;
+}
+
+.neuroface-floating-fab .fab-icon {
+  font-size: 18px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.neuroface-floating-fab .fab-tag {
+  background: rgba(52, 211, 153, 0.25);
+  border: 1px solid rgba(52, 211, 153, 0.5);
+  color: #a7f3d0;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+/* Ensure mobile header never hides the NeuroSense studio button */
+@media (max-width: 680px) {
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .system-badges {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .privacy-badge, .cloud-badge {
+    display: none !important;
+  }
+  .neuroface-studio-btn {
+    display: inline-flex !important;
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+  }
+  .neuroface-floating-fab {
+    bottom: max(72px, calc(env(safe-area-inset-bottom) + 68px));
+    left: 12px;
+    padding: 10px 16px;
+    font-size: 12px;
+  }
+}
+
 

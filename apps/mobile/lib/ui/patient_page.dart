@@ -64,6 +64,33 @@ class _PatientPageState extends State<PatientPage> {
   Timer? _faceDwellTimer;
   DateTime? _lastFaceNavAt;
   DateTime? _lastFaceSelectAt;
+  DateTime? _lastBlinkAt;
+  int _recentBlinkCount = 0;
+
+  bool get _isBlinkingNow {
+    if (_lastBlinkAt != null &&
+        DateTime.now().difference(_lastBlinkAt!).inMilliseconds < 1200) {
+      return true;
+    }
+    if (_monitorStatus.leftEyeOpen != null) {
+      final avg = ((_monitorStatus.leftEyeOpen! +
+              (_monitorStatus.rightEyeOpen ?? _monitorStatus.leftEyeOpen!)) /
+          2);
+      return avg < 0.38;
+    }
+    return false;
+  }
+
+  void _openFaceControlStudio() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => FaceControlMainPage(
+          services: widget.services,
+          initialShowMonitor: true,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -75,12 +102,28 @@ class _PatientPageState extends State<PatientPage> {
     widget.services.patientAccessMethodRepository
         .addListener(_onAccessMethodChanged);
     _monitorSubscription = widget.services.monitor.statuses.listen((status) {
-      if (mounted) setState(() => _monitorStatus = status);
+      if (mounted) {
+        setState(() {
+          _monitorStatus = status;
+          if (status.leftEyeOpen != null) {
+            final avg = ((status.leftEyeOpen! +
+                    (status.rightEyeOpen ?? status.leftEyeOpen!)) /
+                2);
+            if (avg < 0.38) {
+              _lastBlinkAt = DateTime.now();
+            }
+          }
+        });
+      }
     });
     _signalSubscription = widget.services.monitor.signals.listen((signal) {
       if (!mounted) return;
       setState(() {
         _lastSignal = signal;
+        if (signal.kind == PatientSignalKind.blink) {
+          _lastBlinkAt = DateTime.now();
+          _recentBlinkCount = (_recentBlinkCount % 3) + 1;
+        }
         final intent = signal.metadata?['intent'] as String?;
         if (intent == 'water') {
           _speakQuickNeed('I need water', 'Water');
@@ -1060,46 +1103,60 @@ class _PatientPageState extends State<PatientPage> {
                 ),
               ],
             ),
-            ListenableBuilder(
-              listenable: widget.services.ashaGuide,
-              builder: (context, _) {
-                final guide = widget.services.ashaGuide;
-                if (guide.isActive &&
-                    guide.step == AshaGuideStep.firstSession) {
-                  return AshaGuideTarget(
-                    step: AshaGuideStep.firstSession,
-                    child: FilledButton.icon(
-                      key: const ValueKey('asha-guide-start-face-session'),
-                      onPressed: _busy
-                          ? null
-                          : () async {
-                              if (!monitoring) {
-                                await _toggleMonitoring(true);
-                              }
-                              if (!mounted) return;
-                              if (widget.services.monitor.currentStatus.lifecycle ==
-                                      MonitorLifecycle.active &&
-                                  guide.isActive &&
-                                  guide.step == AshaGuideStep.firstSession) {
-                                await guide.next();
-                              }
-                            },
-                      icon: Icon(monitoring ? Icons.check : Icons.play_arrow),
-                      label: Text(monitoring ? 'Continue' : 'Start'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: theme.waterColor,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  );
-                }
-                return Switch(
-                  value: monitoring,
-                  onChanged: _busy ? null : _toggleMonitoring,
-                  activeTrackColor: theme.waterColor.withValues(alpha: 0.6),
-                  activeThumbColor: theme.waterColor,
-                );
-              },
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: _openFaceControlStudio,
+                  icon: const Icon(Icons.fullscreen_rounded, size: 16),
+                  label: const Text('Open Studio'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.waterColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                ListenableBuilder(
+                  listenable: widget.services.ashaGuide,
+                  builder: (context, _) {
+                    final guide = widget.services.ashaGuide;
+                    if (guide.isActive &&
+                        guide.step == AshaGuideStep.firstSession) {
+                      return AshaGuideTarget(
+                        step: AshaGuideStep.firstSession,
+                        child: FilledButton.icon(
+                          key: const ValueKey('asha-guide-start-face-session'),
+                          onPressed: _busy
+                              ? null
+                              : () async {
+                                  if (!monitoring) {
+                                    await _toggleMonitoring(true);
+                                  }
+                                  if (!mounted) return;
+                                  if (widget.services.monitor.currentStatus.lifecycle ==
+                                          MonitorLifecycle.active &&
+                                      guide.isActive &&
+                                      guide.step == AshaGuideStep.firstSession) {
+                                    await guide.next();
+                                  }
+                                },
+                          icon: Icon(monitoring ? Icons.check : Icons.play_arrow),
+                          label: Text(monitoring ? 'Continue' : 'Start'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: theme.waterColor,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      );
+                    }
+                    return Switch(
+                      value: monitoring,
+                      onChanged: _busy ? null : _toggleMonitoring,
+                      activeTrackColor: theme.waterColor.withValues(alpha: 0.6),
+                      activeThumbColor: theme.waterColor,
+                    );
+                  },
+                ),
+              ],
             ),
           ],
         ),
@@ -1166,6 +1223,73 @@ class _PatientPageState extends State<PatientPage> {
             ),
           ),
         const SizedBox(height: 14),
+        // Big Unmissable Launcher Card for NeuroSense Face Studio & Dynamic Curves
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF4338CA), Color(0xFF0284C7)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4338CA).withValues(alpha: 0.35),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: _openFaceControlStudio,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.auto_graph_rounded, color: Colors.white, size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '👁️ Open NeuroSense™ Face Studio & Curves',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'Live EAR waveform, multi-axis curves, camera & gesture rules',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 16),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
         // Telemetry Chips
         Wrap(
           spacing: 8,
@@ -1192,11 +1316,11 @@ class _PatientPageState extends State<PatientPage> {
               'Blink',
               !hasFace
                   ? '—'
-                  : (_monitorStatus.leftEyeOpen != null
-                      ? (((_monitorStatus.leftEyeOpen! + (_monitorStatus.rightEyeOpen ?? _monitorStatus.leftEyeOpen!)) / 2) < 0.32
-                          ? 'Blink'
-                          : 'Open (${(((_monitorStatus.leftEyeOpen! + (_monitorStatus.rightEyeOpen ?? _monitorStatus.leftEyeOpen!)) / 2) * 100).round()}%)')
-                      : (_lastSignal?.kind == PatientSignalKind.blink ? 'Blink' : 'Open')),
+                  : (_isBlinkingNow
+                      ? '⚡ BLINK DETECTED!'
+                      : (_monitorStatus.leftEyeOpen != null
+                          ? 'Open (${(((_monitorStatus.leftEyeOpen! + (_monitorStatus.rightEyeOpen ?? _monitorStatus.leftEyeOpen!)) / 2) * 100).round()}%)'
+                          : 'Open')),
               active: hasFace,
             ),
             _buildTelemetryPill(
@@ -1279,29 +1403,29 @@ class _PatientPageState extends State<PatientPage> {
                 children: [
                   _buildGestureChip(
                     theme,
-                    label: '💧 5 Blinks: Water',
+                    label: '💧 3 Blinks: Water',
                     onTap: () => widget.services.monitor.triggerWebGesture('water'),
                   ),
                   _buildGestureChip(
                     theme,
-                    label: '😊 Smile: Feeling Good',
-                    onTap: () => widget.services.monitor.triggerWebGesture('feeling_good'),
+                    label: '🍲 3 Head Left: Food',
+                    onTap: () => widget.services.monitor.triggerWebGesture('food'),
                   ),
                   _buildGestureChip(
                     theme,
-                    label: '🍲 5 Head Right: Food',
-                    onTap: () => widget.services.monitor.triggerWebGesture('food'),
+                    label: '🚻 3 Head Right: Toilet',
+                    onTap: () => widget.services.monitor.triggerWebGesture('toilet'),
+                  ),
+                  _buildGestureChip(
+                    theme,
+                    label: '😊 Nod + Smile: I am okay',
+                    onTap: () => widget.services.monitor.triggerWebGesture('okay'),
                   ),
                   _buildGestureChip(
                     theme,
                     label: '🚨 Abnormality: Emergency',
                     isEmergency: true,
                     onTap: () => widget.services.monitor.triggerWebGesture('abnormality'),
-                  ),
-                  _buildGestureChip(
-                    theme,
-                    label: '👍 Nod: Confirm',
-                    onTap: () => widget.services.monitor.triggerWebGesture('nod'),
                   ),
                 ],
               ),

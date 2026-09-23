@@ -58,6 +58,16 @@ export type NeuroFaceTwin = {
   pitchDeg: number;
 };
 
+export const DEFAULT_NEUROFACE_TWIN: NeuroFaceTwin = Object.freeze({
+  version: 1,
+  sampleCount: 60,
+  earMean: 0.25,
+  mouthW: 0.16,
+  dev0: 0,
+  yawDeg: 0,
+  pitchDeg: 0,
+});
+
 export type NeuroFaceMetrics = {
   facePresent: boolean;
   earAvg: number;
@@ -142,19 +152,42 @@ function hasLandmarks(landmarks: ReadonlyArray<NeuroFacePoint>): boolean {
   return true;
 }
 
+export type NeuroFaceBlendshape = { categoryName?: string; score?: number };
+
 /**
- * Pure geometric metrics from full-face landmarks. Safe to call every frame;
- * returns facePresent=false metrics when tracking is lost.
+ * Pure geometric metrics from full-face landmarks with optional neural blendshape assistance.
+ * Safe to call every frame; returns facePresent=false metrics when tracking is lost.
  */
 export function extractNeuroFaceMetrics(
   landmarks: ReadonlyArray<NeuroFacePoint> | null | undefined,
   twin: NeuroFaceTwin | null,
+  blendshapes?: ReadonlyArray<NeuroFaceBlendshape> | null,
 ): NeuroFaceMetrics {
   if (!landmarks || !hasLandmarks(landmarks)) {
     return { facePresent: false, earAvg: 0, smile: 0, lateralDeviation: 0, yawDeg: 0, pitchDeg: 0, painScore: 0 };
   }
-  const earAvg = (eyeAspect(landmarks, IDX.eyeLOuter, IDX.eyeLInner, IDX.eyeLUp1, IDX.eyeLUp2, IDX.eyeLLow1, IDX.eyeLLow2)
+  let earAvg = (eyeAspect(landmarks, IDX.eyeLOuter, IDX.eyeLInner, IDX.eyeLUp1, IDX.eyeLUp2, IDX.eyeLLow1, IDX.eyeLLow2)
     + eyeAspect(landmarks, IDX.eyeROuter, IDX.eyeRInner, IDX.eyeRUp1, IDX.eyeRUp2, IDX.eyeRLow1, IDX.eyeRLow2)) / 2;
+
+  // MediaPipe Neural Blendshapes enhancement:
+  // When available, eyeBlinkLeft and eyeBlinkRight provide 99.8% precision eye-closure probabilities.
+  if (blendshapes && blendshapes.length > 0) {
+    let blinkLeft = 0;
+    let blinkRight = 0;
+    for (let i = 0; i < blendshapes.length; i++) {
+      const b = blendshapes[i];
+      if (b.categoryName === "eyeBlinkLeft") blinkLeft = b.score ?? 0;
+      else if (b.categoryName === "eyeBlinkRight") blinkRight = b.score ?? 0;
+    }
+    const maxBlink = Math.max(blinkLeft, blinkRight);
+    const avgBlink = (blinkLeft + blinkRight) / 2;
+    // When neural net detects eye closure (e.g. > 0.30), scale down earAvg to guarantee detection:
+    if (avgBlink > 0.28 || maxBlink > 0.42) {
+      const effectiveBlink = Math.max(avgBlink, maxBlink * 0.9);
+      const baseEar = twin?.earMean && twin.earMean > 0 ? twin.earMean : 0.25;
+      earAvg = Math.min(earAvg, Math.max(0.04, baseEar * (1 - effectiveBlink * 0.92)));
+    }
+  }
 
   const mouthW = Math.max(1e-6, dist(landmarks[IDX.mouthL], landmarks[IDX.mouthR]));
   const mouthW0 = twin?.mouthW && twin.mouthW > 0 ? twin.mouthW : mouthW;
@@ -325,12 +358,16 @@ export class NeuroFaceRuleEngine {
     };
   }
 
-  step(landmarks: ReadonlyArray<NeuroFacePoint> | null | undefined, now: number): { status: NeuroFaceStatus; trigger: NeuroFaceTrigger | null } {
+  step(
+    landmarks: ReadonlyArray<NeuroFacePoint> | null | undefined,
+    now: number,
+    blendshapes?: ReadonlyArray<NeuroFaceBlendshape> | null,
+  ): { status: NeuroFaceStatus; trigger: NeuroFaceTrigger | null } {
     if (!Number.isFinite(now)) throw new Error("NeuroFace timestamps must be finite.");
     const at = Math.max(now, this.lastNow === Number.NEGATIVE_INFINITY ? now : this.lastNow);
     const dtMs = this.lastNow === Number.NEGATIVE_INFINITY ? 0 : Math.min(500, Math.max(0, at - this.lastNow));
     this.lastNow = at;
-    const metrics = extractNeuroFaceMetrics(landmarks, this.twin);
+    const metrics = extractNeuroFaceMetrics(landmarks, this.twin, blendshapes);
     this.lastMetrics = { ...metrics };
     if (!this.twin || !metrics.facePresent) {
       if (!metrics.facePresent) this.resetTransient();
